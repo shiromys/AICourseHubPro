@@ -1,8 +1,9 @@
 // frontend/src/config.js
+const backendUrl = import.meta.env.VITE_API_BASE_URL;
 
-// 1. Log the variable to the console so we can debug (remove this later)
-console.log("Vite API URL:", import.meta.env.VITE_API_BASE_URL);
+// Debug: Let's see if the variable exists
+console.log("Vite Env Check:", backendUrl);
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+const API_BASE_URL = backendUrl || "http://localhost:5000";
 
 export default API_BASE_URL;
