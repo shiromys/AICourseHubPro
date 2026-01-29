@@ -29,7 +29,7 @@ app = Flask(__name__, static_folder='static')
 
 # Allow frontend (port 5173) to talk to backend
 # This global config handles CORS for all routes, including PUT/OPTIONS
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/api/*": {"origins": "https://frontend-production-04f2.up.railway.app"}})
 
 # --- SECURE CONFIG (Loaded from .env) ---
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
