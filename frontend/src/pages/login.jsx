@@ -1,44 +1,64 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'; // <--- Added Eye, EyeOff
+import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import API_BASE_URL from '../config';
 
 const Login = () => {
   const navigate = useNavigate();
+  // 1. STATE MANAGEMENT
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // <--- New State
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    setError(''); // Clear error when typing
+    setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setError(''); // Clear previous errors
+
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/login`, { email, password });
+      // 2. THE FIX: Use formData.email / formData.password
+      const res = await axios.post(`${API_BASE_URL}/api/login`, { 
+        email: formData.email, 
+        password: formData.password 
+      });
       
-      // Save Auth Data
+      // 3. SUCCESS: Save Token & User Data
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user_role', res.data.user_role);
       localStorage.setItem('user_name', res.data.name);
+      
+      // OPTIONAL: Save is_admin for easier checking later
+      localStorage.setItem('is_admin', res.data.is_admin);
 
-      // Force a storage event so Navbar updates immediately
+      // Force Navbar update
       window.dispatchEvent(new Event("storage"));
 
-      // Redirect based on role
-      if (res.data.user_role === 'admin') {
-        navigate('/admin');
-      } else {
-        navigate('/dashboard');
-      }
+      // 4. REDIRECT
+      // Add a tiny delay to ensure localStorage is set before the page loads
+      setTimeout(() => {
+        if (res.data.is_admin) {
+           navigate('/admin-dashboard'); // Or whatever your admin route is
+        } else {
+           navigate('/dashboard');
+        }
+      }, 100);
+
     } catch (err) {
-      setError(err.response?.data?.msg || "Login failed. Please check your credentials.");
+      console.error("Login Failed:", err);
+      // 5. ERROR HANDLING
+      if (err.response && err.response.data && err.response.data.msg) {
+        setError(err.response.data.msg); // Server error (e.g., "Incorrect credentials")
+      } else {
+        setError("Login failed. Please check your credentials."); // Fallback
+      }
     } finally {
       setLoading(false);
     }
@@ -81,13 +101,13 @@ const Login = () => {
               </div>
             </div>
 
-            {/* Password Input (Updated) */}
+            {/* Password Input */}
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Password</label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                 <input 
-                  type={showPassword ? "text" : "password"} // <--- Dynamic Type
+                  type={showPassword ? "text" : "password"}
                   name="password"
                   required
                   value={formData.password}
@@ -96,7 +116,7 @@ const Login = () => {
                   placeholder="••••••••"
                 />
                 
-                {/* --- EYE TOGGLE BUTTON --- */}
+                {/* Eye Toggle */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -107,7 +127,7 @@ const Login = () => {
               </div>
             </div>
 
-            {/* --- FORGOT PASSWORD LINK --- */}
+            {/* Forgot Password Link */}
             <div className="flex justify-end">
               <Link 
                 to="/forgot-password" 
@@ -130,7 +150,7 @@ const Login = () => {
 
           <div className="mt-8 text-center text-sm text-gray-500">
             Don't have an account?{' '}
-            <Link to="/signup" className="text-red-500 font-bold hover:text-red-400 transition-colors">
+            <Link to="/register" className="text-red-500 font-bold hover:text-red-400 transition-colors">
               Create Account
             </Link>
           </div>
