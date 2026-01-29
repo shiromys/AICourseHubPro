@@ -1,0 +1,1 @@
+{"version":3,"sources":["postcss.config.js"],"names":["plugins","tailwindcss","autoprefixer"],"mappings":";;;;;;eAAe;AACbA,EAAAA,OAAO,EAAE;AACPC,IAAAA,WAAW,EAAE,EADN;AAEPC,IAAAA,YAAY,EAAE;AAFP;AADI,C","sourcesContent":["export default {\r\n  plugins: {\r\n    tailwindcss: {},\r\n    autoprefixer: {},\r\n  },\r\n}"],"file":"postcss.config.dev.js"}

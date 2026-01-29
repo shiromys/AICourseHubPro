@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Your custom styles can go below here */
+:root {
+  --primary-red: #ef4444;
+  --hover-red: #dc2626;
+  --bg-light-red: #fef2f2;
+  --text-black: #111111;
+  --white: #ffffff;
+}
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--bg-light-red);
+  color: var(--text-black);
+}
