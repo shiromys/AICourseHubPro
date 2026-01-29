@@ -119,50 +119,52 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
-    if User.query.filter_by(email=data['email']).first():
+    # 1. Clean the email (Lowercase + Trim Spaces)
+    email = data['email'].strip().lower()
+    
+    if User.query.filter_by(email=email).first():
         return jsonify({"msg": "User already exists"}), 400
 
-    # Let Werkzeug choose the best method (usually scrypt)
+    # 2. Force Default Hashing (Removes the problematic pbkdf2)
     hashed_pw = generate_password_hash(data['password'])
-    new_user = User(email=data['email'], password=hashed_pw, name=data['name'])
+    
+    # DEBUG LOG
+    print(f"--- DEBUG: Creating User {email} with hash: {hashed_pw[:10]}... ---")
+
+    new_user = User(email=email, password=hashed_pw, name=data['name'])
     db.session.add(new_user)
     db.session.commit()
     
-    try:
-        html_body = f"""
-        <p>Hi {data['name']},</p>
-        <p>Welcome to <strong>AICourseHubPro</strong>! We are thrilled to have you on board.</p>
-        <p>Your account has been successfully created. You now have access to our library of cutting-edge AI courses.</p>
-        """
-        email_content = get_email_template(
-            title="Welcome to the Future of Learning!",
-            body_content=html_body,
-            button_text="Go to Dashboard",
-            button_url=f"{DOMAIN}/dashboard"
-        )
-        send_email(data['email'], "Welcome to AI Course Hub Pro! 🚀", email_content)
-    except Exception as e:
-        print(f"Welcome email failed: {e}")
-
     return jsonify({"msg": "User created"}), 201
+
+
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
-    # Clean the input
-    email = data['email'].strip()
+    # 1. Clean the email (Lowercase + Trim Spaces)
+    email = data['email'].strip().lower()
+    password = data['password']
+
+    print(f"--- DEBUG: Login attempt for {email} ---")
+
     user = User.query.filter_by(email=email).first()
     
-    if not user or not check_password_hash(user.password, data['password']):
+    if not user:
+        print("--- DEBUG: User NOT found in Database ---")
+        return jsonify({"msg": "Incorrect credentials"}), 401
+
+    # 2. Check Password
+    is_valid = check_password_hash(user.password, password)
+    
+    print(f"--- DEBUG: Password Valid? {is_valid} ---")
+    print(f"--- DEBUG: Stored Hash starts with: {user.password[:15]}... ---")
+
+    if not is_valid:
         return jsonify({"msg": "Incorrect credentials"}), 401
 
     if user.is_deleted:
-        return jsonify({"msg": "This account has been deactivated. Contact support."}), 403
-
-    if user.ban_expiry and user.ban_expiry > datetime.utcnow():
-        return jsonify({
-            "msg": f"Account suspended until {user.ban_expiry.strftime('%Y-%m-%d')}."
-        }), 403
+        return jsonify({"msg": "Account deactivated"}), 403
 
     token = create_access_token(identity=str(user.id))
     role = "admin" if user.is_admin else "student"
