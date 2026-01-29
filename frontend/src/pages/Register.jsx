@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { Eye, EyeOff } from 'lucide-react';
+import API_BASE_URL from '../config';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ const Register = () => {
     setError('');
 
     try {
-      await axios.post('http://localhost:5000/api/signup', formData);
+      const res = await axios.post(`${API_BASE_URL}/api/signup`, formData);
       alert("Account created! Please log in.");
       navigate('/login');
     } catch (err) {
