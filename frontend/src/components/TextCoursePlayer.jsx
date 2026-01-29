@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronLeft, CheckCircle, PlayCircle, FileText, Menu, BookOpen, Award } from 'lucide-react';
+import API_BASE_URL from '../config';
 
 const TextCoursePlayer = () => {
   const { id } = useParams();
@@ -31,7 +32,7 @@ const TextCoursePlayer = () => {
       const token = localStorage.getItem('token');
       
       // 1. Fetch Course Content
-      const response = await axios.get(`http://localhost:5000/api/courses`, {
+      const response = await axios.get(`${API_BASE_URL}/api/courses`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       

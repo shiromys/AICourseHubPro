@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import axios from 'axios';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import Navbar from '../components/Navbar';
+import API_BASE_URL from '../config';
 
 const Verify = () => {
   const { certId } = useParams();
@@ -12,7 +13,7 @@ const Verify = () => {
   useEffect(() => {
     const verifyCert = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/verify/${certId}`);
+        await axios.get(`${API_BASE_URL}/api/verify/${certId}`);
         setResult({ valid: true, ...res.data });
       } catch (error) {
         setResult({ valid: false });

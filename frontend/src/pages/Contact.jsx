@@ -3,6 +3,7 @@ import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
 import Footer from '../components/Footer';
+import API_BASE_URL from '../config';
 
 const Contact = () => {
   const [formData, setFormData] = useState({ firstName: '', email: '', subject: 'General Inquiry', message: '' });
@@ -15,7 +16,7 @@ const Contact = () => {
     try {
       const token = localStorage.getItem('token');
       // Even if not logged in, we allow contact, but if token exists, we send it.
-      await axios.post('http://localhost:5000/api/contact', formData, {
+      await axios.post(`${API_BASE_URL}/api/contact`, formData, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       setSuccess(true);

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { MessageSquare, X, Send, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import API_BASE_URL from '../config';
 
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -28,7 +29,7 @@ const ChatWidget = () => {
     setLoading(true);
 
     try {
-      const res = await axios.post('http://localhost:5000/api/chat', { message: userMsg.text });
+      const res = await axios.post(`${API_BASE_URL}/api/chat`, { message: userMsg.text });
       const botMsg = { role: 'bot', text: res.data.reply };
       setMessages(prev => [...prev, botMsg]);
     } catch (error) {

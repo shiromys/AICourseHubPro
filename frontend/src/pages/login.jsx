@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'; // <--- Added Eye, EyeOff
 import Navbar from '../components/Navbar';
+import API_BASE_URL from '../config';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ const Login = () => {
     e.preventDefault();
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/login', formData);
+      const res = await axios.post(`${API_BASE_URL}/api/login`, { email, password });
       
       // Save Auth Data
       localStorage.setItem('token', res.data.token);

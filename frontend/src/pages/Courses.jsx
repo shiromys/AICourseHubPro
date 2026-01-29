@@ -3,10 +3,9 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import API_BASE_URL from '../config';
 import { Search, BookOpen, Clock, BarChart, Loader2, ShoppingCart } from 'lucide-react';
 
-// CONFIG: Backend URL
-const API_BASE_URL = "http://localhost:5000";
 
 const Courses = () => {
   const [courses, setCourses] = useState([]);

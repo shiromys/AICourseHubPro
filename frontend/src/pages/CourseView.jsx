@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import API_BASE_URL from '../config';
 import { PlayCircle, CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-react';
 
 const CourseView = () => {
@@ -24,7 +25,7 @@ const CourseView = () => {
     try {
       // We allow public access to view the sales page, but send token if available
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/courses', {
+      const response = await axios.get(`${API_BASE_URL}/api/courses/${id}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       // Find the specific course by ID
@@ -44,7 +45,7 @@ const CourseView = () => {
 
     try {
       // If you are an ADMIN, the backend now returns 200 OK here (bypassing payment)
-      await axios.get(`http://localhost:5000/api/enrollment/${id}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/enrollment/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
@@ -75,7 +76,7 @@ const CourseView = () => {
         return;
       }
       
-      const res = await axios.post('http://localhost:5000/api/create-checkout-session', 
+      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
         { course_id: course.id },
         { headers: { Authorization: `Bearer ${token}` } }
       );

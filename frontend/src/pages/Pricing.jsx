@@ -4,6 +4,7 @@ import Navbar from '../components/Navbar';
 import axios from 'axios';
 import Footer from '../components/Footer';
 import { Check, HelpCircle, Loader2, Zap } from 'lucide-react';
+import API_BASE_URL from '../config';
 
 const Pricing = () => {
   const navigate = useNavigate();
@@ -25,7 +26,7 @@ const Pricing = () => {
       const token = localStorage.getItem('token');
       
       // 2. Call Backend to get Stripe URL
-      const res = await axios.post('http://localhost:5000/api/create-checkout-session', 
+      await axios.post(`${API_BASE_URL}/api/create-checkout-session`, ... 
         { course_id: courseId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

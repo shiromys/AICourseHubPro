@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Loader2, CheckCircle, Eye, EyeOff } from 'lucide-react'; // <--- Added Eye, EyeOff
+import API_BASE_URL from '../config';
 
 const ResetPassword = () => {
   const [searchParams] = useSearchParams();
@@ -24,7 +25,7 @@ const ResetPassword = () => {
 
     try {
       // Send the token in the Header as Authorization
-      await axios.post('http://localhost:5000/api/reset-password', 
+      await axios.post(`${API_BASE_URL}/api/reset-password`, ... 
         { new_password: newPassword },
         { headers: { Authorization: `Bearer ${token}` } } 
       );

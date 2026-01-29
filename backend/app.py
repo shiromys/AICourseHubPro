@@ -42,7 +42,8 @@ STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 resend.api_key = os.getenv("RESEND_API_KEY")
 
 # Domain
-DOMAIN = "http://localhost:5173"
+# Use an environment variable for production, fallback to localhost for dev
+DOMAIN = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 # --- STANDARD CONFIG ---
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')

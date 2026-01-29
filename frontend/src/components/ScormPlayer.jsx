@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import API_BASE_URL from '../config';
 
 const ScormPlayer = ({ launchUrl, onClose }) => {
   useEffect(() => {
@@ -14,8 +15,7 @@ const ScormPlayer = ({ launchUrl, onClose }) => {
     return () => { window.API = null; };
   }, []);
 
-  const fullUrl = `http://127.0.0.1:5000${launchUrl}`;
-
+  const fullUrl = `${API_BASE_URL}${launchUrl}`;
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',

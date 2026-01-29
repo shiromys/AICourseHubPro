@@ -6,6 +6,7 @@ import { Loader2, Download, ArrowLeft, CheckCircle } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import QRCode from "react-qr-code";
+import API_BASE_URL from '../config';
 
 const Certificate = () => {
   const { courseId } = useParams();
@@ -26,13 +27,13 @@ const Certificate = () => {
         if (!token) { navigate('/login'); return; }
 
         // 1. Get Course Info
-        const courseRes = await axios.get(`http://localhost:5000/api/courses`, {
+        const courseRes = await axios.get(`${API_BASE_URL}/api/courses`, {
             headers: { Authorization: `Bearer ${token}` }
         });
         const course = courseRes.data.find(c => c.id === parseInt(courseId));
 
         // 2. Get Enrollment & Certificate ID
-        const enrollRes = await axios.get(`http://localhost:5000/api/enrollment/${courseId}`, {
+        const enrollRes = await axios.get(`${API_BASE_URL}/api/enrollment/${courseId}`, {
             headers: { Authorization: `Bearer ${token}` }
         });
 

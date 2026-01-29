@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import { User, Lock, Save, Shield, Eye, EyeOff } from 'lucide-react';
+import API_BASE_URL from '../config';
 
 const Profile = () => {
   const [formData, setFormData] = useState({ name: '', password: '', confirmPassword: '' });
@@ -33,7 +34,7 @@ const Profile = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const res = await axios.put('http://localhost:5000/api/profile', 
+      await axios.put(`${API_BASE_URL}/api/profile`, ...
         { 
           name: formData.name, 
           password: formData.password || undefined 

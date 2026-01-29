@@ -3,13 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer'; 
+import API_BASE_URL from '../config';
 import { 
   BookOpen, Award, Flame, Clock, PlayCircle, Trophy, 
   LayoutDashboard, Search, X, Loader2, ShoppingCart 
 } from 'lucide-react';
 
-// Use a config file or variable in production. For MVP, localhost is fine.
-const API_BASE_URL = "http://localhost:5000";
 
 const Dashboard = () => {
   const navigate = useNavigate();
