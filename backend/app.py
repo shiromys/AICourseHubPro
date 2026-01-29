@@ -122,7 +122,8 @@ def signup():
     if User.query.filter_by(email=data['email']).first():
         return jsonify({"msg": "User already exists"}), 400
 
-    hashed_pw = generate_password_hash(data['password'], method='pbkdf2:sha256')
+    # Let Werkzeug choose the best method (usually scrypt)
+    hashed_pw = generate_password_hash(data['password'])
     new_user = User(email=data['email'], password=hashed_pw, name=data['name'])
     db.session.add(new_user)
     db.session.commit()
@@ -148,7 +149,9 @@ def signup():
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
-    user = User.query.filter_by(email=data['email']).first()
+    # Clean the input
+    email = data['email'].strip()
+    user = User.query.filter_by(email=email).first()
     
     if not user or not check_password_hash(user.password, data['password']):
         return jsonify({"msg": "Incorrect credentials"}), 401
