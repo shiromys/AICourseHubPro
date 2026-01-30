@@ -43,7 +43,8 @@ const TextCoursePlayer = () => {
 
         // 2. Fetch User's Bookmark (Resume logic)
         try {
-          const progressRes = await axios.get(`http://localhost:5000/api/enrollment/${id}`, {
+          // --- FIX 1: Use API_BASE_URL instead of localhost ---
+          const progressRes = await axios.get(`${API_BASE_URL}/api/enrollment/${id}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
 
@@ -89,7 +90,8 @@ const TextCoursePlayer = () => {
         if (progressPercent > 90) progressPercent = 90;
       }
 
-      await axios.post('http://localhost:5000/api/update-progress', {
+      // --- FIX 2: Use API_BASE_URL instead of localhost ---
+      await axios.post(`${API_BASE_URL}/api/update-progress`, {
         course_id: course.id,
         progress: progressPercent,
         status: status,
@@ -237,8 +239,8 @@ const TextCoursePlayer = () => {
                           : 'border-transparent text-gray-600 hover:bg-gray-50'
                         }`}
                       >
-                         {lesson.type === 'video' ? <PlayCircle size={16} className="mt-0.5 shrink-0" /> : <FileText size={16} className="mt-0.5 shrink-0" />}
-                         <span>{lesson.title}</span>
+                          {lesson.type === 'video' ? <PlayCircle size={16} className="mt-0.5 shrink-0" /> : <FileText size={16} className="mt-0.5 shrink-0" />}
+                          <span>{lesson.title}</span>
                       </button>
                     );
                   })}
@@ -267,32 +269,32 @@ const TextCoursePlayer = () => {
                   
                   {/* Header */}
                   <div className="border-b border-gray-100 pb-6 mb-8">
-                     <span className="text-red-600 font-bold text-xs uppercase tracking-wide">
+                      <span className="text-red-600 font-bold text-xs uppercase tracking-wide">
                         {currentModule?.title}
-                     </span>
-                     <h1 className="text-3xl font-black text-gray-900 mt-2">{currentLesson.title}</h1>
+                      </span>
+                      <h1 className="text-3xl font-black text-gray-900 mt-2">{currentLesson.title}</h1>
                   </div>
 
                   {/* VIDEO RENDERER */}
                   {currentLesson.type === 'video' && (
-                     <div className="aspect-video w-full bg-black rounded-xl overflow-hidden shadow-lg mb-8">
-                        <iframe 
-                          src={currentLesson.content} 
-                          className="w-full h-full" 
-                          frameBorder="0" 
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                          allowFullScreen 
-                          title="Video Player"
-                        ></iframe>
-                     </div>
+                      <div className="aspect-video w-full bg-black rounded-xl overflow-hidden shadow-lg mb-8">
+                         <iframe 
+                           src={currentLesson.content} 
+                           className="w-full h-full" 
+                           frameBorder="0" 
+                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                           allowFullScreen 
+                           title="Video Player"
+                         ></iframe>
+                      </div>
                   )}
 
                   {/* TEXT RENDERER */}
                   {currentLesson.type === 'text' && (
-                     <div 
-                       className="prose prose-lg max-w-none text-gray-700 prose-headings:font-bold prose-a:text-red-600"
-                       dangerouslySetInnerHTML={{ __html: currentLesson.content || '<p>No content available.</p>' }} 
-                     />
+                      <div 
+                        className="prose prose-lg max-w-none text-gray-700 prose-headings:font-bold prose-a:text-red-600"
+                        dangerouslySetInnerHTML={{ __html: currentLesson.content || '<p>No content available.</p>' }} 
+                      />
                   )}
 
                   {/* QUIZ RENDERER */}
@@ -340,7 +342,7 @@ const TextCoursePlayer = () => {
                                       className={`flex items-center p-4 border rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-red-50 border-red-500 ring-1 ring-red-500 text-red-900 font-bold' : 'border-gray-200 hover:bg-gray-50'}`}
                                     >
                                       <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 bg-white ${isSelected ? 'border-red-600' : 'border-gray-300'}`}>
-                                         {isSelected && <div className="w-2.5 h-2.5 bg-red-600 rounded-full" />}
+                                          {isSelected && <div className="w-2.5 h-2.5 bg-red-600 rounded-full" />}
                                       </div>
                                       <span>{text}</span>
                                     </div>

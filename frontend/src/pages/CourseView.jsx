@@ -5,6 +5,8 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 import { PlayCircle, CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-react';
+// 1. IMPORT THE PLAYER COMPONENT
+import TextCoursePlayer from '../components/TextCoursePlayer'; 
 
 const CourseView = () => {
   const { id } = useParams();
@@ -20,12 +22,10 @@ const CourseView = () => {
     checkEnrollmentStatus();
   }, [id]);
 
-  // 1. Fetch the Course Details (Title, Description, Price)
   const fetchCourseData = async () => {
     try {
-      // We allow public access to view the sales page, but send token if available
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_BASE_URL}/api/courses/${id}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/courses`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
       // Find the specific course by ID
@@ -38,36 +38,24 @@ const CourseView = () => {
     }
   };
 
-  // 2. Check Enrollment (This is where the Admin Logic works)
   const checkEnrollmentStatus = async () => {
     const token = localStorage.getItem('token');
     if (!token) return;
 
     try {
-      // If you are an ADMIN, the backend now returns 200 OK here (bypassing payment)
       const response = await axios.get(`${API_BASE_URL}/api/enrollment/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
-      // If successful, we mark the user as "Enrolled" (so they see "Continue Learning")
-      setIsEnrolled(true); 
-
+      if (response.data) {
+          setIsEnrolled(true); 
+      }
     } catch (error) {
-      // If 404, they haven't bought it (and aren't an admin)
       setIsEnrolled(false);
     }
   };
 
-  const handleAction = async () => {
+  const handleBuy = async () => {
     if (!course) return;
-
-    // A. IF ENROLLED (OR ADMIN): Go straight to the Player
-    if (isEnrolled) {
-      navigate(`/learn/text/${id}`); 
-      return;
-    }
-
-    // B. IF NOT ENROLLED: Go to Stripe Payment
     setProcessing(true);
     try {
       const token = localStorage.getItem('token');
@@ -94,6 +82,17 @@ const CourseView = () => {
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
   if (!course) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Course not found.</div>;
 
+  // ============================================================
+  // THE LOGIC FIX:
+  // If Enrolled -> RENDER PLAYER immediately (No Navigation)
+  // ============================================================
+  if (isEnrolled) {
+      return <TextCoursePlayer />;
+  }
+
+  // ============================================================
+  // If NOT Enrolled -> Render Your Beautiful Sales Page
+  // ============================================================
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100">
       <Navbar />
@@ -138,23 +137,11 @@ const CourseView = () => {
               {/* ACTION BUTTON */}
               <div className="flex gap-4">
                 <button 
-                  onClick={handleAction}
+                  onClick={handleBuy} // Only handles buying now
                   disabled={processing}
-                  className={`px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all shadow-lg ${
-                    isEnrolled 
-                      ? "bg-green-600 hover:bg-green-700 text-white shadow-green-900/20" 
-                      : "bg-red-600 hover:bg-red-700 text-white shadow-red-900/20 hover:scale-105"
-                  }`}
+                  className="px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white shadow-red-900/20 hover:scale-105"
                 >
-                  {isEnrolled ? (
-                    <>
-                      <PlayCircle size={24} /> Continue Learning
-                    </>
-                  ) : (
-                    <>
-                      {processing ? "Processing..." : `Enroll Now - $${course.price}`}
-                    </>
-                  )}
+                  {processing ? "Processing..." : `Enroll Now - $${course.price}`}
                 </button>
               </div>
             </div>
@@ -177,14 +164,12 @@ const CourseView = () => {
                   ))}
                 </ul>
 
-                {!isEnrolled && (
-                    <div className="mt-8 pt-8 border-t border-gray-800">
-                        <div className="flex items-center justify-between text-sm text-gray-500">
-                            <span className="flex items-center gap-2"><Lock size={14}/> Secure Payment</span>
-                            <span>30-Day Access</span>
-                        </div>
+                <div className="mt-8 pt-8 border-t border-gray-800">
+                    <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span className="flex items-center gap-2"><Lock size={14}/> Secure Payment</span>
+                        <span>30-Day Access</span>
                     </div>
-                )}
+                </div>
               </div>
               
               {/* Decorative elements behind card */}
