@@ -14,6 +14,7 @@ import stripe
 from datetime import datetime
 from datetime import timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_mail import Mail, Message
 
 # === IMPORTS ===
 from database import db
@@ -22,6 +23,19 @@ from database import db
 load_dotenv() 
 
 app = Flask(__name__, static_folder='static')
+app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+CORS(app)
+
+# --- MAIL CONFIGURATION ---
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.dynadot.com') # Default to Dynadot
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME')
+
+mail = Mail(app)
+# --------------------------
 
 # ==========================================
 # 1. CONFIGURATION
@@ -134,6 +148,37 @@ def signup():
     new_user = User(email=email, password=hashed_pw, name=data['name'])
     db.session.add(new_user)
     db.session.commit()
+
+    # ... (User created and committed to DB above) ...
+
+    # --- SEND WELCOME EMAIL ---
+    try:
+        msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
+        
+        # 1. Sender: Must be your verified domain in Resend
+        msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com")
+        
+        # 2. Reply-To: This routes user replies to your Support Email
+        msg.reply_to = "support@shirotechnologies.com" 
+        
+        msg.body = f"""Hello {name},
+
+Welcome to AICourseHub Pro! 
+
+Your account has been successfully created. You can now log in to start your courses.
+
+Login here: https://aicoursehubpro.com/login
+
+Best regards,
+The AICourseHub Team
+"""
+        mail.send(msg)
+        print(f"DEBUG: Email sent to {email}")
+    except Exception as e:
+        print(f"ERROR: Email sending failed: {e}")
+    # --------------------------
+
+    return jsonify({"msg": "Signup successful"}), 201
     
     return jsonify({"msg": "User created"}), 201
 
