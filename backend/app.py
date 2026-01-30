@@ -27,17 +27,20 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
 
 # --- MAIL CONFIGURATION ---
-# --- MAIL CONFIGURATION (RESEND) ---
+# --- MAIL CONFIGURATION (HARDCODED FOR RESEND) ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
 app.config['MAIL_PORT'] = 587
-app.config['MAIL_USERNAME'] = 'resend'
-app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY')
-app.config['MAIL_USE_TLS'] = True  # Must be True for Port 587
-app.config['MAIL_USE_SSL'] = False # Must be False for Port 587
-# This sets the default sender
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = False
+app.config['MAIL_USERNAME'] = 'resend'  # This is always 'resend' for everyone
+
+# CRITICAL: Point this to the variable you ACTUALLY have in Railway
+app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY') 
+
 app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHub", "info@aicoursehubpro.com")
 
 mail = Mail(app)
+
 # --------------------------
 
 # ==========================================
