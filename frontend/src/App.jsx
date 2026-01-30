@@ -1,11 +1,11 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
-// --- IMPORT PAGES (Matching your exact folder structure) ---
+// --- IMPORT PAGES ---
 import Home from './pages/Home';
-import Login from './pages/login';       // <--- FIXED: lowercase 'l'
-import Register from './pages/Register'; // <--- FIXED: file is Register.jsx
-import Dashboard from './pages/dashboard'; // <--- FIXED: lowercase 'd'
+import Login from './pages/login';      
+import Register from './pages/Register';
+import Dashboard from './pages/dashboard'; 
 import PaymentSuccess from './pages/PaymentSuccess';
 import Pricing from './pages/Pricing';
 import Courses from './pages/Courses';
@@ -15,14 +15,14 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Certificate from './pages/Certificate';
 import Verify from './pages/Verify';
-import ChatWidget from './components/ChatWidget';
-import PrivacyPolicy from './pages/PrivacyPolicy'; // <--- IMPORT
-import TermsOfUse from './pages/TermsOfUse';       // <--- IMPORT
-import RefundPolicy from './pages/RefundPolicy'; 
-import ScrollToTop from './components/ScrollToTop';  // <--- IMPORT
+import PrivacyPolicy from './pages/PrivacyPolicy';
+import TermsOfUse from './pages/TermsOfUse';     
+import RefundPolicy from './pages/RefundPolicy';
+import CourseView from './pages/CourseView'; // <--- 1. NEW IMPORT
 
 // --- IMPORT COMPONENTS ---
-import TextCoursePlayer from './components/TextCoursePlayer'; 
+import ChatWidget from './components/ChatWidget';
+import ScrollToTop from './components/ScrollToTop';  
 
 // --- 1. Protection Wrapper ---
 const ProtectedRoute = ({ children }) => {
@@ -47,11 +47,11 @@ function App() {
     <BrowserRouter>
     <ScrollToTop />
       <Routes>
-        {/* Public Routes */}
+        {/* --- Public Routes --- */}
         <Route path="/" element={<Home />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Register />} /> {/* Maps /signup URL to Register.jsx */}
-        <Route path="/register" element={<Register />} /> {/* Fallback */}
+        <Route path="/signup" element={<Register />} />
+        <Route path="/register" element={<Register />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/courses" element={<Courses />} />
         <Route path="/contact" element={<Contact />} />
@@ -60,11 +60,17 @@ function App() {
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        {/* Public Verification Route */}
         <Route path="/verify/:certId" element={<Verify />} />
 
-        {/* Student Protected Routes */}
+        {/* --- THE FIX IS HERE --- 
+           1. Use "courses" (plural) to match Dashboard.
+           2. Render "CourseView" (The Gatekeeper) instead of Player directly.
+           3. No ProtectedRoute here (CourseView handles the check).
+        */}
+        <Route path="/courses/:id" element={<CourseView />} />
+        <Route path="/course/:id" element={<Navigate to="/courses/:id" replace />} />
+
+        {/* --- Protected Routes --- */}
         <Route 
           path="/dashboard" 
           element={
@@ -73,17 +79,7 @@ function App() {
             </ProtectedRoute>
           } 
         />
-
-        <Route 
-          path="/course/:id" 
-          element={
-            <ProtectedRoute>
-              <TextCoursePlayer />
-            </ProtectedRoute>
-          } 
-        />
         
-        {/* IMPORTANT: Payment Success needs protection to access token */}
         <Route 
           path="/payment-success" 
           element={
@@ -101,9 +97,8 @@ function App() {
             </ProtectedRoute>
           } 
         />
-        
 
-        {/* Admin Protected Route */}
+        {/* --- Admin Routes --- */}
         <Route 
           path="/admin" 
           element={
@@ -122,7 +117,5 @@ function App() {
     </BrowserRouter>
   );
 }
-
-
 
 export default App;
