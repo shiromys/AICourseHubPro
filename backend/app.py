@@ -27,12 +27,15 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 CORS(app)
 
 # --- MAIL CONFIGURATION ---
-app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.dynadot.com') # Default to Dynadot
-app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
-app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_USERNAME')
+# --- MAIL CONFIGURATION (RESEND) ---
+app.config['MAIL_SERVER'] = 'smtp.resend.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USERNAME'] = 'resend'
+app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY')
+app.config['MAIL_USE_TLS'] = True  # Must be True for Port 587
+app.config['MAIL_USE_SSL'] = False # Must be False for Port 587
+# This sets the default sender
+app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHub", "info@aicoursehubpro.com")
 
 mail = Mail(app)
 # --------------------------
