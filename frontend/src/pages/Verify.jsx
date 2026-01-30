@@ -13,7 +13,9 @@ const Verify = () => {
   useEffect(() => {
     const verifyCert = async () => {
       try {
-        await axios.get(`${API_BASE_URL}/api/verify/${certId}`);
+        // --- FIX: Updated URL to match Backend Route ---
+        const res = await axios.get(`${API_BASE_URL}/api/verify-certificate/${certId}`);
+        
         setResult({ valid: true, ...res.data });
       } catch (error) {
         setResult({ valid: false });
@@ -28,12 +30,11 @@ const Verify = () => {
     <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">
       <Navbar />
       
-      {/* FIX APPLIED: Added 'pt-32' to push content down below the Navbar */}
       <div className="flex-1 flex flex-col items-center justify-center pt-32 pb-20 px-6 text-center">
         
         {loading ? (
            <Loader2 className="animate-spin text-red-600 mb-4" size={48} />
-        ) : result.valid ? (
+        ) : result && result.valid ? (
            // --- VALID CERTIFICATE CARD ---
            <div className="bg-gray-900 border border-green-500/30 p-10 rounded-2xl max-w-md w-full shadow-2xl shadow-green-900/20 animate-fade-in">
               <div className="flex justify-center mb-6">
@@ -59,10 +60,6 @@ const Verify = () => {
                     <div>
                         <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Date</p>
                         <p className="text-white font-medium">{result.completion_date}</p>
-                    </div>
-                    <div className="text-right">
-                        <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Score</p>
-                        <p className="text-green-400 font-bold text-xl">{result.score}%</p>
                     </div>
                  </div>
               </div>

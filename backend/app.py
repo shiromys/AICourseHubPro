@@ -520,43 +520,51 @@ def enroll_free():
 
 
 
+# ==========================================
+# 1. UPDATE PROGRESS & GENERATE CERTIFICATE
+# ==========================================
 @app.route('/api/update-progress', methods=['POST'])
 @jwt_required()
 def update_progress():
     user_id = get_jwt_identity()
     data = request.json
+    course_id = data.get('course_id')
+    status = data.get('status')
+    score = data.get('score') # Optional quiz score
     
-    # 1. Fetch user to check Admin status
-    user = User.query.get(user_id)
-    
-    # --- ADMIN FIX ---
-    # If Admin is testing the course, do NOT try to save to DB (it will crash)
-    if user and user.is_admin:
-        return jsonify({"msg": "Admin progress ignored (Preview Mode)"}), 200
-    # -----------------
-
-    enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=data['course_id']).first()
-    
+    enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
     if not enrollment:
-        return jsonify({"msg": "Not enrolled"}), 404
-    
-    enrollment.progress = data.get('progress', enrollment.progress)
-    enrollment.last_module_index = data.get('module_idx', enrollment.last_module_index)
-    enrollment.last_lesson_index = data.get('lesson_idx', enrollment.last_lesson_index)
-    
-    if data.get('status') == 'completed': 
-        enrollment.status = 'completed'
-        enrollment.completion_date = datetime.utcnow()
-        if not enrollment.certificate_id:
-             unique_code = f"AIC-{uuid.uuid4().hex[:8].upper()}"
-             enrollment.certificate_id = unique_code
+        return jsonify({"msg": "Enrollment not found"}), 404
 
-    if data.get('score') is not None:
-        enrollment.score = data.get('score')
+    # Update basic fields
+    if 'progress' in data:
+        enrollment.progress = data['progress']
+    if status:
+        enrollment.status = status
+    if score is not None:
+        enrollment.score = score
+        
+    # Update bookmarks if provided
+    if 'module_idx' in data:
+        enrollment.last_module_index = data['module_idx']
+    if 'lesson_idx' in data:
+        enrollment.last_lesson_index = data['lesson_idx']
+
+    # --- CRITICAL FIX: Generate Certificate ID on Completion ---
+    # If completed AND no ID exists yet, generate one.
+    if enrollment.status == 'completed' and not enrollment.certificate_id:
+        # Generate a unique ID (e.g., AIC-A1B2C3D4)
+        unique_id = f"AIC-{str(uuid.uuid4())[:8].upper()}"
+        enrollment.certificate_id = unique_id
+        enrollment.completion_date = datetime.utcnow()
+    # --------------------------------------------------------
 
     db.session.commit()
-    return jsonify({"msg": "Progress updated"})
-
+    
+    return jsonify({
+        "msg": "Progress updated", 
+        "certificate_id": enrollment.certificate_id
+    }), 200
 
 
 @app.route('/api/verify/<string:cert_id>', methods=['GET'])
@@ -731,6 +739,8 @@ def reset_password():
     except Exception as e:
         print(f"--- CRITICAL ERROR: {str(e)} ---")
         return jsonify({"msg": "Server error processing request"}), 500
+    
+
 
 # ==========================================
 # 11. STRIPE PAYMENT ROUTE
@@ -818,6 +828,8 @@ def verify_payment():
     except Exception as e:
         print(f"Payment Verification Error: {e}")
         return jsonify({"msg": "Error verifying payment"}), 500
+    
+
 
 # ==========================================
 # 12. EXTENDED ADMIN ROUTES
@@ -867,6 +879,8 @@ def mark_message_read(id):
     except Exception as e:
         print("Error closing ticket:", e)
         return jsonify({"msg": "Server error"}), 500
+    
+
 
 @app.route('/api/admin/logs', methods=['GET'])
 @jwt_required()
@@ -966,6 +980,29 @@ def chat_support():
     except Exception as e:
         print(f"OpenAI API Error: {e}")
         return jsonify({"reply": "I'm having trouble connecting to the brain right now. Please try again in a moment."}), 500
+
+
+
+# ==========================================
+# 14. VERIFY CERTIFICATE ROUTE
+# ==========================================
+@app.route('/api/verify-certificate/<cert_id>', methods=['GET'])
+def verify_certificate_id(cert_id):
+    enrollment = Enrollment.query.filter_by(certificate_id=cert_id).first()
+    
+    if not enrollment:
+        return jsonify({"valid": False}), 404
+    
+    # Fetch related data
+    student = User.query.get(enrollment.user_id)
+    course = Course.query.get(enrollment.course_id)
+    
+    return jsonify({
+        "valid": True,
+        "student_name": student.name,
+        "course_title": course.title,
+        "completion_date": enrollment.completion_date.strftime('%Y-%m-%d') if enrollment.completion_date else "N/A"
+    }), 200
     
 
 
