@@ -67,9 +67,11 @@ const Dashboard = () => {
 
   // --- ACTION HANDLER ---
   const handleCourseAction = async (courseId) => {
-    // 1. IF ADMIN: Go to Course Details (Standardized Route)
+    console.log("ACTION CLICKED for Course:", courseId); // <--- DEBUG LOG
+
+    // 1. IF ADMIN: Go to Course Details
     if (isAdmin) {
-        navigate(`/courses/${courseId}`); // <--- FIX: Point to standard /courses/:id
+        navigate(`/courses/${courseId}`);
         return;
     }
 
@@ -96,12 +98,21 @@ const Dashboard = () => {
     }
   };
 
+  // --- THE DEBUGGED FUNCTION ---
   const handleStartLearning = (courseId) => {
-    // --- CRITICAL FIX ---
-    // Instead of '/learn/text/...', go to '/courses/...'
-    // This loads CourseView, which checks enrollment and THEN loads the Player.
-    navigate(`/courses/${courseId}`); 
+    console.log(">>> START LEARNING CLICKED <<<");
+    console.log("Target Course ID:", courseId);
+
+    // METHOD A: Standard React Router
+    // navigate(`/courses/${courseId}`);
+
+    // METHOD B: HARD RELOAD (Forces browser to go there)
+    // This proves if the issue is React Router or the Button itself.
+    const targetUrl = `/courses/${courseId}`;
+    console.log("Navigating to:", targetUrl);
+    window.location.href = targetUrl; 
   };
+  // ----------------------------
 
   const handleViewCertificate = (courseId) => {
     navigate(`/certificate/${courseId}`);
@@ -146,7 +157,7 @@ const Dashboard = () => {
         <>
           {/* HEADER */}
           <div className="bg-black pt-32 pb-12 text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3" />
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none" /> {/* ADDED pointer-events-none */}
             
             <div className="container mx-auto px-6 relative z-10">
               <div className="flex flex-col md:flex-row justify-between items-end gap-6">
@@ -185,7 +196,10 @@ const Dashboard = () => {
                   </div>
                   <p className="text-xs text-gray-500 font-bold mb-6">{getProgress(lastActive.id)}% Complete</p>
 
-                  <button onClick={() => handleStartLearning(lastActive.id)} className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition shadow-lg shadow-red-600/20">
+                  <button 
+                    onClick={() => handleStartLearning(lastActive.id)} 
+                    className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition shadow-lg shadow-red-600/20 relative z-30 cursor-pointer" // Added z-30 and cursor-pointer
+                  >
                     <PlayCircle size={20} /> Continue Learning
                   </button>
                 </div>
@@ -285,8 +299,12 @@ const Dashboard = () => {
 
                         {isEnrolled ? (
                             <button 
-                              onClick={() => completed ? handleViewCertificate(course.id) : handleStartLearning(course.id)}
-                              className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors ${
+                              onClick={() => {
+                                console.log("GRID BUTTON CLICKED for:", course.id); // <--- DEBUG LOG
+                                if (completed) handleViewCertificate(course.id);
+                                else handleStartLearning(course.id);
+                              }}
+                              className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors relative z-10 ${
                                 completed ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-900 text-white hover:bg-black'
                               }`}
                             >
@@ -297,7 +315,7 @@ const Dashboard = () => {
                             <button 
                               onClick={() => handleCourseAction(course.id)}
                               disabled={isBuying}
-                              className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 ${
+                              className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 relative z-10 ${
                                 isAdmin 
                                     ? "bg-green-600 hover:bg-green-700 text-white shadow-green-600/20" 
                                     : "bg-red-600 hover:bg-red-700 text-white shadow-red-600/20"
