@@ -11,7 +11,7 @@
     "preview": "node node_modules/vite/bin/vite.js preview",
     "serve": "node node_modules/vite/bin/vite.js preview --port $PORT --host"
   },
-  
+
   "dependencies": {
     "axios": "^1.7.9",
     "jspdf": "^4.0.0",
