@@ -776,6 +776,49 @@ def create_checkout_session():
         print(f"Stripe Error: {e}")
         return jsonify({'error': str(e)}), 500
 
+
+# ==========================================
+# ADD THIS NEW ROUTE FOR PAYMENT VERIFICATION
+# ==========================================
+@app.route('/api/verify-payment', methods=['POST'])
+@jwt_required()
+def verify_payment():
+    user_id = get_jwt_identity()
+    data = request.json
+    session_id = data.get('session_id')
+    course_id = data.get('course_id')
+
+    if not session_id or not course_id:
+        return jsonify({"msg": "Missing session or course ID"}), 400
+
+    try:
+        # 1. Ask Stripe: "Is this session valid and paid?"
+        session = stripe.checkout.Session.retrieve(session_id)
+        
+        if session.payment_status == 'paid':
+            # 2. Check if already enrolled
+            existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+            if existing:
+                return jsonify({"msg": "Already enrolled", "status": "enrolled"}), 200
+
+            # 3. Create Enrollment
+            new_enrollment = Enrollment(
+                user_id=user_id, 
+                course_id=course_id, 
+                status='in-progress', 
+                progress=0
+            )
+            db.session.add(new_enrollment)
+            db.session.commit()
+            
+            return jsonify({"msg": "Enrollment successful!", "status": "enrolled"}), 200
+        else:
+            return jsonify({"msg": "Payment not verified"}), 400
+
+    except Exception as e:
+        print(f"Payment Verification Error: {e}")
+        return jsonify({"msg": "Error verifying payment"}), 500
+
 # ==========================================
 # 12. EXTENDED ADMIN ROUTES
 # ==========================================
