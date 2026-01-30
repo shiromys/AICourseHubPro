@@ -225,6 +225,9 @@ def login():
 # 4. CONTACT & UTILITY ROUTES
 # ==========================================
 
+# ==========================================
+#  CONTACT FORM ROUTE (FIXED)
+# ==========================================
 @app.route('/api/contact', methods=['POST'])
 def contact_form():
     data = request.json
@@ -233,26 +236,51 @@ def contact_form():
     subject = data.get('subject', 'General Inquiry')
     message = data.get('message')
 
+    # 1. Save to DB
     new_msg = ContactMessage(name=name, email=user_email, subject=subject, message=message)
     db.session.add(new_msg)
     db.session.commit()
 
+    # 2. Prepare HTML for Admin
     admin_html = f"""
     <h3>New Contact Message</h3>
     <p><strong>From:</strong> {name} ({user_email})</p>
     <p><strong>Subject:</strong> {subject}</p>
     <p><strong>Message:</strong><br>{message}</p>
     """
-    send_email("info@aicoursehubpro.com", f"New Inquiry: {subject}", admin_html)
 
-    user_html = f"""
-    <h3>Hi {name},</h3>
-    <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
-    <p>Our team will get back to you shortly.</p>
-    """
-    send_email(user_email, "We received your message", user_html)
+    # 3. SEND EMAIL TO SHIRO SUPPORT (The Fix)
+    try:
+        # Recipient = Your Gmail (Support)
+        msg = Message(f"New Inquiry: {subject}", recipients=["support@shirotechnologies.com"])
+        
+        # Sender = Your verified Info email
+        msg.sender = ("AICourseHubPro Contact", "info@aicoursehubpro.com")
+        
+        # Reply-To = The Customer (So you can hit reply directly!)
+        msg.reply_to = user_email
+        
+        msg.html = admin_html
+        mail.send(msg)
+    except Exception as e:
+        print(f"Error sending admin email: {e}")
+
+    # 4. Send Confirmation to User (Keep using your helper or use Message object)
+    try:
+        user_html = f"""
+        <h3>Hi {name},</h3>
+        <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
+        <p>Our team will get back to you shortly.</p>
+        """
+        # You can keep using your helper here if it works well for simple emails
+        # OR use the same logic as above if you want consistency.
+        send_email(user_email, "We received your message", user_html)
+    except Exception as e:
+        print(f"Error sending user confirmation: {e}")
 
     return jsonify({"msg": "Message sent and saved"}), 200
+
+
 
 # ==========================================
 # 5. USER MANAGEMENT ROUTES
