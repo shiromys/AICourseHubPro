@@ -9,7 +9,6 @@ import {
   LayoutDashboard, Search, X, Loader2, ShoppingCart 
 } from 'lucide-react';
 
-
 const Dashboard = () => {
   const navigate = useNavigate();
   
@@ -36,12 +35,10 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
-  // --- NEW: SCROLL FIX FOR TABS ---
-  // Whenever 'activeTab' changes, scroll smoothly to the top of the page
+  // Scroll to top on tab change
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [activeTab, searchQuery, selectedCategory]); 
-  // -------------------------------
 
   const fetchDashboardData = async () => {
     try {
@@ -71,9 +68,9 @@ const Dashboard = () => {
 
   // --- ACTION HANDLER ---
   const handleCourseAction = async (courseId) => {
-    // 1. IF ADMIN: Go to Course Details (Safer Route)
+    // 1. IF ADMIN: Go to Course View (Use standard route)
     if (isAdmin) {
-        navigate(`/course/${courseId}`);
+        navigate(`/courses/${courseId}`); // Fixed URL consistency
         return;
     }
 
@@ -100,9 +97,13 @@ const Dashboard = () => {
     }
   };
 
+  // --- THE FIX IS HERE ---
   const handleStartLearning = (courseId) => {
-    navigate(`/learn/text/${courseId}`); 
+    // Do NOT navigate to /learn/text/id. 
+    // Navigate to the Course Page. The Course Page will auto-load the player.
+    navigate(`/courses/${courseId}`); 
   };
+  // ----------------------
 
   const handleViewCertificate = (courseId) => {
     navigate(`/certificate/${courseId}`);
@@ -124,8 +125,6 @@ const Dashboard = () => {
   const myLearningIds = new Set(enrollments.map(e => e.id));
   const myLearning = courses.filter(c => myLearningIds.has(c.id));
   
-  // Logic: 'active' tab shows only my courses. 'all' shows everything.
-  // If myLearning is empty, we force user to see 'all' logic or show empty state.
   const baseList = activeTab === 'active' ? myLearning : courses;
   
   const displayList = baseList.filter(course => {
@@ -141,13 +140,11 @@ const Dashboard = () => {
       <Navbar />
 
       {loading ? (
-        /* --- SKELETON LOADER (New) --- */
         <div className="min-h-[80vh] flex flex-col items-center justify-center text-gray-400">
           <Loader2 className="animate-spin mb-4 text-red-600" size={48} />
           <p className="font-medium">Loading your dashboard...</p>
         </div>
       ) : (
-        /* --- MAIN CONTENT --- */
         <>
           {/* HEADER */}
           <div className="bg-black pt-32 pb-12 text-white relative overflow-hidden">
