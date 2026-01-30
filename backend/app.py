@@ -3,72 +3,62 @@ from openai import OpenAI
 from flask_cors import CORS, cross_origin
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
-# Add ContactMessage and AuditLog to imports
 from models import User, Course, Enrollment, ContactMessage, AuditLog
-import resend 
-import os
-import uuid # <--- Required for certificate ID generation
-import json
+from database import db
 from sqlalchemy import func
-import stripe
-from datetime import datetime
-from datetime import timedelta
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
+import resend 
+import os
+import uuid
+import json
+import stripe
 
-# === IMPORTS ===
-from database import db
-
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv() 
 
-app = Flask(__name__, static_folder='static')
+# Initialize Flask (Point to frontend dist for production serving)
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
-CORS(app)
 
-# --- MAIL CONFIGURATION ---
-# --- MAIL CONFIGURATION (HARDCODED FOR RESEND) ---
-app.config['MAIL_SERVER'] = 'smtp.resend.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USE_SSL'] = False
-app.config['MAIL_USERNAME'] = 'resend'  # This is always 'resend' for everyone
-
-# CRITICAL: Point this to the variable you ACTUALLY have in Railway
-app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY') 
-
-app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHub", "info@aicoursehubpro.com")
-
-mail = Mail(app)
-
-# --------------------------
+# --- CORS CONFIGURATION ---
+# Allow frontend (port 5173) to talk to backend
+CORS(app, resources={r"/api/*": {"origins": ["https://frontend-production-04f2.up.railway.app", "http://localhost:5173"]}})
 
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
 
-# Allow frontend (port 5173) to talk to backend
-# This global config handles CORS for all routes, including PUT/OPTIONS
-CORS(app, resources={r"/api/*": {"origins": "https://frontend-production-04f2.up.railway.app"}})
+# --- MAIL CONFIGURATION (HARDCODED FOR RESEND) ---
+# This forces the app to use Resend via TLS on Port 587
+app.config['MAIL_SERVER'] = 'smtp.resend.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL'] = False
+app.config['MAIL_USERNAME'] = 'resend'
+# CRITICAL: Points to the RESEND_API_KEY variable in Railway
+app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY') 
+app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHub", "info@aicoursehubpro.com")
 
-# --- SECURE CONFIG (Loaded from .env) ---
+mail = Mail(app)
+
+# --- DATABASE & SECURITY CONFIG ---
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
-# API Keys
+# --- API KEYS ---
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 resend.api_key = os.getenv("RESEND_API_KEY")
 
-# Domain
-# Use an environment variable for production, fallback to localhost for dev
+# --- DOMAIN ---
 DOMAIN = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
-# --- STANDARD CONFIG ---
+# --- FILE PATHS ---
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
 app.config['COURSES_FOLDER'] = os.path.join(app.static_folder, 'courses')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
 # Initialize Extensions
 db.init_app(app)
@@ -87,6 +77,9 @@ with app.app_context():
 # ==========================================
 
 def send_email(to_email, subject, html_content):
+    """
+    Helper using Resend SDK directly (Good for simple notifications)
+    """
     try:
         r = resend.Emails.send({
             "from": "AICourseHubPro <info@aicoursehubpro.com>", 
@@ -139,35 +132,23 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 @app.route('/api/signup', methods=['POST'])
 def signup():
     data = request.json
-    # 1. Clean the email (Lowercase + Trim Spaces)
     email = data['email'].strip().lower()
     
     if User.query.filter_by(email=email).first():
         return jsonify({"msg": "User already exists"}), 400
 
-    # 2. Force Default Hashing (Removes the problematic pbkdf2)
     hashed_pw = generate_password_hash(data['password'])
     
-    # DEBUG LOG
-    print(f"--- DEBUG: Creating User {email} with hash: {hashed_pw[:10]}... ---")
-
     new_user = User(email=email, password=hashed_pw, name=data['name'])
     db.session.add(new_user)
     db.session.commit()
 
-    # ... (User created and committed to DB above) ...
-
-    # --- SEND WELCOME EMAIL ---
+    # --- SEND WELCOME EMAIL (Using Flask-Mail) ---
     try:
         msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-        
-        # 1. Sender: Must be your verified domain in Resend
         msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com")
-        
-        # 2. Reply-To: This routes user replies to your Support Email
         msg.reply_to = "support@shirotechnologies.com" 
-        
-        msg.body = f"""Hello {name},
+        msg.body = f"""Hello {data['name']},
 
 Welcome to AICourseHub Pro! 
 
@@ -179,39 +160,25 @@ Best regards,
 The AICourseHub Team
 """
         mail.send(msg)
-        print(f"DEBUG: Email sent to {email}")
+        print(f"DEBUG: Welcome Email sent to {email}")
     except Exception as e:
         print(f"ERROR: Email sending failed: {e}")
-    # --------------------------
 
     return jsonify({"msg": "Signup successful"}), 201
-    
-    return jsonify({"msg": "User created"}), 201
-
 
 
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.json
-    # 1. Clean the email (Lowercase + Trim Spaces)
     email = data['email'].strip().lower()
     password = data['password']
-
-    print(f"--- DEBUG: Login attempt for {email} ---")
 
     user = User.query.filter_by(email=email).first()
     
     if not user:
-        print("--- DEBUG: User NOT found in Database ---")
         return jsonify({"msg": "Incorrect credentials"}), 401
 
-    # 2. Check Password
-    is_valid = check_password_hash(user.password, password)
-    
-    print(f"--- DEBUG: Password Valid? {is_valid} ---")
-    print(f"--- DEBUG: Stored Hash starts with: {user.password[:15]}... ---")
-
-    if not is_valid:
+    if not check_password_hash(user.password, password):
         return jsonify({"msg": "Incorrect credentials"}), 401
 
     if user.is_deleted:
@@ -231,9 +198,6 @@ def login():
 # 4. CONTACT & UTILITY ROUTES
 # ==========================================
 
-# ==========================================
-#  CONTACT FORM ROUTE (FIXED)
-# ==========================================
 @app.route('/api/contact', methods=['POST'])
 def contact_form():
     data = request.json
@@ -247,6 +211,13 @@ def contact_form():
     db.session.add(new_msg)
     db.session.commit()
 
+    # --- DEBUG LOGGING (Check Railway Logs!) ---
+    print("DEBUG CHECK:", flush=True)
+    print(f"Target Server: {app.config.get('MAIL_SERVER')}", flush=True)
+    print(f"Target Port: {app.config.get('MAIL_PORT')}", flush=True)
+    print(f"TLS: {app.config.get('MAIL_USE_TLS')}", flush=True)
+    # -------------------------------------------
+
     # 2. Prepare HTML for Admin
     admin_html = f"""
     <h3>New Contact Message</h3>
@@ -255,38 +226,28 @@ def contact_form():
     <p><strong>Message:</strong><br>{message}</p>
     """
 
-    # 3. SEND EMAIL TO SHIRO SUPPORT (The Fix)
+    # 3. SEND EMAIL TO SHIRO SUPPORT
     try:
-        # Recipient = Your Gmail (Support)
         msg = Message(f"New Inquiry: {subject}", recipients=["support@shirotechnologies.com"])
-        
-        # Sender = Your verified Info email
         msg.sender = ("AICourseHubPro Contact", "info@aicoursehubpro.com")
-        
-        # Reply-To = The Customer (So you can hit reply directly!)
         msg.reply_to = user_email
-        
         msg.html = admin_html
         mail.send(msg)
     except Exception as e:
         print(f"Error sending admin email: {e}")
 
-    # 4. Send Confirmation to User (Keep using your helper or use Message object)
+    # 4. Send Confirmation to User (Using Helper)
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
         <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
         <p>Our team will get back to you shortly.</p>
         """
-        # You can keep using your helper here if it works well for simple emails
-        # OR use the same logic as above if you want consistency.
         send_email(user_email, "We received your message", user_html)
     except Exception as e:
         print(f"Error sending user confirmation: {e}")
 
     return jsonify({"msg": "Message sent and saved"}), 200
-
-
 
 # ==========================================
 # 5. USER MANAGEMENT ROUTES
@@ -375,20 +336,14 @@ def get_admin_stats():
     total_students = User.query.filter_by(is_admin=False, is_deleted=False).count()
     total_courses = Course.query.filter_by(is_deleted=False).count()
 
-    # 2. Revenue Trend (Fixed Logic)
-    # Since we are in MVP mode and don't track exact "Purchase Date", 
-    # we will assume ALL revenue happened "Today" for the chart visualization.
-    # This prevents the weird "$2.90" splitting issue.
-    
+    # 2. Revenue Trend
     chart_data = []
     end_date = datetime.utcnow()
     
     for i in range(6):
-        # Days 1-6 (Past): Show 0 revenue (unless we add a real purchase_date column later)
         day_label = (end_date - timedelta(days=6-i)).strftime('%b %d')
         chart_data.append({ "name": day_label, "revenue": 0 })
 
-    # Day 7 (Today): Show Total Revenue
     chart_data.append({ 
         "name": end_date.strftime('%b %d'), 
         "revenue": int(total_revenue) 
@@ -428,7 +383,7 @@ def update_user_role(user_id):
         return jsonify({"msg": "User not found"}), 404
         
     if user.id == admin.id:
-        return jsonify({"msg": "You cannot change your own role. Ask another admin."}), 400
+        return jsonify({"msg": "Cannot change your own role. Ask another admin."}), 400
 
     data = request.json
     if 'is_admin' in data:
@@ -598,10 +553,6 @@ def enroll_free():
     return jsonify({"msg": "Enrolled successfully!"}), 201
 
 
-
-# ==========================================
-# 1. UPDATE PROGRESS & GENERATE CERTIFICATE
-# ==========================================
 @app.route('/api/update-progress', methods=['POST'])
 @jwt_required()
 def update_progress():
@@ -609,13 +560,12 @@ def update_progress():
     data = request.json
     course_id = data.get('course_id')
     status = data.get('status')
-    score = data.get('score') # Optional quiz score
+    score = data.get('score')
     
     enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
     if not enrollment:
         return jsonify({"msg": "Enrollment not found"}), 404
 
-    # Update basic fields
     if 'progress' in data:
         enrollment.progress = data['progress']
     if status:
@@ -623,20 +573,16 @@ def update_progress():
     if score is not None:
         enrollment.score = score
         
-    # Update bookmarks if provided
     if 'module_idx' in data:
         enrollment.last_module_index = data['module_idx']
     if 'lesson_idx' in data:
         enrollment.last_lesson_index = data['lesson_idx']
 
-    # --- CRITICAL FIX: Generate Certificate ID on Completion ---
-    # If completed AND no ID exists yet, generate one.
+    # Generate Certificate ID on Completion
     if enrollment.status == 'completed' and not enrollment.certificate_id:
-        # Generate a unique ID (e.g., AIC-A1B2C3D4)
         unique_id = f"AIC-{str(uuid.uuid4())[:8].upper()}"
         enrollment.certificate_id = unique_id
         enrollment.completion_date = datetime.utcnow()
-    # --------------------------------------------------------
 
     db.session.commit()
     
@@ -645,10 +591,8 @@ def update_progress():
         "certificate_id": enrollment.certificate_id
     }), 200
 
-
 @app.route('/api/verify/<string:cert_id>', methods=['GET'])
 def verify_certificate_public(cert_id):
-    # No @jwt_required() because employers need to see this without logging in
     enrollment = Enrollment.query.filter_by(certificate_id=cert_id).first()
     
     if not enrollment:
@@ -666,20 +610,15 @@ def verify_certificate_public(cert_id):
     }), 200
 
 
-
 @app.route('/api/enrollment/<int:course_id>', methods=['GET'])
 @jwt_required()
 def get_enrollment_status(course_id):
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     
-    # --- DEBUG PRINT (Check your terminal when you visit the page!) ---
     is_admin = getattr(user, 'is_admin', False) or getattr(user, 'role', '') == 'admin'
-    print(f" >>> ENROLLMENT CHECK: User {user_id} | Admin: {is_admin} | Course: {course_id}")
 
-    # --- ADMIN GOD MODE ---
     if is_admin:
-        print(" >>> GRANTING ADMIN ACCESS")
         return jsonify({
             "status": "completed",
             "progress": 100,
@@ -688,14 +627,12 @@ def get_enrollment_status(course_id):
             "score": 0,
             "certificate_id": "ADMIN_PREVIEW"
         })
-    # ----------------------
 
     enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
     
     if not enrollment: 
         return jsonify({"msg": "Not enrolled"}), 404
         
-    # Lazy Certificate Generation logic...
     if enrollment.status == 'completed' and not enrollment.certificate_id:
         unique_code = f"AIC-{uuid.uuid4().hex[:8].upper()}"
         enrollment.certificate_id = unique_code
@@ -731,7 +668,6 @@ def get_my_enrollments():
             "total_lessons": len(course.course_data.get('modules', []))
         })
     return jsonify(output)
-
 
 
 @app.route('/api/admin/transactions', methods=['GET'])
@@ -819,8 +755,6 @@ def reset_password():
         print(f"--- CRITICAL ERROR: {str(e)} ---")
         return jsonify({"msg": "Server error processing request"}), 500
     
-
-
 # ==========================================
 # 11. STRIPE PAYMENT ROUTE
 # ==========================================
@@ -865,10 +799,6 @@ def create_checkout_session():
         print(f"Stripe Error: {e}")
         return jsonify({'error': str(e)}), 500
 
-
-# ==========================================
-# ADD THIS NEW ROUTE FOR PAYMENT VERIFICATION
-# ==========================================
 @app.route('/api/verify-payment', methods=['POST'])
 @jwt_required()
 def verify_payment():
@@ -881,16 +811,13 @@ def verify_payment():
         return jsonify({"msg": "Missing session or course ID"}), 400
 
     try:
-        # 1. Ask Stripe: "Is this session valid and paid?"
         session = stripe.checkout.Session.retrieve(session_id)
         
         if session.payment_status == 'paid':
-            # 2. Check if already enrolled
             existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
             if existing:
                 return jsonify({"msg": "Already enrolled", "status": "enrolled"}), 200
 
-            # 3. Create Enrollment
             new_enrollment = Enrollment(
                 user_id=user_id, 
                 course_id=course_id, 
@@ -908,8 +835,6 @@ def verify_payment():
         print(f"Payment Verification Error: {e}")
         return jsonify({"msg": "Error verifying payment"}), 500
     
-
-
 # ==========================================
 # 12. EXTENDED ADMIN ROUTES
 # ==========================================
@@ -921,7 +846,6 @@ def get_messages():
     user = User.query.get(current_user_id)
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    # FIX: Filter by is_read=False so closed tickets don't show up again
     msgs = ContactMessage.query.filter_by(is_read=False).order_by(ContactMessage.created_at.desc()).all()
     
     output = [{
@@ -932,9 +856,6 @@ def get_messages():
     } for m in msgs]
     return jsonify(output)
 
-
-
-# --- THIS WAS THE BROKEN FUNCTION. IT IS NOW FIXED. ---
 @app.route('/api/admin/messages/<int:id>/read', methods=['PUT'])
 @jwt_required()
 def mark_message_read(id):
@@ -942,8 +863,6 @@ def mark_message_read(id):
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
         
-        # Security Check: Ensure only Admins can do this
-        # FIX: Changed 'user.role' to 'user.is_admin'
         if not user or not user.is_admin:
             return jsonify({"msg": "Admin access required"}), 403
 
@@ -959,8 +878,6 @@ def mark_message_read(id):
         print("Error closing ticket:", e)
         return jsonify({"msg": "Server error"}), 500
     
-
-
 @app.route('/api/admin/logs', methods=['GET'])
 @jwt_required()
 def get_audit_logs():
@@ -982,15 +899,10 @@ def get_audit_logs():
     } for l in logs]
     return jsonify(output)
 
-
-
 # ==========================================
 # 13. AI CHATBOT ROUTE (REAL-TIME)
 # ==========================================
 
-# --- KNOWLEDGE BASE ---
-# The AI uses this text to answer user questions. 
-# Update this string to teach the bot new things about your platform.
 KNOWLEDGE_BASE = """
 You are Nova, the professional AI support assistant for AICourseHubPro.
 
@@ -1032,25 +944,23 @@ def chat_support():
     data = request.json
     user_message = data.get('message', '')
     
-    # 1. Get API Key from Environment
     api_key = os.getenv("OPENAI_API_KEY")
     
     if not api_key:
         print("CRITICAL: OPENAI_API_KEY is missing from .env file.")
         return jsonify({"reply": "System Error: Chat is currently unavailable. Please contact support."}), 500
 
-    # 2. Call OpenAI API
     try:
         client = OpenAI(api_key=api_key)
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini", # Fast, cheap, and smart enough for support
+            model="gpt-4o-mini", 
             messages=[
                 {"role": "system", "content": KNOWLEDGE_BASE},
                 {"role": "user", "content": user_message}
             ],
-            max_tokens=200, # Limit response length
-            temperature=0.5 # Lower temperature = more factual/consistent
+            max_tokens=200, 
+            temperature=0.5 
         )
         
         ai_reply = response.choices[0].message.content
@@ -1059,8 +969,6 @@ def chat_support():
     except Exception as e:
         print(f"OpenAI API Error: {e}")
         return jsonify({"reply": "I'm having trouble connecting to the brain right now. Please try again in a moment."}), 500
-
-
 
 # ==========================================
 # 14. VERIFY CERTIFICATE ROUTE
@@ -1072,7 +980,6 @@ def verify_certificate_id(cert_id):
     if not enrollment:
         return jsonify({"valid": False}), 404
     
-    # Fetch related data
     student = User.query.get(enrollment.user_id)
     course = Course.query.get(enrollment.course_id)
     
@@ -1083,8 +990,6 @@ def verify_certificate_id(cert_id):
         "completion_date": enrollment.completion_date.strftime('%Y-%m-%d') if enrollment.completion_date else "N/A"
     }), 200
     
-
-
 if __name__ == '__main__':
     print("Starting Flask Server on Port 5000...")
     app.run(debug=True, port=5000)
