@@ -35,7 +35,6 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
-  // Scroll to top on tab change
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [activeTab, searchQuery, selectedCategory]); 
@@ -68,9 +67,9 @@ const Dashboard = () => {
 
   // --- ACTION HANDLER ---
   const handleCourseAction = async (courseId) => {
-    // 1. IF ADMIN: Go to Course View (Use standard route)
+    // 1. IF ADMIN: Go to Course Details (Standardized Route)
     if (isAdmin) {
-        navigate(`/courses/${courseId}`); // Fixed URL consistency
+        navigate(`/courses/${courseId}`); // <--- FIX: Point to standard /courses/:id
         return;
     }
 
@@ -97,13 +96,12 @@ const Dashboard = () => {
     }
   };
 
-  // --- THE FIX IS HERE ---
   const handleStartLearning = (courseId) => {
-    // Do NOT navigate to /learn/text/id. 
-    // Navigate to the Course Page. The Course Page will auto-load the player.
+    // --- CRITICAL FIX ---
+    // Instead of '/learn/text/...', go to '/courses/...'
+    // This loads CourseView, which checks enrollment and THEN loads the Player.
     navigate(`/courses/${courseId}`); 
   };
-  // ----------------------
 
   const handleViewCertificate = (courseId) => {
     navigate(`/certificate/${courseId}`);
