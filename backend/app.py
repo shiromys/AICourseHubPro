@@ -198,6 +198,9 @@ def login():
 # 4. CONTACT & UTILITY ROUTES
 # ==========================================
 
+# ==========================================
+#  CONTACT FORM ROUTE (Switched to Resend API)
+# ==========================================
 @app.route('/api/contact', methods=['POST'])
 def contact_form():
     data = request.json
@@ -211,13 +214,6 @@ def contact_form():
     db.session.add(new_msg)
     db.session.commit()
 
-    # --- DEBUG LOGGING (Check Railway Logs!) ---
-    print("DEBUG CHECK:", flush=True)
-    print(f"Target Server: {app.config.get('MAIL_SERVER')}", flush=True)
-    print(f"Target Port: {app.config.get('MAIL_PORT')}", flush=True)
-    print(f"TLS: {app.config.get('MAIL_USE_TLS')}", flush=True)
-    # -------------------------------------------
-
     # 2. Prepare HTML for Admin
     admin_html = f"""
     <h3>New Contact Message</h3>
@@ -226,28 +222,33 @@ def contact_form():
     <p><strong>Message:</strong><br>{message}</p>
     """
 
-    # 3. SEND EMAIL TO SHIRO SUPPORT
+    # 3. SEND VIA RESEND API (Bypasses SMTP Timeout)
     try:
-        msg = Message(f"New Inquiry: {subject}", recipients=["support@shirotechnologies.com"])
-        msg.sender = ("AICourseHubPro Contact", "info@aicoursehubpro.com")
-        msg.reply_to = user_email
-        msg.html = admin_html
-        mail.send(msg)
+        resend.Emails.send({
+            "from": "AICourseHubPro Contact <info@aicoursehubpro.com>",
+            "to": "support@shirotechnologies.com",
+            "subject": f"New Inquiry: {subject}",
+            "reply_to": user_email, # This ensures replies go to the customer
+            "html": admin_html
+        })
+        print(f"DEBUG: Contact email sent via API")
     except Exception as e:
         print(f"Error sending admin email: {e}")
 
-    # 4. Send Confirmation to User (Using Helper)
+    # 4. Send Confirmation to User (Using your existing helper)
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
         <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
         <p>Our team will get back to you shortly.</p>
         """
+        # This helper already uses the Resend API, so it works fine!
         send_email(user_email, "We received your message", user_html)
     except Exception as e:
         print(f"Error sending user confirmation: {e}")
 
     return jsonify({"msg": "Message sent and saved"}), 200
+
 
 # ==========================================
 # 5. USER MANAGEMENT ROUTES
