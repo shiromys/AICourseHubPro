@@ -79,7 +79,7 @@ with app.app_context():
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
     """
     Updated helper that allows changing the 'From' address.
-    Default is still info@aicoursehubpro.com
+    Default is info@aicoursehubpro.com
     """
     try:
         r = resend.Emails.send({
@@ -93,6 +93,8 @@ def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", se
     except Exception as e:
         print(f"Failed to send email to {to_email}: {e}")
         return False
+
+
 
 def get_email_template(title, body_content, button_text=None, button_url=None):
     button_html = ""
@@ -210,7 +212,7 @@ def contact_form():
     subject = data.get('subject', 'General Inquiry')
     message = data.get('message')
 
-    # 1. Save to Database
+    # 1. Save to DB
     new_msg = ContactMessage(name=name, email=user_email, subject=subject, message=message)
     db.session.add(new_msg)
     db.session.commit()
@@ -223,20 +225,32 @@ def contact_form():
     <p><strong>Message:</strong><br>{message}</p>
     """
 
-    # 3. SEND TO INFO (The Fix)
-    # Sending to 'info@' forces Gmail to see it as an alias email, 
-    # so it replies AS that alias.
+    # 3. SEND NOTIFICATION (From No-Reply -> TO INFO)
+    # This triggers your Gmail to see "To: info@aicoursehubpro.com"
     try:
         resend.Emails.send({
             "from": "AICourseHubPro Contact <no-reply@aicoursehubpro.com>",
-            "to": "support@aicoursehubpro.com",  # <--- Destination: Support
+            "to": "info@aicoursehubpro.com",  # <--- Destination is INFO
             "subject": f"New Inquiry: {subject}",
             "reply_to": user_email, 
             "html": admin_html
         })
-        print(f"DEBUG: Contact email sent via API")
     except Exception as e:
         print(f"Error sending admin email: {e}")
+
+    # 4. CONFIRMATION TO USER (From Info)
+    try:
+        user_html = f"""
+        <h3>Hi {name},</h3>
+        <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
+        <p>Our team will get back to you shortly.</p>
+        """
+        # Uses default 'info@aicoursehubpro.com'
+        send_email(user_email, "We received your message", user_html)
+    except Exception as e:
+        print(f"Error sending user confirmation: {e}")
+
+    return jsonify({"msg": "Message sent and saved"}), 200
 
     # 4. Send Confirmation to User
     try:
@@ -733,7 +747,7 @@ def forgot_password():
             subject="Password Reset Request", 
             html_content=email_content,
             sender_name="AICourseHub Security",
-            sender_email="no-reply@aicoursehubpro.com"  # <--- The Update
+            sender_email="no-reply@aicoursehubpro.com" # <--- Sends from No-Reply
         )
         
     except Exception as e:
@@ -808,6 +822,8 @@ def create_checkout_session():
     except Exception as e:
         print(f"Stripe Error: {e}")
         return jsonify({'error': str(e)}), 500
+    
+
 
 @app.route('/api/verify-payment', methods=['POST'])
 @jwt_required()
@@ -837,7 +853,7 @@ def verify_payment():
             db.session.add(new_enrollment)
             db.session.commit()
 
-            # --- SEND WELCOME EMAIL (No-Reply) ---
+            # --- SEND WELCOME EMAIL (From No-Reply) ---
             try:
                 user = User.query.get(user_id)
                 course = Course.query.get(course_id)
@@ -856,6 +872,7 @@ def verify_payment():
                         button_url=f"{DOMAIN}/dashboard"
                     )
                     
+                    # Uses the updated helper to send from NO-REPLY
                     send_email(
                         to_email=user.email,
                         subject=f"Welcome to {course.title}",
@@ -865,7 +882,7 @@ def verify_payment():
                     )
             except Exception as e:
                 print(f"Payment welcome email failed: {e}")
-            # -------------------------------------
+            # ------------------------------------------
             
             return jsonify({"msg": "Enrollment successful!", "status": "enrolled"}), 200
         else:
@@ -874,6 +891,8 @@ def verify_payment():
     except Exception as e:
         print(f"Payment Verification Error: {e}")
         return jsonify({"msg": "Error verifying payment"}), 500
+    
+
     
 # ==========================================
 # 12. EXTENDED ADMIN ROUTES
