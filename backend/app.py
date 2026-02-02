@@ -209,7 +209,7 @@ def contact_form():
     subject = data.get('subject', 'General Inquiry')
     message = data.get('message')
 
-    # 1. Save to DB
+    # 1. Save to Database
     new_msg = ContactMessage(name=name, email=user_email, subject=subject, message=message)
     db.session.add(new_msg)
     db.session.commit()
@@ -222,27 +222,28 @@ def contact_form():
     <p><strong>Message:</strong><br>{message}</p>
     """
 
-    # 3. SEND VIA RESEND API (Bypasses SMTP Timeout)
+    # 3. SEND TO INFO (The Fix)
+    # Sending to 'info@' forces Gmail to see it as an alias email, 
+    # so it replies AS that alias.
     try:
         resend.Emails.send({
             "from": "AICourseHubPro Contact <info@aicoursehubpro.com>",
-            "to": "support@shirotechnologies.com",
+            "to": "info@aicoursehubpro.com",  # <--- CHANGED FROM SUPPORT TO INFO
             "subject": f"New Inquiry: {subject}",
-            "reply_to": user_email, # This ensures replies go to the customer
+            "reply_to": user_email, 
             "html": admin_html
         })
         print(f"DEBUG: Contact email sent via API")
     except Exception as e:
         print(f"Error sending admin email: {e}")
 
-    # 4. Send Confirmation to User (Using your existing helper)
+    # 4. Send Confirmation to User
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
         <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
         <p>Our team will get back to you shortly.</p>
         """
-        # This helper already uses the Resend API, so it works fine!
         send_email(user_email, "We received your message", user_html)
     except Exception as e:
         print(f"Error sending user confirmation: {e}")
