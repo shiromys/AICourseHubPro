@@ -76,13 +76,14 @@ with app.app_context():
 # 2. HELPER FUNCTIONS
 # ==========================================
 
-def send_email(to_email, subject, html_content):
+def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
     """
-    Helper using Resend SDK directly (Good for simple notifications)
+    Updated helper that allows changing the 'From' address.
+    Default is still info@aicoursehubpro.com
     """
     try:
         r = resend.Emails.send({
-            "from": "AICourseHubPro <info@aicoursehubpro.com>", 
+            "from": f"{sender_name} <{sender_email}>", 
             "to": to_email,
             "subject": subject,
             "html": html_content
@@ -227,8 +228,8 @@ def contact_form():
     # so it replies AS that alias.
     try:
         resend.Emails.send({
-            "from": "AICourseHubPro Contact <info@aicoursehubpro.com>",
-            "to": "support@shirotechnologies.com",
+            "from": "AICourseHubPro Contact <no-reply@aicoursehubpro.com>",
+            "to": "support@aicoursehubpro.com",  # <--- Destination: Support
             "subject": f"New Inquiry: {subject}",
             "reply_to": user_email, 
             "html": admin_html
@@ -726,7 +727,14 @@ def forgot_password():
             button_url=reset_link
         )
         
-        send_email(user.email, "Password Reset Request", email_content)
+        # CHANGED: Now sends from 'No-Reply'
+        send_email(
+            to_email=user.email, 
+            subject="Password Reset Request", 
+            html_content=email_content,
+            sender_name="AICourseHub Security",
+            sender_email="no-reply@aicoursehubpro.com"  # <--- The Update
+        )
         
     except Exception as e:
         print(f"Password reset email failed: {e}")
@@ -828,6 +836,36 @@ def verify_payment():
             )
             db.session.add(new_enrollment)
             db.session.commit()
+
+            # --- SEND WELCOME EMAIL (No-Reply) ---
+            try:
+                user = User.query.get(user_id)
+                course = Course.query.get(course_id)
+                
+                if user and course:
+                    html_body = f"""
+                    <p>Hi {user.name},</p>
+                    <p>Thank you for your purchase! You have successfully enrolled in <strong>{course.title}</strong>.</p>
+                    <p>You can verify your payment receipt directly from Stripe (sent separately).</p>
+                    """
+                    
+                    email_content = get_email_template(
+                        title="Payment Successful! 🎓",
+                        body_content=html_body,
+                        button_text="Start Learning",
+                        button_url=f"{DOMAIN}/dashboard"
+                    )
+                    
+                    send_email(
+                        to_email=user.email,
+                        subject=f"Welcome to {course.title}",
+                        html_content=email_content,
+                        sender_name="AICourseHub Automated",
+                        sender_email="no-reply@aicoursehubpro.com"
+                    )
+            except Exception as e:
+                print(f"Payment welcome email failed: {e}")
+            # -------------------------------------
             
             return jsonify({"msg": "Enrollment successful!", "status": "enrolled"}), 200
         else:
