@@ -228,7 +228,7 @@ def contact_form():
     try:
         resend.Emails.send({
             "from": "AICourseHubPro Contact <info@aicoursehubpro.com>",
-            "to": "info@aicoursehubpro.com",  # <--- CHANGED FROM SUPPORT TO INFO
+            "to": "support@shirotechnologies.com",
             "subject": f"New Inquiry: {subject}",
             "reply_to": user_email, 
             "html": admin_html
