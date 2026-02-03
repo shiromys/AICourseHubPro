@@ -23,7 +23,17 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
 # Allow frontend (port 5173) to talk to backend
-CORS(app, resources={r"/api/*": {"origins": ["https://frontend-production-04f2.up.railway.app", "http://localhost:5173", "https://www.aicoursehubpro.com", "https://aicoursehubpro.com"]}})
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "https://frontend-production-04f2.up.railway.app",
+            "http://localhost:5173",
+            "https://www.aicoursehubpro.com",
+            "https://aicoursehubpro.com"
+        ],
+        "supports_credentials": True  # <--- THIS IS CRITICAL FOR LOGIN
+    }
+})
 
 # ==========================================
 # 1. CONFIGURATION
