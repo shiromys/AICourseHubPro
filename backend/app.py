@@ -618,6 +618,7 @@ def update_progress():
         "certificate_id": enrollment.certificate_id
     }), 200
 
+
 @app.route('/api/verify/<string:cert_id>', methods=['GET'])
 def verify_certificate_public(cert_id):
     enrollment = Enrollment.query.filter_by(certificate_id=cert_id).first()

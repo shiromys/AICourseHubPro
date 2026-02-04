@@ -43,7 +43,6 @@ const TextCoursePlayer = () => {
 
         // 2. Fetch User's Bookmark (Resume logic)
         try {
-          // --- FIX 1: Use API_BASE_URL instead of localhost ---
           const progressRes = await axios.get(`${API_BASE_URL}/api/enrollment/${id}`, {
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -90,7 +89,6 @@ const TextCoursePlayer = () => {
         if (progressPercent > 90) progressPercent = 90;
       }
 
-      // --- FIX 2: Use API_BASE_URL instead of localhost ---
       await axios.post(`${API_BASE_URL}/api/update-progress`, {
         course_id: course.id,
         progress: progressPercent,
@@ -278,23 +276,34 @@ const TextCoursePlayer = () => {
                   {/* VIDEO RENDERER */}
                   {currentLesson.type === 'video' && (
                       <div className="aspect-video w-full bg-black rounded-xl overflow-hidden shadow-lg mb-8">
-                         <iframe 
+                          <iframe 
                            src={currentLesson.content} 
                            className="w-full h-full" 
                            frameBorder="0" 
                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                            allowFullScreen 
                            title="Video Player"
-                         ></iframe>
+                          ></iframe>
                       </div>
                   )}
 
-                  {/* TEXT RENDERER */}
+                  {/* TEXT RENDERER (Updated to handle Lists) */}
                   {currentLesson.type === 'text' && (
-                      <div 
-                        className="prose prose-lg max-w-none text-gray-700 prose-headings:font-bold prose-a:text-red-600"
-                        dangerouslySetInnerHTML={{ __html: currentLesson.content || '<p>No content available.</p>' }} 
-                      />
+                    <div className="prose prose-lg max-w-none text-gray-700 prose-headings:font-bold prose-a:text-red-600">
+                      {Array.isArray(currentLesson.content) ? (
+                        /* If content is a List (New Format), render bullet points */
+                        <ul className="space-y-4 list-disc pl-6">
+                          {currentLesson.content.map((point, i) => (
+                            <li key={i} className="leading-relaxed text-gray-800">
+                              {point}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        /* If content is Text (Old Format), render normally */
+                        <div dangerouslySetInnerHTML={{ __html: currentLesson.content || '<p>No content available.</p>' }} />
+                      )}
+                    </div>
                   )}
 
                   {/* QUIZ RENDERER */}
@@ -316,7 +325,7 @@ const TextCoursePlayer = () => {
                           <div className="flex gap-4 pt-4">
                             <button onClick={resetQuiz} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
                             
-                            {/* UPDATED BUTTON: Redirects to New Certificate Page */}
+                            {/* Certificate Redirect */}
                             {passed && (
                               <button 
                                 onClick={() => navigate(`/certificate/${course.id}`)}
