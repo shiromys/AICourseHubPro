@@ -25,7 +25,7 @@ const Home = () => {
   const [textIndex, setTextIndex] = useState(0);
   const [charIndex, setCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
-  const typingWords = ["Human Resources", "Automation", "Education", "Business Analytics"];
+  const typingWords = ["Human Resources", "Public Services","Automation", "Education", "Business"];
   const [userCount, setUserCount] = useState(0);
   const targetCount = 1000;
   const [openFaq, setOpenFaq] = useState(null);
@@ -167,7 +167,7 @@ const Home = () => {
           <div className="flex w-[200%] animate-marquee group-hover:[animation-play-state:paused]">
             {[...Array(2)].map((_, i) => (
               <div key={i} className="flex justify-around w-1/2 shrink-0 gap-10 px-10">
-                 {['GOOGLE', 'AMAZON', 'MICROSOFT', 'OPENAI', 'TESLA', 'NETFLIX', 'SPOTIFY'].map(company => (
+                 {['DELOITTE', 'EY', 'ACCENTURE', 'IBM', 'SALESFORCE', 'ADOBE', 'SPOTIFY'].map(company => (
                    <span key={company} className="text-3xl md:text-4xl font-black text-gray-300 select-none hover:text-black transition-colors cursor-default">
                      {company}
                    </span>
@@ -189,7 +189,7 @@ const Home = () => {
             {[
               { title: "10x Productivity", desc: "Automate manual work. Learn to draft emails, analyze data, and code in minutes.", icon: "M13 10V3L4 14h7v7l9-11h-7z" },
               { title: "Verified Certificates", desc: "Prove your skills. Earn verifiable certificates after passing rigorous exams.", icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" },
-              { title: "Interactive Labs", desc: "Theory is boring. Practice with real-time AI simulations designed for your job.", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" }
+              { title: "Flexible Course study", desc: "Flexible, self-paced learning that transforms theory into engaging, practical knowledge.", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" }
             ].map((feature, idx) => (
               <div key={idx} className="bg-white p-8 rounded-2xl shadow-sm border border-gray-200 hover:shadow-xl hover:border-red-600 hover:-translate-y-2 transition-all duration-300 group">
                 <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center text-gray-600 mb-6 group-hover:bg-red-600 group-hover:text-white transition-colors">
@@ -285,7 +285,7 @@ const Home = () => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               { name: "Sarah J.", role: "HR Manager", text: "I used to spend 4 hours writing JDs. Now I do it in 5 minutes. This course paid for itself in a week." },
-              { name: "Mike T.", role: "Senior Dev", text: "The 'AI for Developers' track is legit. It helped me set up Copilot properly and double my coding speed." },
+              { name: "Mike T.", role: "Senior Dev", text: "The 'Prompting for Automation' course is legit. It helped me set up Copilot properly and double my coding speed." },
               { name: "Anita R.", role: "Non-Profit Lead", text: "Finally, AI explained simply. I'm now using ChatGPT to write grant proposals and it's working!" },
             ].map((t, i) => (
               <div key={i} className="bg-gray-800 p-8 rounded-xl border border-gray-700 hover:border-red-500 transition-all">
@@ -313,7 +313,7 @@ const Home = () => {
               { q: "Do I need coding experience?", a: "Not at all. Our HR, Business, and Marketing tracks are 100% code-free. We focus on 'Prompt Engineering' using English." },
               { q: "Is the certificate recognized?", a: "Yes. Our certificates are verifiable and used by professionals to showcase skills on LinkedIn and resumes." },
               { q: "How long are the courses?", a: "Most courses are designed to be completed in 2-4 hours. They are self-paced, so you can learn whenever you have time." },
-              { q: "Can I get a refund?", a: "We offer a 7-day money-back guarantee if you are not satisfied with the course content." },
+              { q: "Can I get a refund?", a: "We do not offer any refunds. However, special cases if proven genuine can be considered for a refund. Please contact info@aicoursehubpro.com to more information." },
             ].map((item, i) => (
               <div key={i} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
                 <button onClick={() => toggleFaq(i)} className="w-full flex justify-between items-center p-5 hover:bg-gray-50 transition text-left">
