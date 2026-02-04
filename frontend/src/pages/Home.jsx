@@ -35,12 +35,12 @@ const Home = () => {
 
   // Course Categories Data
   const categories = [
-    { title: "AI for HR", icon: "👥" },
+    { title: "AI in HR", icon: "👥" },
     { title: "Prompt Engineering", icon: "💬" },
-    { title: "AI for Developers", icon: "💻" },
-    { title: "Marketing & SEO", icon: "📈" },
-    { title: "Business Strategy", icon: "📊" },
-    { title: "AI Ethics & Law", icon: "⚖️" },
+    { title: "AI in Automation", icon: "💻" },
+    { title: "Local Government & Public Services", icon: "📈" },
+    { title: "Business & Analytics", icon: "📊" },
+    { title: "Non-Profits and Social Impact", icon: "⚖️" },
   ];
 
   // Carousel Logic (Show 3 at a time)
@@ -313,7 +313,7 @@ const Home = () => {
               { q: "Do I need coding experience?", a: "Not at all. Our HR, Business, and Marketing tracks are 100% code-free. We focus on 'Prompt Engineering' using English." },
               { q: "Is the certificate recognized?", a: "Yes. Our certificates are verifiable and used by professionals to showcase skills on LinkedIn and resumes." },
               { q: "How long are the courses?", a: "Most courses are designed to be completed in 2-4 hours. They are self-paced, so you can learn whenever you have time." },
-              { q: "Can I get a refund?", a: "We do not offer any refunds. However, special cases if proven genuine can be considered for a refund. Please contact info@aicoursehubpro.com to more information." },
+              { q: "Can I get a refund?", a: "We do not offer any refunds. However, special cases if proven genuine can be considered for a refund. Please contact info@aicoursehubpro.com for more information." },
             ].map((item, i) => (
               <div key={i} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm">
                 <button onClick={() => toggleFaq(i)} className="w-full flex justify-between items-center p-5 hover:bg-gray-50 transition text-left">
