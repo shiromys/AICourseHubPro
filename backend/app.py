@@ -1060,5 +1060,8 @@ def verify_certificate_id(cert_id):
     }), 200
     
 if __name__ == '__main__':
-    print("Starting Flask Server on Port 5000...")
-    app.run(debug=True, port=5000)
+    # Get the PORT from Railway (default to 8080 if not found)
+    port = int(os.environ.get("PORT", 8080))
+    
+    # LISTEN ON 0.0.0.0 <-- This is the magic fix
+    app.run(host='0.0.0.0', port=port)
