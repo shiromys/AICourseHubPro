@@ -83,10 +83,7 @@ const Pricing = () => {
                   <Check size={20} className="text-green-500" /> Verifiable Certificate
                 </li>
                 <li className="flex items-center gap-3">
-                  <Check size={20} className="text-green-500" /> 3 Interactive Labs
-                </li>
-                <li className="flex items-center gap-3">
-                  <Check size={20} className="text-green-500" /> Course Resources PDF
+                  <Check size={20} className="text-green-500" /> Regular Email Support
                 </li>
               </ul>
 
@@ -117,19 +114,16 @@ const Pricing = () => {
 
               <ul className="space-y-4 mb-10 text-gray-300 font-medium relative z-10">
                 <li className="flex items-center gap-3">
-                  <Check size={20} className="text-red-500" /> <span className="text-white font-bold">Access to ALL 50+ Courses</span>
+                  <Check size={20} className="text-red-500" /> <span className="text-white font-bold">Access to ALL Courses for Lifetime</span>
                 </li>
                 <li className="flex items-center gap-3">
-                  <Check size={20} className="text-red-500" /> Future Course Updates (Free)
+                  <Check size={20} className="text-red-500" /> Verifiable Certificate
                 </li>
                 <li className="flex items-center gap-3">
                   <Check size={20} className="text-red-500" /> Priority Support
                 </li>
                 <li className="flex items-center gap-3">
-                  <Check size={20} className="text-red-500" /> Resume Review Session
-                </li>
-                <li className="flex items-center gap-3">
-                  <Check size={20} className="text-red-500" /> Exclusive Community Access
+                  <Check size={20} className="text-red-500" /> Future Course Updates (Free)
                 </li>
               </ul>
 
