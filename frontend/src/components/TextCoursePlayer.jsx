@@ -101,7 +101,8 @@ const TextCoursePlayer = () => {
       });
       
     } catch (error) {
-      console.error("Failed to save progress:", error);
+      // If 404 persists, we catch it here so it doesn't crash the app
+      console.error("Failed to save progress (server might be updating):", error);
     }
   };
 
