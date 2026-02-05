@@ -170,7 +170,7 @@ Your account has been successfully created. You can now log in to start your cou
 Login here: https://aicoursehubpro.com/login
 
 Best regards,
-The AICourseHub Team
+Team AICourseHubPro
 """
         mail.send(msg)
         print(f"DEBUG: Welcome Email sent to {email}")
@@ -252,8 +252,9 @@ def contact_form():
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
-        <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
-        <p>Our team will get back to you shortly.</p>
+        <p>Thank you for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
+        <p>Our team will get back to you on this, shortly.</p>
+        <p>We appreciate your patience in this regard.</p>
         """
         # Uses default 'info@aicoursehubpro.com'
         send_email(user_email, "We received your message", user_html)

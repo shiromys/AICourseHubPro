@@ -151,8 +151,8 @@ const Pricing = () => {
           <div className="space-y-6">
             {[
               { q: "Is this a monthly subscription?", a: "No! We hate subscriptions too. You pay once and own the content forever." },
-              { q: "Can I upgrade later?", a: "Yes. If you buy a single course and decide to upgrade to the bundle later, contact support for a discount." },
-              { q: "Do you offer refunds?", a: "We offer a 7-day money-back guarantee if you have completed less than 30% of the course." },
+              { q: "Can I upgrade later?", a: "Yes. If you buy a single course and decide to upgrade to the bundle later." },
+              { q: "Do you offer refunds?", a: "No, we do not offer any refunds excluding special cases such as doule payments." },
               { q: "Are the certificates accredited?", a: "Our certificates are industry-recognized and verifiable via a unique ID, perfect for LinkedIn." },
             ].map((faq, i) => (
               <div key={i} className="border-b border-gray-100 pb-6">
