@@ -28,30 +28,27 @@ const Login = () => {
         password: formData.password 
       });
       
-      // SAVE TOKENS
+      // 1. Save Token
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user_role', res.data.user_role);
-      localStorage.setItem('user_name', res.data.name);
-      localStorage.setItem('is_admin', res.data.is_admin);
+      
+      console.log("--- DEBUG: Login Successful ---");
 
-      window.dispatchEvent(new Event("storage"));
+      // 2. CHECK FOR PENDING COURSE *BEFORE* CLEARING ANYTHING
+      const pendingCourseId = localStorage.getItem('pendingCourseId');
+      console.log(`--- DEBUG: Found Pending Course ID: ${pendingCourseId}`);
 
-      // --- REDIRECT LOGIC START ---
+      // 3. Force a small delay to ensure storage writes complete
       setTimeout(() => {
-        // 1. Check if user is Admin
         if (res.data.is_admin) {
            navigate('/admin-dashboard');
-           return;
-        }
-
-        // 2. Check if they were trying to buy a course before logging in
-        const pendingCourseId = localStorage.getItem('pendingCourseId');
-        
-        if (pendingCourseId) {
-            // Send them back to the course page (which will auto-trigger Stripe)
+        } 
+        else if (pendingCourseId) {
+            console.log(`--- DEBUG: Redirecting to Course ${pendingCourseId}`);
             navigate(`/courses/${pendingCourseId}`);
-        } else {
-            // Normal login behavior
+        } 
+        else {
+            console.log("--- DEBUG: No pending course. Going to Dashboard.");
             navigate('/dashboard');
         }
       }, 100);

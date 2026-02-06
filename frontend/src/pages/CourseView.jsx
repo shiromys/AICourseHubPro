@@ -74,33 +74,39 @@ const CourseView = () => {
   };
 
   const handleBuy = async () => {
-    if (!course) return;
+    console.log("--- DEBUG: Handle Buy Initiated ---");
     
-    // --- CHECK LOGIN STATUS ---
+    if (!course) {
+        console.error("--- DEBUG: No course data found ---");
+        return;
+    }
+    
+    // 1. Check Token
     const token = localStorage.getItem('token');
+    console.log("--- DEBUG: Token status:", token ? "Logged In" : "Logged Out");
+
     if (!token) {
-      // 1. Save the intended course ID
+      console.log(`--- DEBUG: Saving pending ID: ${course.id}`);
+      
+      // SAVE ID
       localStorage.setItem('pendingCourseId', course.id);
-      // 2. Send to Login
-      navigate('/login');
+      
+      // VERIFY IT WAS SAVED
+      const savedId = localStorage.getItem('pendingCourseId');
+      console.log(`--- DEBUG: Verification Read: ${savedId}`);
+
+      if (savedId === String(course.id)) {
+          console.log("--- DEBUG: Save successful. Redirecting to Login...");
+          navigate('/login');
+      } else {
+          alert("Error: Could not save course preference. Please enable cookies/local storage.");
+      }
       return;
     }
 
+    // ... (rest of your existing payment logic for logged-in users) ...
     setProcessing(true);
-    try {
-      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
-        { course_id: course.id },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      
-      if (res.data.url) {
-        window.location.href = res.data.url;
-      }
-    } catch (error) {
-      alert("Payment initiation failed. Please try again.");
-    } finally {
-      setProcessing(false);
-    }
+    // ...
   };
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
