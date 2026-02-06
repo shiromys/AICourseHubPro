@@ -13,3 +13,8 @@ export default defineConfig({
     allowedHosts: true, // <--- THIS FIXES YOUR ERROR. It allows any domain to access the site.
   },
 })
+
+
+
+
+// Force rebuild 1

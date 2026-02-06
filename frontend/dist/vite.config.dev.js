@@ -26,7 +26,8 @@ var _default = (0, _vite.defineConfig)({
     allowedHosts: true // <--- THIS FIXES YOUR ERROR. It allows any domain to access the site.
 
   }
-});
+}); // Force rebuild 1
+
 
 exports["default"] = _default;
 //# sourceMappingURL=vite.config.dev.js.map
