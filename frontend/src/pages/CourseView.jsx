@@ -21,26 +21,19 @@ const CourseView = () => {
     checkEnrollmentStatus();
   }, [id]);
 
-  // --- NEW: AUTO-TRIGGER PAYMENT AFTER LOGIN ---
+  // --- AUTO-TRIGGER PAYMENT AFTER LOGIN ---
   useEffect(() => {
-    // Wait until course is loaded and user is not enrolled
     if (course && !isEnrolled && !loading) {
       const pendingId = localStorage.getItem('pendingCourseId');
       const token = localStorage.getItem('token');
 
-      // If user is logged in AND they have a pending buy for THIS course
+      // If logged in AND coming back for this specific course
       if (token && pendingId === String(course.id)) {
-        console.log("Found pending purchase, auto-triggering Stripe...");
-        
-        // 1. Clear the flag immediately so it doesn't loop
-        localStorage.removeItem('pendingCourseId');
-        
-        // 2. Trigger the buy function
-        handleBuy(); 
+        localStorage.removeItem('pendingCourseId'); // Clear flag
+        handleBuy(); // Trigger payment
       }
     }
   }, [course, isEnrolled, loading]);
-  // ---------------------------------------------
 
   const fetchCourseData = async () => {
     try {
@@ -74,39 +67,34 @@ const CourseView = () => {
   };
 
   const handleBuy = async () => {
-    console.log("--- DEBUG: Handle Buy Initiated ---");
-    
-    if (!course) {
-        console.error("--- DEBUG: No course data found ---");
-        return;
-    }
+    if (!course) return;
     
     // 1. Check Token
     const token = localStorage.getItem('token');
-    console.log("--- DEBUG: Token status:", token ? "Logged In" : "Logged Out");
 
     if (!token) {
-      console.log(`--- DEBUG: Saving pending ID: ${course.id}`);
-      
-      // SAVE ID
+      // User not logged in: Save intent and redirect
       localStorage.setItem('pendingCourseId', course.id);
-      
-      // VERIFY IT WAS SAVED
-      const savedId = localStorage.getItem('pendingCourseId');
-      console.log(`--- DEBUG: Verification Read: ${savedId}`);
-
-      if (savedId === String(course.id)) {
-          console.log("--- DEBUG: Save successful. Redirecting to Login...");
-          navigate('/login');
-      } else {
-          alert("Error: Could not save course preference. Please enable cookies/local storage.");
-      }
+      navigate('/login');
       return;
     }
 
-    // ... (rest of your existing payment logic for logged-in users) ...
+    // 2. User logged in: Process Payment
     setProcessing(true);
-    // ...
+    try {
+      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
+        { course_id: course.id },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (res.data.url) {
+        window.location.href = res.data.url;
+      }
+    } catch (error) {
+      alert("Payment initiation failed. Please try again.");
+    } finally {
+      setProcessing(false);
+    }
   };
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
@@ -145,7 +133,7 @@ const CourseView = () => {
                   disabled={processing}
                   className="px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white shadow-red-900/20 hover:scale-105"
                 >
-                  {processing ? "Processing..." : `Enroll Now (V2) - $${course.price}`}
+                  {processing ? "Processing..." : `Enroll Now - $${course.price}`}
                 </button>
               </div>
             </div>

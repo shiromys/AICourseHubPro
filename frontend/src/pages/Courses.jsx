@@ -43,11 +43,14 @@ const Courses = () => {
       return;
     }
 
-    // 2. STUDENT: Initiate Stripe Payment immediately
+    // 2. STUDENT: Initiate Stripe Payment
     const token = localStorage.getItem('token');
     
-    // If not logged in, force login
+    // If not logged in, SAVE INTENT then force login
     if (!token) {
+        // --- THIS IS THE FIX ---
+        localStorage.setItem('pendingCourseId', courseId);
+        // -----------------------
         navigate('/login');
         return;
     }
@@ -163,7 +166,7 @@ const Courses = () => {
                           <BookOpen size={18} /> Review Course
                         </>
                       ) : (
-                        isBuying ? <Loader2 className="animate-spin" size={18}/> : <>Enroll Now <ShoppingCart size={18} /></>
+                        isBuying ? <Loader2 className="animate-spin" size={18}/> : <>Enroll Now (List V2) <ShoppingCart size={18} /></>
                       )}
                     </button>
 

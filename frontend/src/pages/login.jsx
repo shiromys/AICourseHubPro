@@ -28,15 +28,18 @@ const Login = () => {
         password: formData.password 
       });
       
-      // 1. Save Token
+      // 1. Save Token & User Info
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user_role', res.data.user_role);
       
-      console.log("--- DEBUG: Login Successful ---");
+      // --- FIX IS HERE: SAVE THE NAME ---
+      // We check if the backend sent 'name' or 'user_name' to be safe
+      const nameToSave = res.data.name || res.data.user_name || "Student";
+      localStorage.setItem('user_name', nameToSave);
+      // ----------------------------------
 
       // 2. CHECK FOR PENDING COURSE *BEFORE* CLEARING ANYTHING
       const pendingCourseId = localStorage.getItem('pendingCourseId');
-      console.log(`--- DEBUG: Found Pending Course ID: ${pendingCourseId}`);
 
       // 3. Force a small delay to ensure storage writes complete
       setTimeout(() => {
@@ -44,15 +47,12 @@ const Login = () => {
            navigate('/admin-dashboard');
         } 
         else if (pendingCourseId) {
-            console.log(`--- DEBUG: Redirecting to Course ${pendingCourseId}`);
             navigate(`/courses/${pendingCourseId}`);
         } 
         else {
-            console.log("--- DEBUG: No pending course. Going to Dashboard.");
             navigate('/dashboard');
         }
       }, 100);
-      // --- REDIRECT LOGIC END ---
 
     } catch (err) {
       console.error("Login Failed:", err);
