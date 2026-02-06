@@ -1068,3 +1068,7 @@ if __name__ == '__main__':
     
     # HOST MUST BE '0.0.0.0' TO WORK ON RAILWAY
     app.run(host='0.0.0.0', port=port)
+
+
+
+    # Force backend update

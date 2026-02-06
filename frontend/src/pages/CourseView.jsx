@@ -145,7 +145,7 @@ const CourseView = () => {
                   disabled={processing}
                   className="px-8 py-4 rounded-xl font-bold text-lg flex items-center gap-3 transition-all shadow-lg bg-red-600 hover:bg-red-700 text-white shadow-red-900/20 hover:scale-105"
                 >
-                  {processing ? "Processing..." : `Enroll Now - $${course.price}`}
+                  {processing ? "Processing..." : `Enroll Now (V2) - $${course.price}`}
                 </button>
               </div>
             </div>
