@@ -17,4 +17,4 @@ EXPOSE 8080
 
 # 6. Run the application
 # We use 'python app.py' to keep it simple.
-CMD ["python", "app.py"]
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "app:app"]

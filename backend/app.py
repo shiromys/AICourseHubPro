@@ -1061,9 +1061,10 @@ def verify_certificate_id(cert_id):
         "completion_date": enrollment.completion_date.strftime('%Y-%m-%d') if enrollment.completion_date else "N/A"
     }), 200
     
+
 if __name__ == '__main__':
-    # Get the PORT from Railway (default to 8080 if not found)
+    # GET THE PORT FROM RAILWAY (Default to 8080 if missing)
     port = int(os.environ.get("PORT", 8080))
     
-    # LISTEN ON 0.0.0.0 <-- This is the magic fix
+    # HOST MUST BE '0.0.0.0' TO WORK ON RAILWAY
     app.run(host='0.0.0.0', port=port)
