@@ -7,7 +7,6 @@ import API_BASE_URL from '../config';
 
 const Login = () => {
   const navigate = useNavigate();
-  // 1. STATE MANAGEMENT
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,43 +20,49 @@ const Login = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(''); // Clear previous errors
+    setError('');
 
     try {
-      // 2. THE FIX: Use formData.email / formData.password
       const res = await axios.post(`${API_BASE_URL}/api/login`, { 
         email: formData.email, 
         password: formData.password 
       });
       
-      // 3. SUCCESS: Save Token & User Data
+      // SAVE TOKENS
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user_role', res.data.user_role);
       localStorage.setItem('user_name', res.data.name);
-      
-      // OPTIONAL: Save is_admin for easier checking later
       localStorage.setItem('is_admin', res.data.is_admin);
 
-      // Force Navbar update
       window.dispatchEvent(new Event("storage"));
 
-      // 4. REDIRECT
-      // Add a tiny delay to ensure localStorage is set before the page loads
+      // --- REDIRECT LOGIC START ---
       setTimeout(() => {
+        // 1. Check if user is Admin
         if (res.data.is_admin) {
-           navigate('/admin-dashboard'); // Or whatever your admin route is
+           navigate('/admin-dashboard');
+           return;
+        }
+
+        // 2. Check if they were trying to buy a course before logging in
+        const pendingCourseId = localStorage.getItem('pendingCourseId');
+        
+        if (pendingCourseId) {
+            // Send them back to the course page (which will auto-trigger Stripe)
+            navigate(`/courses/${pendingCourseId}`);
         } else {
-           navigate('/dashboard');
+            // Normal login behavior
+            navigate('/dashboard');
         }
       }, 100);
+      // --- REDIRECT LOGIC END ---
 
     } catch (err) {
       console.error("Login Failed:", err);
-      // 5. ERROR HANDLING
       if (err.response && err.response.data && err.response.data.msg) {
-        setError(err.response.data.msg); // Server error (e.g., "Incorrect credentials")
+        setError(err.response.data.msg);
       } else {
-        setError("Login failed. Please check your credentials."); // Fallback
+        setError("Login failed. Please check your credentials.");
       }
     } finally {
       setLoading(false);
