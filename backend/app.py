@@ -18,8 +18,18 @@ import stripe
 # Load environment variables
 load_dotenv() 
 
+
+app = Flask(__name__)
+
+# --- ADD THIS CONFIGURATION RIGHT AFTER CREATING 'app' ---
+# This allows your frontend domain to talk to your backend
+CORS(app, resources={r"/api/*": {"origins": "*"}}) 
+# --------------------------------------------------------
+
+
 # Initialize Flask (Point to frontend dist for production serving)
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+
 
 # --- CORS CONFIGURATION ---
 # Allow frontend (port 5173) to talk to backend
