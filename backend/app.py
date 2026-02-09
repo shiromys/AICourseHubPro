@@ -796,16 +796,21 @@ def reset_password():
 # ==========================================
 
 @app.route('/api/create-checkout-session', methods=['POST'])
-@jwt_required()
+@jwt_required()  # Matching your auth style
 def create_checkout_session():
     try:
-        current_user_id = get_jwt_identity()
+        user_id = get_jwt_identity()
+        user = User.query.get(user_id) # Fetch user object for email/metadata
+        
         data = request.json
         course_id = data.get('course_id')
         
         course = Course.query.get(course_id)
-        if not course: 
-            return jsonify({"msg": "Course not found"}), 404
+        if not course:
+            return jsonify({'message': 'Course not found'}), 404
+
+        # 1. Define Frontend URL (Robust fallback)
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
@@ -821,11 +826,16 @@ def create_checkout_session():
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course_id}",
-            cancel_url=f"{DOMAIN}/pricing",
+            
+            # --- CRITICAL: PASS IDs TO FRONTEND ---
+            success_url=f"{frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}",
+            # --------------------------------------
+            
+            cancel_url=f"{frontend_url}/courses",
+            client_reference_id=str(user.id),
             metadata={
-                "user_id": current_user_id,
-                "course_id": course_id
+                "user_id": user.id,
+                "course_id": course.id
             }
         )
         
