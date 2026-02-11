@@ -883,7 +883,7 @@ def verify_payment():
                 course_id=course_id, 
                 status='in-progress', 
                 progress=0,
-                created_at=datetime.utcnow() # <--- THIS FIXES THE ADMIN PANEL DATE
+                enrolled_at=datetime.utcnow() # <--- THIS FIXES THE ADMIN PANEL DATE
             )
             # -------------------------------
             
