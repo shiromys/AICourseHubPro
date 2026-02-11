@@ -499,8 +499,20 @@ const AdminDashboard = () => {
                                 <td className="px-6 py-4"><span className="bg-gray-700 text-gray-300 text-xs px-2 py-1 rounded">{course.category}</span></td>
                                 <td className="px-6 py-4 text-gray-400">{course.modules?.length || 0} Modules</td>
                                 <td className="px-6 py-4 text-right flex justify-end gap-3">
-                                    <button onClick={() => { setEditingCourse(course); setIsEditModalOpen(true); }} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-2 rounded transition"><Edit size={18}/></button>
-                                    <button onClick={() => handleDeleteCourse(course.id)} className="text-red-400 hover:text-red-300 bg-red-400/10 p-2 rounded transition"><Archive size={18}/></button>
+                                    <button 
+                                        onClick={() => { setEditingCourse(course); setIsEditModalOpen(true); }} 
+                                        title="Edit Course"
+                                        className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-2 rounded transition"
+                                    >
+                                        <Edit size={18}/>
+                                    </button>
+                                    <button 
+                                        onClick={() => handleDeleteCourse(course.id)} 
+                                        title="Delete Course"
+                                        className="text-red-400 hover:text-red-300 bg-red-400/10 p-2 rounded transition"
+                                    >
+                                        <Archive size={18}/>
+                                    </button>
                                 </td>
                             </tr>
                         ))}
@@ -525,9 +537,39 @@ const AdminDashboard = () => {
                                 <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${user.role === 'Admin' ? 'bg-purple-500/20 border-purple-500/30 text-purple-400' : 'bg-blue-500/20 border-blue-500/30 text-blue-400'}`}>{user.role}</span></td>
                                 <td className="px-6 py-4">{user.status === 'Banned' ? <span className="text-red-500 font-bold flex items-center gap-1 bg-red-500/10 px-2 py-1 rounded"><ShieldAlert size={14}/> Banned</span> : <span className="text-green-400 font-bold flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded"><CheckCircle size={14}/> Active</span>}</td>
                                 <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                    <button onClick={() => handleToggleAdmin(user)} className={`p-2 rounded transition ${user.role === 'Admin' ? "bg-purple-500/10 text-purple-400 hover:bg-purple-500/20" : "bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white"}`}>{user.role === 'Admin' ? <ShieldCheck size={18} /> : <Shield size={18} />}</button>
-                                    {user.status === 'Banned' ? (<button onClick={() => handleUnban(user)} className="p-2 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20"><ShieldAlert size={18}/></button>) : (<button onClick={() => openBanModal(user)} className="p-2 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"><Ban size={18}/></button>)}
-                                    <button onClick={() => handleDeleteUser(user)} className="p-2 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20"><Trash2 size={18}/></button>
+                                    <button 
+                                        onClick={() => handleToggleAdmin(user)} 
+                                        title={user.role === 'Admin' ? "Demote to Student" : "Promote to Admin"}
+                                        className={`p-2 rounded transition ${user.role === 'Admin' ? "bg-purple-500/10 text-purple-400 hover:bg-purple-500/20" : "bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white"}`}
+                                    >
+                                        {user.role === 'Admin' ? <ShieldCheck size={18} /> : <Shield size={18} />}
+                                    </button>
+                                    
+                                    {user.status === 'Banned' ? (
+                                        <button 
+                                            onClick={() => handleUnban(user)} 
+                                            title="Unban User"
+                                            className="p-2 rounded bg-green-500/10 text-green-400 hover:bg-green-500/20"
+                                        >
+                                            <ShieldAlert size={18}/>
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => openBanModal(user)} 
+                                            title="Ban User"
+                                            className="p-2 rounded bg-orange-500/10 text-orange-400 hover:bg-orange-500/20"
+                                        >
+                                            <Ban size={18}/>
+                                        </button>
+                                    )}
+                                    
+                                    <button 
+                                        onClick={() => handleDeleteUser(user)} 
+                                        title="Delete User"
+                                        className="p-2 rounded bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                    >
+                                        <Trash2 size={18}/>
+                                    </button>
                                 </td>
                             </tr>
                         ))}
