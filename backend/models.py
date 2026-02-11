@@ -45,11 +45,14 @@ class Course(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'title': self.title,
-            'description': self.description,
-            'price': self.price,
-            'category': self.category,
-            'modules': self.course_data.get('modules', []) if self.course_data else []
+            'user_id': self.user_id,
+            'course_id': self.course_id,
+            'status': self.status,
+            'progress': self.progress,
+            'score': self.score,
+            # This maps the database column 'enrolled_at' to the frontend key 'date'
+            'date': self.enrolled_at.isoformat() if self.enrolled_at else None,
+            'enrolled_at': self.enrolled_at.isoformat() if self.enrolled_at else None
         }
 
 # models.py

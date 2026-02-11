@@ -717,20 +717,33 @@ def get_transactions():
     user = User.query.get(current_user_id)
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    enrollments = Enrollment.query.all()
+    # Sort by newest enrollments first
+    enrollments = Enrollment.query.order_by(Enrollment.id.desc()).all()
+    
     data = []
     for e in enrollments:
         student = User.query.get(e.user_id)
         course = Course.query.get(e.course_id)
+        
         if student and course:
+            # --- FIX IS HERE ---
+            # Use 'enrolled_at' (Purchase Date) instead of 'completion_date'
+            if e.enrolled_at:
+                formatted_date = e.enrolled_at.strftime('%Y-%m-%d %H:%M')
+            else:
+                # Fallback for old data without timestamps
+                formatted_date = "N/A"
+            # -------------------
+
             data.append({
                 "id": e.id,
                 "user": student.name,
                 "email": student.email,
                 "course": course.title,
-                "date": str(e.completion_date) if e.completion_date else "In Progress",
+                "date": formatted_date, # Now sends the correct purchase date
                 "status": e.status
             })
+            
     return jsonify(data)
 
 # ==========================================
