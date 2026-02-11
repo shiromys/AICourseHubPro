@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory
 from openai import OpenAI
+from datetime import datetime 
 from flask_cors import CORS, cross_origin
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
@@ -876,12 +877,16 @@ def verify_payment():
             if existing:
                 return jsonify({"msg": "Already enrolled", "status": "enrolled"}), 200
 
+            # --- FIX: ADD TIMESTAMP HERE ---
             new_enrollment = Enrollment(
                 user_id=user_id, 
                 course_id=course_id, 
                 status='in-progress', 
-                progress=0
+                progress=0,
+                created_at=datetime.utcnow() # <--- THIS FIXES THE ADMIN PANEL DATE
             )
+            # -------------------------------
+            
             db.session.add(new_enrollment)
             db.session.commit()
 
@@ -901,10 +906,9 @@ def verify_payment():
                         title="Payment Successful! 🎓",
                         body_content=html_body,
                         button_text="Start Learning",
-                        button_url=f"{DOMAIN}/dashboard"
+                        button_url=f"{os.environ.get('FRONTEND_URL', 'https://www.aicoursehubpro.com')}/dashboard"
                     )
                     
-                    # Uses the updated helper to send from NO-REPLY
                     send_email(
                         to_email=user.email,
                         subject=f"Welcome to {course.title}",
