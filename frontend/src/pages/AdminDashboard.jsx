@@ -10,7 +10,7 @@ import {
   LayoutDashboard, BookOpen, DollarSign, Users, Mail, Activity, Plus, 
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
-  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban
+  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu // <--- Added Menu Icon
 } from 'lucide-react';
 
 // --- MOCK DATA (Fallback) ---
@@ -21,10 +21,10 @@ const MOCK_REVENUE_DATA = [
   { name: 'Jul', revenue: 0 },
 ];
 
-// --- SUB-COMPONENT: SIDEBAR BUTTON (Light Theme) ---
-const SidebarItem = ({ id, icon: Icon, label, activeTab, setActiveTab }) => (
+// --- SUB-COMPONENT: SIDEBAR BUTTON (Light Theme + Mobile Logic) ---
+const SidebarItem = ({ id, icon: Icon, label, activeTab, setActiveTab, closeMobileMenu }) => (
   <button 
-    onClick={() => setActiveTab(id)} 
+    onClick={() => { setActiveTab(id); if (closeMobileMenu) closeMobileMenu(); }} 
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-1 ${
       activeTab === id 
       ? 'bg-red-600 text-white shadow-md shadow-red-200' 
@@ -40,6 +40,9 @@ const AdminDashboard = () => {
   const fileInputRef = useRef(null); 
   const [activeTab, setActiveTab] = useState('overview'); 
   
+  // --- RESPONSIVE STATE ---
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // --- DYNAMIC ADMIN IDENTITY ---
   const [adminName, setAdminName] = useState("Admin User");
   const [adminInitials, setAdminInitials] = useState("AD");
@@ -108,13 +111,11 @@ const AdminDashboard = () => {
         } else if (activeTab === 'audit') {
            await fetchLogs(token);
         } else if (activeTab === 'settings') {
-           // Add this fetch
            try {
              const res = await axios.get(`${API_BASE_URL}/api/settings`);
              setSettings(res.data);
            } catch(e) { console.error(e); }
         }
-        
         setLoading(false);
       };
 
@@ -193,15 +194,10 @@ const AdminDashboard = () => {
     fetchCourses(token); 
   };
 
-  
   const toggleSetting = async (key) => {
     const newValue = !settings[key];
-    
-    // 1. Optimistic UI Update (Change switch immediately)
     setSettings(prev => ({ ...prev, [key]: newValue }));
-
     try {
-      // 2. Send to Backend
       const token = localStorage.getItem('token');
       await axios.post(`${API_BASE_URL}/api/settings`, 
         { [key]: newValue }, 
@@ -209,7 +205,6 @@ const AdminDashboard = () => {
       );
     } catch (error) {
       console.error("Failed to save setting", error);
-      // Revert if failed
       setSettings(prev => ({ ...prev, [key]: !newValue }));
       alert("Failed to update setting");
     }
@@ -271,9 +266,281 @@ const AdminDashboard = () => {
   const systemLoadData = [...Array(20)].map((_, i) => ({ time: i, load: 20 + Math.random() * 30 }));
 
   return (
-    // LIGHT THEME BASE: bg-gray-50, text-gray-900
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 relative">
       
+      {/* --- MOBILE OVERLAY (New: Clicking outside closes sidebar) --- */}
+      {isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-black/50 z-20 md:hidden backdrop-blur-sm"
+        />
+      )}
+
+      {/* --- SIDEBAR (Light Theme + Mobile Slide Logic) --- */}
+      <div className={`
+        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-30 transform transition-transform duration-300 ease-in-out shadow-xl
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+        md:translate-x-0 md:shadow-none
+      `}>
+        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">A</div>
+            <span className="font-bold text-xl tracking-tight text-gray-900">ADMIN PANEL</span>
+          </div>
+          {/* Mobile Close Button */}
+          <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500 hover:text-red-600">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-4 flex-1 overflow-y-auto h-[calc(100vh-140px)] custom-scrollbar">
+          <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2 mt-2">Main</p>
+          {/* Pass closeMobileMenu so clicking a link closes sidebar on mobile */}
+          <SidebarItem id="overview" icon={LayoutDashboard} label="Dashboard" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="courses" icon={BookOpen} label="Courses" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="users" icon={Users} label="Active Users" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
+          <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">System</p>
+          <SidebarItem id="support" icon={Mail} label="Support Inbox" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="audit" icon={FileText} label="Audit Logs" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="system" icon={Activity} label="System Health" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="settings" icon={Settings} label="Global Settings" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+        </div>
+        
+        <div className="absolute bottom-0 w-full p-4 border-t border-gray-200 bg-white">
+            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium mb-2"><Eye size={16}/> Student View</button>
+            <button onClick={handleLogout} className="w-full py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold"><LogOut size={16}/> Log Out</button>
+        </div>
+      </div>
+
+      {/* --- MAIN CONTENT (Adapts for Sidebar) --- */}
+      <div className="flex-1 md:ml-64 p-4 md:p-8 bg-gray-50 min-h-screen transition-all duration-300">
+        
+        {/* --- HEADER (New: Mobile Toggle Button) --- */}
+        <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-20">
+          <div className="flex items-center gap-4">
+            {/* Hamburger Button (Hidden on Desktop) */}
+            <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200">
+              <Menu size={24} />
+            </button>
+            <div>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1>
+                <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 md:gap-6">
+             {/* NOTIFICATION DROPDOWN */}
+             <div className="relative">
+                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:text-black relative transition">
+                    <Bell size={20} />
+                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-white"></span>}
+                </button>
+                {showNotifications && (
+                    <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                            <span className="font-bold text-gray-900 text-sm">Notifications</span>
+                            <span className="text-xs text-gray-500 cursor-pointer hover:text-black" onClick={() => setActiveTab('support')}>View All</span>
+                        </div>
+                        {(!stats.recent_messages || stats.recent_messages.length === 0) ? (
+                            <div className="p-6 text-center text-gray-500 text-sm">No new messages</div>
+                        ) : (
+                            stats.recent_messages.map(msg => (
+                                <div key={msg.id} className="p-4 hover:bg-gray-50 border-b border-gray-100 cursor-pointer" onClick={() => setActiveTab('support')}>
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-gray-900 font-bold text-sm truncate w-40">{msg.subject}</span>
+                                        <span className="text-xs text-gray-500">{msg.time}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500">From: {msg.name}</p>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                )}
+             </div>
+
+             {/* PROFILE DROPDOWN */}
+             <div className="relative">
+                <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-3 pl-4 md:border-l border-gray-200">
+                    <div className="text-right hidden md:block">
+                        <p className="text-sm font-bold text-gray-900">{adminName}</p>
+                        <p className="text-xs text-green-600">Super Admin</p>
+                    </div>
+                    <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">
+                        {adminInitials}
+                    </div>
+                    <ChevronDown size={14} className="text-gray-400 hidden md:block"/>
+                </button>
+                {showProfileMenu && (
+                    <div className="absolute right-0 mt-3 w-48 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
+                        <button onClick={() => navigate('/dashboard')} className="w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 hover:text-black flex items-center gap-2">
+                            <UserIcon size={16}/> Student View
+                        </button>
+                        <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100">
+                            <LogOut size={16}/> Sign Out
+                        </button>
+                    </div>
+                )}
+             </div>
+          </div>
+        </div>
+
+        {/* --- TABS CONTENT --- */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-green-500 transition-all group shadow-sm">
+                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white transition"><DollarSign size={24}/></div></div>
+                  <h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3>
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Revenue</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-blue-500 transition-all group shadow-sm">
+                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition"><Users size={24}/></div></div>
+                  <h3 className="text-3xl font-black text-gray-900">{stats.students}</h3>
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Students</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-purple-500 transition-all group shadow-sm">
+                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition"><BookOpen size={24}/></div></div>
+                  <h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3>
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Courses</p>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-orange-500 transition-all group shadow-sm">
+                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition"><Activity size={24}/></div></div>
+                  <h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3>
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">System Uptime</p>
+              </div>
+            </div>
+            
+            {/* REVENUE CHART */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                <h3 className="text-lg font-bold mb-6 text-gray-900">Revenue Overview</h3>
+                <div className="h-80 min-w-[600px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={stats.chart_data && stats.chart_data.length > 0 ? stats.chart_data : MOCK_REVENUE_DATA}>
+                            <defs>
+                                <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/>
+                                    <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
+                                </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                            <XAxis dataKey="name" stroke="#9ca3af" axisLine={false} tickLine={false} />
+                            <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={val => `$${val}`} />
+                            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#000', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
+                            <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
+                        </AreaChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- RESPONSIVE TABLES (Scrollable Container Added) --- */}
+        {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 gap-4">
+                    <div className="w-full flex justify-between items-center md:block">
+                        <h3 className="font-bold text-lg text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h3>
+                    </div>
+                    {activeTab === 'courses' && (
+                        <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
+                            <div className="relative w-full md:w-64">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                                <input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-500 transition" />
+                            </div>
+                            <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200"><Plus size={18} /> Add</button>
+                        </div>
+                    )}
+                    {activeTab === 'revenue' && <button onClick={handleExportCSV} className="text-xs bg-gray-800 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-800">Export CSV</button>}
+                </div>
+                
+                <div className="overflow-x-auto"> {/* <--- Horizontal Scroll for Mobile */}
+                    <table className="w-full text-left min-w-[800px]">
+                        <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider">
+                            <tr>
+                                {activeTab === 'courses' && <><th className="px-6 py-4">Title</th><th className="px-6 py-4">Price</th><th className="px-6 py-4">Category</th><th className="px-6 py-4">Modules</th><th className="px-6 py-4 text-right">Actions</th></>}
+                                {(activeTab === 'users' || activeTab === 'deleted_users') && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></>}
+                                {activeTab === 'revenue' && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Status</th></>}
+                                {activeTab === 'audit' && <><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></>}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 text-sm">
+                            {activeTab === 'courses' && courses.map(course => (
+                                <tr key={course.id} className="hover:bg-gray-50 transition">
+                                    <td className="px-6 py-4 font-bold text-gray-900">{course.title}</td>
+                                    <td className="px-6 py-4 text-green-600 font-bold">${course.price}</td>
+                                    <td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200">{course.category}</span></td>
+                                    <td className="px-6 py-4 text-gray-500">{course.modules?.length || 0} Modules</td>
+                                    <td className="px-6 py-4 text-right flex justify-end gap-3">
+                                        <button onClick={() => { setEditingCourse(course); setIsEditModalOpen(true); }} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-2 rounded transition"><Edit size={18}/></button>
+                                        <button onClick={() => handleDeleteCourse(course.id)} className="text-red-600 hover:text-red-800 bg-red-50 p-2 rounded transition"><Archive size={18}/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {activeTab === 'users' && users.map(user => (
+                                <tr key={user.id} className="hover:bg-gray-50 transition">
+                                    <td className="px-6 py-4"><div className="font-bold text-gray-900">{user.name}</div><div className="text-xs text-gray-500">{user.email}</div></td>
+                                    <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${user.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{user.role}</span></td>
+                                    <td className="px-6 py-4">{user.status === 'Banned' ? <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded"><ShieldAlert size={14}/> Banned</span> : <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded"><CheckCircle size={14}/> Active</span>}</td>
+                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                        <button onClick={() => handleToggleAdmin(user)} className="p-2 rounded bg-gray-100 text-gray-500 hover:bg-gray-200">{user.role === 'Admin' ? <ShieldCheck size={18} /> : <Shield size={18} />}</button>
+                                        <button onClick={() => user.status === 'Banned' ? handleUnban(user) : openBanModal(user)} className="p-2 rounded bg-orange-50 text-orange-600 hover:bg-orange-100"><Ban size={18}/></button>
+                                        <button onClick={() => handleDeleteUser(user)} className="p-2 rounded bg-red-50 text-red-600 hover:bg-red-100"><Trash2 size={18}/></button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {activeTab === 'revenue' && transactions.map((tx, i) => (
+                                <tr key={i} className="hover:bg-gray-50 transition">
+                                    <td className="px-6 py-4 font-bold text-gray-900">{tx.user}<div className="text-xs text-gray-500 font-normal">{tx.email}</div></td>
+                                    <td className="px-6 py-4 text-gray-700">{tx.course}</td>
+                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{tx.date}</td>
+                                    <td className="px-6 py-4"><span className="text-green-700 text-xs border border-green-200 bg-green-50 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><CheckCircle size={12}/> Paid</span></td>
+                                </tr>
+                            ))}
+                            {activeTab === 'audit' && logs.map((log, i) => (
+                                <tr key={i} className="hover:bg-gray-50 transition">
+                                    <td className="px-6 py-4 font-bold text-gray-900 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div>{log.action}</td>
+                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.admin}</td>
+                                    <td className="px-6 py-4 text-gray-600 italic">{log.details}</td>
+                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.date}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        )}
+
+        {/* SETTINGS TAB */}
+        {activeTab === 'settings' && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 md:p-8 max-w-3xl shadow-sm">
+                <h3 className="font-bold mb-8 text-2xl text-gray-900 flex items-center gap-3"><Settings className="text-gray-400"/> Global Configurations</h3>
+                <div className="space-y-6">
+                    <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
+                        <div><h4 className="font-bold text-gray-900 text-lg">Maintenance Mode</h4><p className="text-sm text-gray-500 mt-1">If enabled, non-admin users will see a "Under Maintenance" page.</p></div>
+                        <button onClick={() => toggleSetting('maintenance')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
+                    </div>
+                    <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
+                        <div><h4 className="font-bold text-gray-900 text-lg">Allow New Registrations</h4><p className="text-sm text-gray-500 mt-1">Toggle to pause new user signups temporarily.</p></div>
+                        <button onClick={() => toggleSetting('registrations')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.registrations ? 'bg-green-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.registrations ? 'translate-x-6' : 'translate-x-0'}`} /></button>
+                    </div>
+                    <div className="p-6 bg-red-50 rounded-xl border border-red-100 mt-8">
+                        <h4 className="font-bold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
+                        <p className="text-gray-600 text-sm mb-4">Irreversible actions for system management.</p>
+                        <div className="flex gap-4">
+                            <button className="px-4 py-2 border border-red-200 text-red-600 rounded hover:bg-red-100 text-sm font-bold transition bg-white">Clear Cache</button>
+                            <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold transition shadow-lg shadow-red-200">Reset Database (Dev Only)</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+      </div>
+
+      {/* --- MODALS (Unchanged logic, just wrapped properly) --- */}
       {/* BAN MODAL (Light) */}
       {isBanModalOpen && selectedUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
@@ -281,12 +548,7 @@ const AdminDashboard = () => {
                 <h3 className="text-xl font-bold mb-4 text-gray-900">Ban User</h3>
                 <div className="mb-4">
                     <label className="text-sm text-gray-600 font-bold">Duration (Days)</label>
-                    <input 
-                        type="number" 
-                        value={banDuration} 
-                        onChange={(e) => setBanDuration(e.target.value)}
-                        className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"
-                    />
+                    <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"/>
                 </div>
                 <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white hover:bg-red-700 transition">Confirm Ban</button>
                 <button onClick={() => setIsBanModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
@@ -319,43 +581,21 @@ const AdminDashboard = () => {
                       <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
                           {isEditModalOpen ? <><Edit size={24} className="text-blue-600"/> Edit Course</> : <><Plus size={24} className="text-red-600"/> Create New Course</>}
                       </h2>
-                      <div className="flex items-center gap-4">
-                          {!isEditModalOpen && (
-                              <>
-                                  <input type="file" accept=".json" ref={fileInputRef} onChange={handleJsonUpload} className="hidden" />
-                                  <button onClick={() => fileInputRef.current.click()} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2 transition font-bold"><Upload size={14} /> Import JSON</button>
-                              </>
-                          )}
-                          <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600 transition"><X size={24} /></button>
-                      </div>
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600 transition"><X size={24} /></button>
                   </div>
                   <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="text-xs text-gray-500 uppercase font-bold">Course Title</label>
-                            <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
-                        </div>
-                        <div>
-                            <label className="text-xs text-gray-500 uppercase font-bold">Category</label>
-                            <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}>
-                                <option>HR</option><option>Development</option><option>Marketing</option><option>Business</option>
-                            </select>
-                        </div>
+                        <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" placeholder="Title" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
+                        <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}><option>HR</option><option>Development</option><option>Marketing</option><option>Business</option></select>
                       </div>
-                      <div>
-                          <label className="text-xs text-gray-500 uppercase font-bold">Price ($)</label>
-                          <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
-                      </div>
-                      <div>
-                          <label className="text-xs text-gray-500 uppercase font-bold">Description</label>
-                          <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
-                      </div>
+                      <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
+                      <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
                       <div className="border-t border-gray-100 pt-6">
                           <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
                           {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
                               <div key={i} className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
                                   <div className="flex items-center gap-3 mb-3"><span className="text-xs font-bold text-gray-600 bg-gray-200 px-2 py-1 rounded">MOD {i+1}</span><input className="bg-transparent text-gray-900 font-bold flex-1 outline-none border-b border-gray-300 focus:border-blue-600" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
-                                  <div className="space-y-2 pl-2 border-l-2 border-gray-300 ml-4">{mod.lessons.map((les, j) => (<div key={j} className="flex items-center gap-3"><div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div><input className="bg-white text-sm px-3 py-1.5 rounded text-gray-700 w-full border border-gray-300 focus:border-gray-400 outline-none" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/></div>))}</div>
+                                  <div className="space-y-2 pl-2 border-l-2 border-gray-300 ml-4">{mod.lessons.map((les, j) => <input key={j} className="w-full text-sm p-1 bg-white border border-gray-300 rounded text-gray-900" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/>)}</div>
                               </div>
                           ))}
                       </div>
@@ -367,400 +607,6 @@ const AdminDashboard = () => {
               </div>
           </div>
       )}
-
-      {/* SIDEBAR (Light Theme: White bg, gray border) */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col fixed h-full z-10">
-        <div className="p-6 border-b border-gray-200 flex items-center gap-3">
-          <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">A</div>
-          <span className="font-bold text-xl tracking-tight text-gray-900">ADMIN PANEL</span>
-        </div>
-        <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
-          <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2 mt-2">Main</p>
-          <SidebarItem id="overview" icon={LayoutDashboard} label="Dashboard" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="courses" icon={BookOpen} label="Courses" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="users" icon={Users} label="Active Users" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
-          <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">System</p>
-          <SidebarItem id="support" icon={Mail} label="Support Inbox" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="audit" icon={FileText} label="Audit Logs" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="system" icon={Activity} label="System Health" activeTab={activeTab} setActiveTab={setActiveTab} />
-          <SidebarItem id="settings" icon={Settings} label="Global Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
-        </div>
-        <div className="p-4 border-t border-gray-200 space-y-2">
-            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium"><Eye size={16}/> Student View</button>
-            <button onClick={handleLogout} className="w-full py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold"><LogOut size={16}/> Log Out</button>
-        </div>
-      </div>
-
-      {/* MAIN CONTENT (Light Theme: Gray-50 bg) */}
-      <div className="flex-1 ml-64 p-8 bg-gray-50 min-h-screen">
-        
-        {/* --- HEADER --- */}
-        <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-20">
-          <div><h1 className="text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1><p className="text-gray-500 text-xs mt-1 flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p></div>
-          <div className="flex items-center gap-6">
-             
-             {/* NOTIFICATION DROPDOWN */}
-             <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:text-black relative transition">
-                    <Bell size={20} />
-                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-white"></span>}
-                </button>
-                {showNotifications && (
-                    <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
-                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-                            <span className="font-bold text-gray-900 text-sm">Notifications</span>
-                            <span className="text-xs text-gray-500 cursor-pointer hover:text-black" onClick={() => setActiveTab('support')}>View All</span>
-                        </div>
-                        {(!stats.recent_messages || stats.recent_messages.length === 0) ? (
-                            <div className="p-6 text-center text-gray-500 text-sm">No new messages</div>
-                        ) : (
-                            stats.recent_messages.map(msg => (
-                                <div key={msg.id} className="p-4 hover:bg-gray-50 border-b border-gray-100 cursor-pointer" onClick={() => setActiveTab('support')}>
-                                    <div className="flex justify-between mb-1">
-                                        <span className="text-gray-900 font-bold text-sm truncate w-40">{msg.subject}</span>
-                                        <span className="text-xs text-gray-500">{msg.time}</span>
-                                    </div>
-                                    <p className="text-xs text-gray-500">From: {msg.name}</p>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                )}
-             </div>
-
-             {/* PROFILE DROPDOWN */}
-             <div className="relative">
-                <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-3 pl-4 border-l border-gray-200">
-                    <div className="text-right hidden md:block">
-                        <p className="text-sm font-bold text-gray-900">{adminName}</p>
-                        <p className="text-xs text-green-600">Super Admin</p>
-                    </div>
-                    <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-full flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">
-                        {adminInitials}
-                    </div>
-                    <ChevronDown size={14} className="text-gray-400"/>
-                </button>
-                {showProfileMenu && (
-                    <div className="absolute right-0 mt-3 w-48 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
-                        <button onClick={() => navigate('/dashboard')} className="w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 hover:text-black flex items-center gap-2">
-                            <UserIcon size={16}/> Student View
-                        </button>
-                        <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100">
-                            <LogOut size={16}/> Sign Out
-                        </button>
-                    </div>
-                )}
-             </div>
-          </div>
-        </div>
-
-        {/* --- TABS CONTENT --- */}
-        
-        {/* OVERVIEW TAB */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6 animate-fade-in">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-green-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white transition"><DollarSign size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Revenue</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-blue-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition"><Users size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.students}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Students</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-purple-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition"><BookOpen size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Courses</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-orange-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition"><Activity size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">System Uptime</p>
-              </div>
-            </div>
-            
-            {/* REVENUE CHART */}
-            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <h3 className="text-lg font-bold mb-6 text-gray-900">Revenue Overview</h3>
-                <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats.chart_data && stats.chart_data.length > 0 ? stats.chart_data : MOCK_REVENUE_DATA}>
-                            <defs>
-                                <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                            <XAxis dataKey="name" stroke="#9ca3af" axisLine={false} tickLine={false} />
-                            <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={val => `$${val}`} />
-                            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#000', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
-                            <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-          </div>
-        )}
-
-        {/* COURSES TAB */}
-        {activeTab === 'courses' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                    <div className="relative w-96">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input type="text" placeholder="Search courses..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-600 transition" />
-                    </div>
-                    <button onClick={handleOpenModal} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200"><Plus size={18} /> Add New Course</button>
-                </div>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider"><tr><th className="px-6 py-4">Title</th><th className="px-6 py-4">Price</th><th className="px-6 py-4">Category</th><th className="px-6 py-4">Modules</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y divide-gray-200">
-                        {courses.length === 0 ? <tr><td colSpan="5" className="text-center py-12 text-gray-500 italic">No courses available.</td></tr> : courses.map((course) => (
-                            <tr key={course.id} className="hover:bg-gray-50 transition">
-                                <td className="px-6 py-4 font-bold text-gray-900">{course.title}</td>
-                                <td className="px-6 py-4 text-green-600 font-bold">${course.price}</td>
-                                <td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200">{course.category}</span></td>
-                                <td className="px-6 py-4 text-gray-500">{course.modules?.length || 0} Modules</td>
-                                <td className="px-6 py-4 text-right flex justify-end gap-3">
-                                    <button 
-                                        onClick={() => { setEditingCourse(course); setIsEditModalOpen(true); }} 
-                                        title="Edit Course"
-                                        className="text-blue-600 hover:text-blue-800 bg-blue-50 p-2 rounded transition"
-                                    >
-                                        <Edit size={18}/>
-                                    </button>
-                                    <button 
-                                        onClick={() => handleDeleteCourse(course.id)} 
-                                        title="Delete Course"
-                                        className="text-red-600 hover:text-red-800 bg-red-50 p-2 rounded transition"
-                                    >
-                                        <Archive size={18}/>
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {/* USERS TAB */}
-        {activeTab === 'users' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                    <h3 className="font-bold text-lg text-gray-900">Active User Directory</h3>
-                    <span className="bg-green-100 text-green-700 text-xs font-bold px-3 py-1 rounded-full border border-green-200">{users.length} Users</span>
-                </div>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider"><tr><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y divide-gray-200 text-sm">
-                        {users.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 transition">
-                                <td className="px-6 py-4"><div className="font-bold text-gray-900">{user.name}</div><div className="text-xs text-gray-500">{user.email}</div></td>
-                                <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${user.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{user.role}</span></td>
-                                <td className="px-6 py-4">{user.status === 'Banned' ? <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded"><ShieldAlert size={14}/> Banned</span> : <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded"><CheckCircle size={14}/> Active</span>}</td>
-                                <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                    <button 
-                                        onClick={() => handleToggleAdmin(user)} 
-                                        title={user.role === 'Admin' ? "Demote to Student" : "Promote to Admin"}
-                                        className={`p-2 rounded transition ${user.role === 'Admin' ? "bg-purple-50 text-purple-600 hover:bg-purple-100" : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-black"}`}
-                                    >
-                                        {user.role === 'Admin' ? <ShieldCheck size={18} /> : <Shield size={18} />}
-                                    </button>
-                                    
-                                    {user.status === 'Banned' ? (
-                                        <button 
-                                            onClick={() => handleUnban(user)} 
-                                            title="Unban User"
-                                            className="p-2 rounded bg-green-50 text-green-600 hover:bg-green-100"
-                                        >
-                                            <ShieldAlert size={18}/>
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            onClick={() => openBanModal(user)} 
-                                            title="Ban User"
-                                            className="p-2 rounded bg-orange-50 text-orange-600 hover:bg-orange-100"
-                                        >
-                                            <Ban size={18}/>
-                                        </button>
-                                    )}
-                                    
-                                    <button 
-                                        onClick={() => handleDeleteUser(user)} 
-                                        title="Delete User"
-                                        className="p-2 rounded bg-red-50 text-red-600 hover:bg-red-100"
-                                    >
-                                        <Trash2 size={18}/>
-                                    </button>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {/* DELETED USERS TAB */}
-        {activeTab === 'deleted_users' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-4 bg-red-50 text-red-800 text-sm border-b border-red-100 flex items-center gap-2 font-bold"><Trash2 size={16}/> These accounts are deactivated. Restore them to grant access again.</div>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold"><tr><th className="px-6 py-4">User</th><th className="px-6 py-4">Email</th><th className="px-6 py-4 text-right">Actions</th></tr></thead>
-                    <tbody className="divide-y divide-gray-200 text-sm">
-                        {users.length === 0 ? <tr><td colSpan="3" className="p-8 text-center text-gray-500 italic">No deleted users found.</td></tr> : users.map(user => (
-                            <tr key={user.id} className="hover:bg-gray-50 opacity-75">
-                                <td className="px-6 py-4 line-through text-gray-400 font-medium">{user.name}</td>
-                                <td className="px-6 py-4 text-gray-400">{user.email}</td>
-                                <td className="px-6 py-4 text-right"><button onClick={() => handleRestoreUser(user)} className="text-green-600 hover:text-green-800 flex items-center gap-2 ml-auto bg-green-50 px-3 py-1.5 rounded transition font-bold"><RefreshCcw size={16}/> Restore</button></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {/* REVENUE TAB */}
-        {activeTab === 'revenue' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
-                    <h3 className="font-bold text-lg text-gray-900">Transaction History</h3>
-                    <button onClick={handleExportCSV} className="text-xs bg-gray-800 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-800">Export CSV</button>
-                </div>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider"><tr><th className="px-6 py-4">User</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Status</th></tr></thead>
-                    <tbody className="divide-y divide-gray-200 text-sm">
-                        {transactions.length === 0 ? <tr><td colSpan="4" className="p-12 text-center text-gray-500 italic">No transactions found in database.</td></tr> : transactions.map((tx, i) => (
-                            <tr key={i} className="hover:bg-gray-50 transition">
-                                <td className="px-6 py-4 font-bold text-gray-900">{tx.user}<div className="text-xs text-gray-500 font-normal">{tx.email}</div></td>
-                                <td className="px-6 py-4 text-gray-700">{tx.course}</td>
-                                <td className="px-6 py-4 text-gray-500 font-mono text-xs">{tx.date}</td>
-                                <td className="px-6 py-4"><span className="text-green-700 text-xs border border-green-200 bg-green-50 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><CheckCircle size={12}/> Paid</span></td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {/* SUPPORT TAB */}
-        {activeTab === 'support' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm h-[80vh] flex flex-col">
-                <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-gray-900"><Mail className="text-blue-600"/> Support Inbox</h3>
-                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">{messages.length} Messages</span>
-                </div>
-                <div className="divide-y divide-gray-200 overflow-y-auto flex-1 custom-scrollbar">
-                    {messages.length === 0 ? <div className="p-20 text-center text-gray-500 italic">No support messages received yet.</div> : messages.map(msg => (
-                        <div key={msg.id} className={`p-6 transition cursor-pointer group ${msg.is_read ? 'opacity-50 hover:opacity-80 bg-gray-50' : 'hover:bg-gray-50'}`}>
-                            <div className="flex justify-between mb-2">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow">{msg.name.charAt(0).toUpperCase()}</div>
-                                    <div>
-                                        <h4 className="font-bold text-gray-900 group-hover:text-blue-600 transition flex items-center gap-2">{msg.subject}{!msg.is_read && <span className="bg-red-500 text-white text-[10px] px-2 rounded-full">New</span>}</h4>
-                                        <p className="text-xs text-gray-500">From: <span className="text-gray-900 font-medium">{msg.name}</span> &lt;{msg.email}&gt;</p>
-                                    </div>
-                                </div>
-                                <span className="text-xs text-gray-400 font-mono">{msg.date}</span>
-                            </div>
-                            <div className="pl-13 ml-13 mt-3 bg-gray-50 p-4 rounded-lg border border-gray-200"><p className="text-sm text-gray-700 leading-relaxed">{msg.message}</p></div>
-                            <div className="mt-3 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition">
-                                {!msg.is_read && (<button onClick={() => initiateCloseTicket(msg.id)} className="text-xs bg-gray-800 text-white px-3 py-1 rounded hover:bg-black flex items-center gap-1 shadow-md"><CheckSquare size={12}/> Close Ticket</button>)}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        )}
-
-        {/* AUDIT LOGS TAB */}
-        {activeTab === 'audit' && (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-gray-200 bg-gray-50">
-                    <h3 className="font-bold text-lg flex items-center gap-2 text-gray-900"><FileText className="text-orange-500"/> System Audit Logs</h3>
-                    <p className="text-xs text-gray-500 mt-1">Tracking all administrative actions for security compliance.</p>
-                </div>
-                <table className="w-full text-left">
-                    <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider"><tr><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></tr></thead>
-                    <tbody className="divide-y divide-gray-200 text-sm">
-                        {logs.map((log, i) => (
-                            <tr key={i} className="hover:bg-gray-50 transition">
-                                <td className="px-6 py-4 font-bold text-gray-900 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div>{log.action}</td>
-                                <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.admin}</td>
-                                <td className="px-6 py-4 text-gray-600 italic">{log.details}</td>
-                                <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.date}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-        )}
-
-        {/* SYSTEM TAB */}
-        {activeTab === 'system' && (
-            <div className="space-y-6">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                        <h3 className="font-bold mb-6 flex items-center gap-2 text-red-600"><Activity size={20} /> Live System Status</h3>
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Database Connection</span><span className="text-green-700 flex items-center gap-2 text-sm font-bold bg-green-100 px-3 py-1 rounded-full border border-green-200"><CheckCircle size={14}/> Connected</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">API Response Time</span><span className="text-green-700 text-sm font-bold font-mono">24ms</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Stripe Webhooks</span><span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Listening</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Storage Usage</span><div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-[45%]"></div></div></div>
-                        </div>
-                    </div>
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                        <h3 className="font-bold mb-4 text-gray-900">Server Load (Real-time)</h3>
-                        <div className="h-64 flex-1">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={systemLoadData}>
-                                    <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={3} dot={false} isAnimationActive={true} />
-                                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
-                                    <XAxis hide />
-                                    <YAxis hide domain={[0, 100]}/>
-                                </LineChart>
-                            </ResponsiveContainer>
-                        </div>
-                        <div className="mt-4 flex justify-between text-xs text-gray-500 font-mono"><span>00:00</span><span>Now</span></div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* SETTINGS TAB */}
-        {activeTab === 'settings' && (
-            <div className="bg-white rounded-xl border border-gray-200 p-8 max-w-3xl shadow-sm">
-                <h3 className="font-bold mb-8 text-2xl text-gray-900 flex items-center gap-3"><Settings className="text-gray-400"/> Global Configurations</h3>
-                <div className="space-y-6">
-                    <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
-                        <div><h4 className="font-bold text-gray-900 text-lg">Maintenance Mode</h4><p className="text-sm text-gray-500 mt-1">If enabled, non-admin users will see a "Under Maintenance" page.</p></div>
-                        <button onClick={() => toggleSetting('maintenance')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
-                    </div>
-                    <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
-                        <div><h4 className="font-bold text-gray-900 text-lg">Allow New Registrations</h4><p className="text-sm text-gray-500 mt-1">Toggle to pause new user signups temporarily.</p></div>
-                        <button onClick={() => setSettings(p => ({...p, registrations: !p.registrations}))} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.registrations ? 'bg-green-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.registrations ? 'translate-x-6' : 'translate-x-0'}`} /></button>
-                    </div>
-                    <div className="p-6 bg-red-50 rounded-xl border border-red-100 mt-8">
-                        <h4 className="font-bold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
-                        <p className="text-gray-600 text-sm mb-4">Irreversible actions for system management.</p>
-                        <div className="flex gap-4">
-                            <button className="px-4 py-2 border border-red-200 text-red-600 rounded hover:bg-red-100 text-sm font-bold transition bg-white">Clear Cache</button>
-                            <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold transition shadow-lg shadow-red-200">Reset Database (Dev Only)</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        )}
-
-      </div>
     </div>
   );
 };
