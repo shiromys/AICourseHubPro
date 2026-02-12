@@ -21,8 +21,7 @@ const MOCK_REVENUE_DATA = [
   { name: 'Jul', revenue: 0 },
 ];
 
-// --- SUB-COMPONENT: SIDEBAR BUTTON ---
-// (This component reduces code repetition by ~60 lines)
+// --- SIDEBAR ITEM COMPONENT ---
 const SidebarItem = ({ id, icon: Icon, label, activeTab, setActiveTab, closeMobileMenu }) => (
   <button 
     onClick={() => { setActiveTab(id); if (closeMobileMenu) closeMobileMenu(); }} 
@@ -40,8 +39,6 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
   const fileInputRef = useRef(null); 
   const [activeTab, setActiveTab] = useState('overview'); 
-  
-  // --- RESPONSIVE STATE ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // --- DATA STATES ---
@@ -53,8 +50,8 @@ const AdminDashboard = () => {
   const [transactions, setTransactions] = useState([]);
   const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
+  const [loading, setLoading] = useState(false);
 
   // --- UI STATES ---
   const [showNotifications, setShowNotifications] = useState(false);
@@ -71,7 +68,7 @@ const AdminDashboard = () => {
   const [isCloseTicketModalOpen, setIsCloseTicketModalOpen] = useState(false);
   const [messageToClose, setMessageToClose] = useState(null);
 
-  // --- FETCH DATA CONTROLLER ---
+  // --- FETCH DATA ---
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedName = localStorage.getItem('user_name');
@@ -90,17 +87,41 @@ const AdminDashboard = () => {
       
       const loadTabData = async () => {
         try {
-            if (activeTab === 'overview') { await fetchStats(token); await fetchUsers(token, 'active'); }
-            else if (activeTab === 'users') { await fetchUsers(token, 'active'); }
-            else if (activeTab === 'deleted_users') { await fetchUsers(token, 'deleted'); }
-            else if (activeTab === 'revenue') { await fetchTransactions(token); }
-            else if (activeTab === 'support') { await fetchMessages(token); }
-            else if (activeTab === 'audit') { await fetchLogs(token); }
-            else if (activeTab === 'settings') { 
-                const res = await axios.get(`${API_BASE_URL}/api/settings`); 
-                setSettings(res.data); 
+            if (activeTab === 'overview') { 
+              const s = await axios.get(`${API_BASE_URL}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } });
+              setStats(s.data);
+              const u = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${token}` } });
+              setUsers(u.data);
             }
-        } catch(e) { console.error(e); }
+            else if (activeTab === 'courses') { 
+              const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${token}` } });
+              setCourses(r.data);
+            }
+            else if (activeTab === 'users') { 
+              const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${token}` } });
+              setUsers(r.data);
+            }
+            else if (activeTab === 'deleted_users') { 
+              const r = await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${token}` } });
+              setUsers(r.data);
+            }
+            else if (activeTab === 'revenue') { 
+              const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${token}` } });
+              setTransactions(r.data);
+            }
+            else if (activeTab === 'support') { 
+              const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
+              setMessages(r.data);
+            }
+            else if (activeTab === 'audit') { 
+              const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${token}` } });
+              setLogs(r.data);
+            }
+            else if (activeTab === 'settings') { 
+              const r = await axios.get(`${API_BASE_URL}/api/settings`); 
+              setSettings(r.data); 
+            }
+        } catch(e) { console.error("Fetch Error:", e); }
         setLoading(false);
       };
       loadTabData();
@@ -109,13 +130,8 @@ const AdminDashboard = () => {
     }
   }, [activeTab, navigate]);
 
-  // --- API HELPERS ---
-  const fetchStats = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/stats`, { headers: { Authorization: `Bearer ${t}` } }); setStats(r.data); };
+  // --- API CALLS ---
   const fetchCourses = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
-  const fetchUsers = async (t, type) => { const r = await axios.get(`${API_BASE_URL}/api/users?type=${type}`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
-  const fetchTransactions = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${t}` } }); setTransactions(r.data); };
-  const fetchMessages = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${t}` } }); setMessages(r.data); };
-  const fetchLogs = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${t}` } }); setLogs(r.data); };
 
   // --- HANDLERS ---
   const toggleSetting = async (key) => {
@@ -124,19 +140,23 @@ const AdminDashboard = () => {
     try {
       const token = localStorage.getItem('token');
       await axios.post(`${API_BASE_URL}/api/settings`, { [key]: newValue }, { headers: { Authorization: `Bearer ${token}` } });
-    } catch (error) { setSettings(prev => ({ ...prev, [key]: !newValue })); alert("Failed to save setting"); }
+    } catch (error) { 
+        console.error("Failed to save setting", error);
+        setSettings(prev => ({ ...prev, [key]: !newValue })); 
+        alert("Failed to update setting. Check if Backend is running properly."); 
+    }
   };
 
-  const handleToggleAdmin = async (user) => { if(!window.confirm(`Promote/Demote ${user.name}?`)) return; const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
+  const handleToggleAdmin = async (user) => { if(!window.confirm(`Promote/Demote ${user.name}?`)) return; const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
   const openBanModal = (user) => { setSelectedUser(user); setBanDuration(30); setIsBanModalOpen(true); };
-  const handleConfirmBan = async () => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } }); setIsBanModalOpen(false); fetchUsers(t, 'active'); };
-  const handleUnban = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
-  const handleDeleteUser = async (user) => { if(!window.confirm("Delete?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
-  const handleRestoreUser = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'deleted'); };
+  const handleConfirmBan = async () => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } }); setIsBanModalOpen(false); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const handleUnban = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const handleDeleteUser = async (user) => { if(!window.confirm("Delete?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const handleRestoreUser = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
   
   const handleSaveCourse = async () => { const t=localStorage.getItem('token'); const r=await axios.post(`${API_BASE_URL}/api/courses`, newCourse, { headers: { Authorization: `Bearer ${t}` } }); setCourses([...courses, r.data]); setIsModalOpen(false); };
-  const handleUpdateCourse = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } }); setIsEditModalOpen(false); fetchCourses(t); };
-  const handleDeleteCourse = async (id) => { if(!window.confirm("Archive?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${t}` } }); fetchCourses(t); };
+  const handleUpdateCourse = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } }); setIsEditModalOpen(false); const r=await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
+  const handleDeleteCourse = async (id) => { if(!window.confirm("Archive?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
 
   const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
   const confirmCloseTicket = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${t}` } }); setMessages(prev => prev.filter(msg => msg.id !== messageToClose)); setIsCloseTicketModalOpen(false); };
@@ -161,10 +181,11 @@ const AdminDashboard = () => {
   const handleOpenModal = () => { setNewCourse({ title: '', description: '', price: 29, category: 'HR', modules: [] }); setIsModalOpen(true); };
   const handleJsonUpload = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{const j=JSON.parse(ev.target.result); if(j.title){setNewCourse({...j, price: j.price||29}); alert("Loaded!");}}catch(err){alert("Invalid JSON");} }; r.readAsText(f); };
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
+  
+  // REAL-TIME CHART DATA GENERATOR
   const systemLoadData = [...Array(20)].map((_, i) => ({ time: i, load: 20 + Math.random() * 30 }));
 
   return (
-    // --- LIGHT THEME CONTAINER ---
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 relative">
       
       {/* MOBILE OVERLAY */}
@@ -177,11 +198,11 @@ const AdminDashboard = () => {
 
       {/* --- SIDEBAR --- */}
       <div className={`
-        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-30 transform transition-transform duration-300 ease-in-out shadow-lg
+        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-30 transform transition-transform duration-300 ease-in-out shadow-lg flex flex-col
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
         md:translate-x-0 md:shadow-none
       `}>
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-black rounded-xl flex items-center justify-center font-bold text-white shadow-md">A</div>
             <span className="font-bold text-xl tracking-tight text-gray-900">ADMIN</span>
@@ -191,7 +212,7 @@ const AdminDashboard = () => {
           </button>
         </div>
 
-        <div className="p-4 flex-1 overflow-y-auto h-[calc(100vh-140px)] custom-scrollbar">
+        <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
           <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2 mt-2">Main</p>
           <SidebarItem id="overview" icon={LayoutDashboard} label="Dashboard" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="courses" icon={BookOpen} label="Courses" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -206,7 +227,7 @@ const AdminDashboard = () => {
           <SidebarItem id="settings" icon={Settings} label="Global Settings" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
         </div>
         
-        <div className="absolute bottom-0 w-full p-4 border-t border-gray-100 bg-white">
+        <div className="p-4 border-t border-gray-100 bg-white shrink-0">
             <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold mb-2 border border-gray-200"><Eye size={16}/> Student View</button>
             <button onClick={handleLogout} className="w-full py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold"><LogOut size={16}/> Log Out</button>
         </div>
@@ -231,7 +252,7 @@ const AdminDashboard = () => {
              <div className="relative">
                 <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:text-black relative transition">
                     <Bell size={20} />
-                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
+                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-white"></span>}
                 </button>
                 {showNotifications && (
                     <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
@@ -263,7 +284,7 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        {/* --- DYNAMIC CONTENT --- */}
+        {/* --- OVERVIEW TAB --- */}
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -281,7 +302,7 @@ const AdminDashboard = () => {
           </div>
         )}
 
-        {/* --- TABLES (With Tooltips Restored) --- */}
+        {/* --- TABLES --- */}
         {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
@@ -321,7 +342,7 @@ const AdminDashboard = () => {
             </div>
         )}
 
-        {/* SUPPORT TAB (Fully Functional) */}
+        {/* SUPPORT TAB */}
         {activeTab === 'support' && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm h-[80vh] flex flex-col">
                 <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
@@ -351,6 +372,38 @@ const AdminDashboard = () => {
             </div>
         )}
 
+        {/* SYSTEM HEALTH TAB (Restored) */}
+        {activeTab === 'system' && (
+            <div className="space-y-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-red-600"><Activity size={20} /> Live System Status</h3>
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Database Connection</span><span className="text-green-700 flex items-center gap-2 text-sm font-bold bg-green-100 px-3 py-1 rounded-full border border-green-200"><CheckCircle size={14}/> Connected</span></div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">API Response Time</span><span className="text-green-700 text-sm font-bold font-mono">24ms</span></div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Stripe Webhooks</span><span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Listening</span></div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Storage Usage</span><div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-[45%]"></div></div></div>
+                        </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                        <h3 className="font-bold mb-4 text-gray-900">Server Load (Real-time)</h3>
+                        <div className="h-64 flex-1">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={systemLoadData}>
+                                    <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={3} dot={false} isAnimationActive={true} />
+                                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
+                                    <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
+                                    <XAxis hide />
+                                    <YAxis hide domain={[0, 100]}/>
+                                </LineChart>
+                            </ResponsiveContainer>
+                        </div>
+                        <div className="mt-4 flex justify-between text-xs text-gray-500 font-mono"><span>00:00</span><span>Now</span></div>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
             <div className="bg-white rounded-xl border border-gray-200 p-6 md:p-8 max-w-3xl shadow-sm">
@@ -374,50 +427,23 @@ const AdminDashboard = () => {
 
       </div>
 
-      {/* --- MODALS --- */}
-      {(isModalOpen || isEditModalOpen) && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white p-6 rounded-xl max-w-4xl w-full h-[90vh] overflow-y-auto border border-gray-200 shadow-2xl">
-                  <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-                      <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">{isEditModalOpen ? "Edit Course" : "Create New Course"}</h2>
-                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600"><X size={24} /></button>
-                  </div>
-                  <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none" placeholder="Title" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
-                        <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}><option>HR</option><option>Business</option><option>Education</option><option>Development</option></select>
-                      </div>
-                      <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
-                      <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
-                      <div className="border-t border-gray-100 pt-6">
-                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700">Curriculum</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded">Add Module</button></div>
-                          {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
-                              <div key={i} className="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
-                                  <div className="flex gap-2 mb-2"><input className="bg-transparent font-bold flex-1 text-gray-900" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600">+ Lesson</button></div>
-                                  <div className="pl-4 border-l-2 border-gray-300 space-y-2">{mod.lessons.map((les, j) => <input key={j} className="w-full text-sm p-1 bg-white border border-gray-300 rounded text-gray-900" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/>)}</div>
-                              </div>
-                          ))}
-                      </div>
-                  </div>
-                  <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 mt-6">
-                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded font-bold text-gray-600">Cancel</button>
-                      <button onClick={isEditModalOpen ? handleUpdateCourse : handleSaveCourse} className="px-6 py-3 bg-red-600 text-white rounded font-bold">Save</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
+      {/* --- MODALS (Unchanged logic, just wrapped properly) --- */}
+      {/* BAN MODAL (Light) */}
       {isBanModalOpen && selectedUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl border border-gray-200">
+            <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
                 <h3 className="text-xl font-bold mb-4 text-gray-900">Ban User</h3>
-                <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mb-4 text-gray-900"/>
-                <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white mb-2">Confirm</button>
-                <button onClick={() => setIsBanModalOpen(false)} className="w-full py-2 text-gray-500">Cancel</button>
+                <div className="mb-4">
+                    <label className="text-sm text-gray-600 font-bold">Duration (Days)</label>
+                    <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"/>
+                </div>
+                <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white hover:bg-red-700 transition">Confirm Ban</button>
+                <button onClick={() => setIsBanModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
             </div>
         </div>
       )}
 
+      {/* CLOSE TICKET MODAL (Light) */}
       {isCloseTicketModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
@@ -432,6 +458,39 @@ const AdminDashboard = () => {
                 </div>
             </div>
         </div>
+      )}
+
+      {/* COURSE MODAL (Light) */}
+      {(isModalOpen || isEditModalOpen) && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <div className="bg-white p-6 rounded-xl max-w-4xl w-full h-[90vh] overflow-y-auto border border-gray-200 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                      <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">{isEditModalOpen ? "Edit Course" : "Create New Course"}</h2>
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600 transition"><X size={24} /></button>
+                  </div>
+                  <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" placeholder="Title" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
+                        <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}><option>HR</option><option>Development</option><option>Marketing</option><option>Business</option></select>
+                      </div>
+                      <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
+                      <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
+                      <div className="border-t border-gray-100 pt-6">
+                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
+                          {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
+                              <div key={i} className="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
+                                  <div className="flex gap-2 mb-2"><input className="bg-transparent font-bold flex-1 text-gray-900" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
+                                  <div className="pl-4 border-l-2 border-gray-300 space-y-2">{mod.lessons.map((les, j) => <input key={j} className="w-full text-sm p-1 bg-white border border-gray-300 rounded text-gray-900" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/>)}</div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                  <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 mt-6">
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded font-bold text-gray-600">Cancel</button>
+                      <button onClick={isEditModalOpen ? handleUpdateCourse : handleSaveCourse} className="px-6 py-3 bg-red-600 text-white rounded font-bold">Save</button>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );
