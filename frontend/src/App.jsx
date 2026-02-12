@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react'; // <--- FIXED: Added hooks imports
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from './config';
@@ -21,7 +21,7 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';     
 import RefundPolicy from './pages/RefundPolicy';
 import CourseView from './pages/CourseView'; 
-import Maintenance from './pages/Maintenance';// <--- 1. NEW IMPORT
+import Maintenance from './pages/Maintenance';
 
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
@@ -47,8 +47,8 @@ const AdminRoute = ({ children }) => {
 
 
 function App() {
-// =====================================================
-  // 1. MAINTENANCE MODE LOGIC (MUST BE INSIDE THE FUNCTION)
+  // =====================================================
+  // 1. MAINTENANCE MODE LOGIC
   // =====================================================
   const [isMaintenance, setIsMaintenance] = useState(false);
   const [checkingMaintenance, setCheckingMaintenance] = useState(true);
@@ -66,7 +66,7 @@ function App() {
       });
   }, []);
 
-  // 2. CHECKING STATE (Show nothing or a spinner while checking)
+  // 2. CHECKING STATE (Show spinner/blank while checking)
   if (checkingMaintenance) return <div className="h-screen w-screen bg-black" />;
 
   // 3. BLOCK ACCESS IF MAINTENANCE IS ON (And user is not Admin)
@@ -95,11 +95,7 @@ function App() {
         <Route path="/refund-policy" element={<RefundPolicy />} />
         <Route path="/verify/:certId" element={<Verify />} />
 
-        {/* --- THE FIX IS HERE --- 
-           1. Use "courses" (plural) to match Dashboard.
-           2. Render "CourseView" (The Gatekeeper) instead of Player directly.
-           3. No ProtectedRoute here (CourseView handles the check).
-        */}
+        {/* --- Course View (Public/Private logic handled inside) --- */}
         <Route path="/courses/:id" element={<CourseView />} />
         <Route path="/course/:id" element={<Navigate to="/courses/:id" replace />} />
 
