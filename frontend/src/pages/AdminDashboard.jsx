@@ -28,7 +28,7 @@ const SidebarItem = ({ id, icon: Icon, label, activeTab, setActiveTab }) => (
     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-1 ${
       activeTab === id 
       ? 'bg-red-600 text-white shadow-md shadow-red-200' 
-      : 'text-gray-500 hover:bg-gray-100 hover:text-black'
+      : 'text-gray-600 hover:bg-gray-100 hover:text-black'
     }`}
   >
     <Icon size={18} /> <span className="font-medium text-sm">{label}</span>
@@ -242,7 +242,7 @@ const AdminDashboard = () => {
   const systemLoadData = [...Array(20)].map((_, i) => ({ time: i, load: 20 + Math.random() * 30 }));
 
   return (
-    // LIGHT THEME BASE
+    // LIGHT THEME BASE: bg-gray-50, text-gray-900
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 relative">
       
       {/* BAN MODAL (Light) */}
@@ -251,12 +251,12 @@ const AdminDashboard = () => {
             <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
                 <h3 className="text-xl font-bold mb-4 text-gray-900">Ban User</h3>
                 <div className="mb-4">
-                    <label className="text-sm text-gray-500 font-bold">Duration (Days)</label>
+                    <label className="text-sm text-gray-600 font-bold">Duration (Days)</label>
                     <input 
                         type="number" 
                         value={banDuration} 
                         onChange={(e) => setBanDuration(e.target.value)}
-                        className="w-full bg-gray-50 border border-gray-200 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-500"
+                        className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"
                     />
                 </div>
                 <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white hover:bg-red-700 transition">Confirm Ban</button>
@@ -272,10 +272,10 @@ const AdminDashboard = () => {
                 <div className="flex flex-col items-center text-center mb-4">
                     <div className="p-3 bg-yellow-50 rounded-full text-yellow-600 mb-3"><HelpCircle size={32} /></div>
                     <h3 className="text-xl font-bold text-gray-900">Pending Action</h3>
-                    <p className="text-gray-500 text-sm mt-2">Have you replied to this user via email?</p>
+                    <p className="text-gray-600 text-sm mt-2">Have you replied to this user via email?</p>
                 </div>
                 <div className="flex gap-3">
-                    <button onClick={() => setIsCloseTicketModalOpen(false)} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-gray-600 font-bold hover:bg-gray-50">No, Cancel</button>
+                    <button onClick={() => setIsCloseTicketModalOpen(false)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-gray-600 font-bold hover:bg-gray-100">No, Cancel</button>
                     <button onClick={confirmCloseTicket} className="flex-1 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold">Yes, Close Ticket</button>
                 </div>
             </div>
@@ -288,58 +288,58 @@ const AdminDashboard = () => {
               <div className="bg-white p-6 rounded-xl max-w-4xl w-full h-[90vh] overflow-y-auto border border-gray-200 shadow-2xl">
                   <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
                       <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                          {isEditModalOpen ? <><Edit size={24} className="text-blue-500"/> Edit Course</> : <><Plus size={24} className="text-red-500"/> Create New Course</>}
+                          {isEditModalOpen ? <><Edit size={24} className="text-blue-600"/> Edit Course</> : <><Plus size={24} className="text-red-600"/> Create New Course</>}
                       </h2>
                       <div className="flex items-center gap-4">
                           {!isEditModalOpen && (
                               <>
                                   <input type="file" accept=".json" ref={fileInputRef} onChange={handleJsonUpload} className="hidden" />
-                                  <button onClick={() => fileInputRef.current.click()} className="text-xs bg-blue-50 hover:bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-2 transition font-bold"><Upload size={14} /> Import JSON</button>
+                                  <button onClick={() => fileInputRef.current.click()} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-2 transition font-bold"><Upload size={14} /> Import JSON</button>
                               </>
                           )}
-                          <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-500 transition"><X size={24} /></button>
+                          <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600 transition"><X size={24} /></button>
                       </div>
                   </div>
                   <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="text-xs text-gray-500 uppercase font-bold">Course Title</label>
-                            <input className="w-full bg-gray-50 border border-gray-200 p-3 rounded text-gray-900 focus:border-red-500 outline-none transition" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
+                            <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
                         </div>
                         <div>
                             <label className="text-xs text-gray-500 uppercase font-bold">Category</label>
-                            <select className="w-full bg-gray-50 border border-gray-200 p-3 rounded text-gray-900 focus:border-red-500 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}>
+                            <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}>
                                 <option>HR</option><option>Development</option><option>Marketing</option><option>Business</option>
                             </select>
                         </div>
                       </div>
                       <div>
                           <label className="text-xs text-gray-500 uppercase font-bold">Price ($)</label>
-                          <input className="w-full bg-gray-50 border border-gray-200 p-3 rounded text-gray-900 focus:border-red-500 outline-none transition" type="number" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
+                          <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
                       </div>
                       <div>
                           <label className="text-xs text-gray-500 uppercase font-bold">Description</label>
-                          <textarea className="w-full bg-gray-50 border border-gray-200 p-3 rounded text-gray-900 focus:border-red-500 outline-none transition" rows="3" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
+                          <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
                       </div>
                       <div className="border-t border-gray-100 pt-6">
-                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-50 hover:bg-blue-600 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
+                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
                           {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
                               <div key={i} className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                                  <div className="flex items-center gap-3 mb-3"><span className="text-xs font-bold text-gray-500 bg-gray-200 px-2 py-1 rounded">MOD {i+1}</span><input className="bg-transparent text-gray-900 font-bold flex-1 outline-none border-b border-gray-300 focus:border-blue-500" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
-                                  <div className="space-y-2 pl-2 border-l-2 border-gray-200 ml-4">{mod.lessons.map((les, j) => (<div key={j} className="flex items-center gap-3"><div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div><input className="bg-white text-sm px-3 py-1.5 rounded text-gray-700 w-full border border-gray-200 focus:border-gray-400 outline-none" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/></div>))}</div>
+                                  <div className="flex items-center gap-3 mb-3"><span className="text-xs font-bold text-gray-600 bg-gray-200 px-2 py-1 rounded">MOD {i+1}</span><input className="bg-transparent text-gray-900 font-bold flex-1 outline-none border-b border-gray-300 focus:border-blue-600" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
+                                  <div className="space-y-2 pl-2 border-l-2 border-gray-300 ml-4">{mod.lessons.map((les, j) => (<div key={j} className="flex items-center gap-3"><div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div><input className="bg-white text-sm px-3 py-1.5 rounded text-gray-700 w-full border border-gray-300 focus:border-gray-400 outline-none" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/></div>))}</div>
                               </div>
                           ))}
                       </div>
                   </div>
                   <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 mt-6">
-                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded-lg text-gray-600 font-bold hover:bg-gray-50 transition">Cancel</button>
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition">Cancel</button>
                       <button onClick={isEditModalOpen ? handleUpdateCourse : handleSaveCourse} className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-lg shadow-red-200 flex items-center gap-2 transition"><Save size={18}/> {isEditModalOpen ? "Update Course" : "Save & Publish"}</button>
                   </div>
               </div>
           </div>
       )}
 
-      {/* SIDEBAR (Light Theme) */}
+      {/* SIDEBAR (Light Theme: White bg, gray border) */}
       <div className="w-64 bg-white border-r border-gray-200 flex flex-col fixed h-full z-10">
         <div className="p-6 border-b border-gray-200 flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">A</div>
@@ -360,12 +360,12 @@ const AdminDashboard = () => {
           <SidebarItem id="settings" icon={Settings} label="Global Settings" activeTab={activeTab} setActiveTab={setActiveTab} />
         </div>
         <div className="p-4 border-t border-gray-200 space-y-2">
-            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-500 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium"><Eye size={16}/> Student View</button>
+            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium"><Eye size={16}/> Student View</button>
             <button onClick={handleLogout} className="w-full py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold"><LogOut size={16}/> Log Out</button>
         </div>
       </div>
 
-      {/* MAIN CONTENT (Light) */}
+      {/* MAIN CONTENT (Light Theme: Gray-50 bg) */}
       <div className="flex-1 ml-64 p-8 bg-gray-50 min-h-screen">
         
         {/* --- HEADER --- */}
@@ -375,9 +375,9 @@ const AdminDashboard = () => {
              
              {/* NOTIFICATION DROPDOWN */}
              <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:text-black relative transition">
+                <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:text-black relative transition">
                     <Bell size={20} />
-                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
+                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-white"></span>}
                 </button>
                 {showNotifications && (
                     <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
@@ -409,7 +409,7 @@ const AdminDashboard = () => {
                         <p className="text-sm font-bold text-gray-900">{adminName}</p>
                         <p className="text-xs text-green-600">Super Admin</p>
                     </div>
-                    <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">
+                    <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-full flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">
                         {adminInitials}
                     </div>
                     <ChevronDown size={14} className="text-gray-400"/>
@@ -486,7 +486,7 @@ const AdminDashboard = () => {
                 <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-gray-50">
                     <div className="relative w-96">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input type="text" placeholder="Search courses..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-500 transition" />
+                        <input type="text" placeholder="Search courses..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-600 transition" />
                     </div>
                     <button onClick={handleOpenModal} className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200"><Plus size={18} /> Add New Course</button>
                 </div>
