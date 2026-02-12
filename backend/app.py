@@ -4,7 +4,7 @@ from datetime import datetime
 from flask_cors import CORS, cross_origin
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
-from models import User, Course, Enrollment, ContactMessage, AuditLog
+from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
 from database import db
 from sqlalchemy import func
 from datetime import datetime, timedelta
