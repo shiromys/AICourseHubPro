@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import axios from 'axios';
+import API_BASE_URL from './config';
 
 // --- IMPORT PAGES ---
 import Home from './pages/Home';
@@ -18,7 +20,8 @@ import Verify from './pages/Verify';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';     
 import RefundPolicy from './pages/RefundPolicy';
-import CourseView from './pages/CourseView'; // <--- 1. NEW IMPORT
+import CourseView from './pages/CourseView'; 
+import Maintenance from './pages/Maintenance';// <--- 1. NEW IMPORT
 
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
@@ -41,6 +44,28 @@ const AdminRoute = ({ children }) => {
   }
   return children;
 };
+
+// --- 3. Maintennace Function enabler ---
+const [isMaintenance, setIsMaintenance] = useState(false);
+const [checkingMaintenance, setCheckingMaintenance] = useState(true);
+const userRole = localStorage.getItem('user_role'); // Check if admin
+
+useEffect(() => {
+  axios.get(`${API_BASE_URL}/api/settings`)
+    .then(res => {
+      setIsMaintenance(res.data.maintenance);
+      setCheckingMaintenance(false);
+    })
+    .catch(() => setCheckingMaintenance(false));
+}, []);
+
+if (checkingMaintenance) return null; // Or a loading spinner
+
+// BLOCK ACCESS if Maintenance is ON and user is NOT Admin
+if (isMaintenance && userRole !== 'admin' && !window.location.pathname.includes('/login')) {
+   return <Maintenance />;
+}
+
 
 function App() {
   return (

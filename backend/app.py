@@ -1099,6 +1099,52 @@ def verify_certificate_id(cert_id):
     }), 200
     
 
+
+
+#=================================
+# 15. SYSTEM SETTINGS ROUTES 
+#=================================
+
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    # Fetch settings or default to False
+    maintenance = SystemSetting.query.filter_by(key='maintenance_mode').first()
+    registrations = SystemSetting.query.filter_by(key='allow_registrations').first()
+    
+    return jsonify({
+        "maintenance": maintenance.value == 'true' if maintenance else False,
+        "registrations": registrations.value == 'true' if registrations else True
+    })
+
+@app.route('/api/settings', methods=['POST'])
+@jwt_required()
+def update_settings():
+    current_user_id = get_jwt_identity()
+    user = User.query.get(current_user_id)
+    if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+
+    data = request.json
+    
+    # Helper to update or create a setting
+    def save_setting(key, val):
+        setting = SystemSetting.query.filter_by(key=key).first()
+        if not setting:
+            setting = SystemSetting(key=key, value=str(val).lower())
+            db.session.add(setting)
+        else:
+            setting.value = str(val).lower()
+    
+    if 'maintenance' in data:
+        save_setting('maintenance_mode', data['maintenance'])
+    
+    if 'registrations' in data:
+        save_setting('allow_registrations', data['registrations'])
+        
+    db.session.commit()
+    return jsonify({"msg": "Settings updated"})
+
+
+
 if __name__ == '__main__':
     # GET THE PORT FROM RAILWAY (Default to 8080 if missing)
     port = int(os.environ.get("PORT", 8080))

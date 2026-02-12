@@ -107,7 +107,14 @@ const AdminDashboard = () => {
            await fetchMessages(token);
         } else if (activeTab === 'audit') {
            await fetchLogs(token);
+        } else if (activeTab === 'settings') {
+           // Add this fetch
+           try {
+             const res = await axios.get(`${API_BASE_URL}/api/settings`);
+             setSettings(res.data);
+           } catch(e) { console.error(e); }
         }
+        
         setLoading(false);
       };
 
@@ -184,6 +191,28 @@ const AdminDashboard = () => {
     const token = localStorage.getItem('token'); 
     await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${token}` } }); 
     fetchCourses(token); 
+  };
+
+  
+  const toggleSetting = async (key) => {
+    const newValue = !settings[key];
+    
+    // 1. Optimistic UI Update (Change switch immediately)
+    setSettings(prev => ({ ...prev, [key]: newValue }));
+
+    try {
+      // 2. Send to Backend
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_BASE_URL}/api/settings`, 
+        { [key]: newValue }, 
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+    } catch (error) {
+      console.error("Failed to save setting", error);
+      // Revert if failed
+      setSettings(prev => ({ ...prev, [key]: !newValue }));
+      alert("Failed to update setting");
+    }
   };
 
   // --- TICKET HANDLERS ---
@@ -713,7 +742,7 @@ const AdminDashboard = () => {
                 <div className="space-y-6">
                     <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
                         <div><h4 className="font-bold text-gray-900 text-lg">Maintenance Mode</h4><p className="text-sm text-gray-500 mt-1">If enabled, non-admin users will see a "Under Maintenance" page.</p></div>
-                        <button onClick={() => setSettings(p => ({...p, maintenance: !p.maintenance}))} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
+                        <button onClick={() => toggleSetting('maintenance')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
                     </div>
                     <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
                         <div><h4 className="font-bold text-gray-900 text-lg">Allow New Registrations</h4><p className="text-sm text-gray-500 mt-1">Toggle to pause new user signups temporarily.</p></div>
