@@ -10,10 +10,10 @@ import {
   LayoutDashboard, BookOpen, DollarSign, Users, Mail, Activity, Plus, 
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
-  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu // <--- Added Menu Icon
+  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu
 } from 'lucide-react';
 
-// --- MOCK DATA (Fallback) ---
+// --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
   { name: 'Jan', revenue: 0 }, { name: 'Feb', revenue: 0 },
   { name: 'Mar', revenue: 0 }, { name: 'Apr', revenue: 0 },
@@ -21,17 +21,18 @@ const MOCK_REVENUE_DATA = [
   { name: 'Jul', revenue: 0 },
 ];
 
-// --- SUB-COMPONENT: SIDEBAR BUTTON (Light Theme + Mobile Logic) ---
+// --- SUB-COMPONENT: SIDEBAR BUTTON ---
+// (This component reduces code repetition by ~60 lines)
 const SidebarItem = ({ id, icon: Icon, label, activeTab, setActiveTab, closeMobileMenu }) => (
   <button 
     onClick={() => { setActiveTab(id); if (closeMobileMenu) closeMobileMenu(); }} 
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-1 ${
+    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all mb-1 font-medium ${
       activeTab === id 
       ? 'bg-red-600 text-white shadow-md shadow-red-200' 
-      : 'text-gray-600 hover:bg-gray-100 hover:text-black'
+      : 'text-gray-600 hover:bg-gray-100 hover:text-red-600'
     }`}
   >
-    <Icon size={18} /> <span className="font-medium text-sm">{label}</span>
+    <Icon size={18} /> <span className="text-sm">{label}</span>
   </button>
 );
 
@@ -43,53 +44,44 @@ const AdminDashboard = () => {
   // --- RESPONSIVE STATE ---
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // --- DYNAMIC ADMIN IDENTITY ---
+  // --- DATA STATES ---
   const [adminName, setAdminName] = useState("Admin User");
   const [adminInitials, setAdminInitials] = useState("AD");
-
-  // --- DATA STATES ---
   const [courses, setCourses] = useState([]); 
   const [users, setUsers] = useState([]); 
   const [stats, setStats] = useState({ revenue: 0, students: 0, courses: 0, uptime: "99.9%", chart_data: [], recent_messages: [] });
   const [transactions, setTransactions] = useState([]);
   const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
-  
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
 
-  // --- DROPDOWN STATES ---
+  // --- UI STATES ---
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-
+  
   // --- MODAL STATES ---
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newCourse, setNewCourse] = useState({ title: '', description: '', price: 29, category: 'HR', modules: [] });
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState(null);
-  
   const [isBanModalOpen, setIsBanModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [banDuration, setBanDuration] = useState(30);
-
-  // --- CLOSE TICKET MODAL STATE ---
   const [isCloseTicketModalOpen, setIsCloseTicketModalOpen] = useState(false);
   const [messageToClose, setMessageToClose] = useState(null);
 
-  // --- 1. FETCH DATA CONTROLLER ---
+  // --- FETCH DATA CONTROLLER ---
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedName = localStorage.getItem('user_name');
 
     if(token) {
-      // Set Dynamic Name & Initials
       if (storedName) {
           setAdminName(storedName);
           const parts = storedName.trim().split(' ');
           let initials = parts[0][0];
-          if (parts.length > 1) {
-              initials += parts[parts.length - 1][0];
-          }
+          if (parts.length > 1) { initials += parts[parts.length - 1][0]; }
           setAdminInitials(initials.toUpperCase());
       }
 
@@ -97,178 +89,85 @@ const AdminDashboard = () => {
       fetchCourses(token); 
       
       const loadTabData = async () => {
-        if (activeTab === 'overview') {
-           await fetchStats(token); 
-           await fetchUsers(token, 'active');
-        } else if (activeTab === 'users') {
-           await fetchUsers(token, 'active');
-        } else if (activeTab === 'deleted_users') {
-           await fetchUsers(token, 'deleted');
-        } else if (activeTab === 'revenue') {
-           await fetchTransactions(token);
-        } else if (activeTab === 'support') {
-           await fetchMessages(token);
-        } else if (activeTab === 'audit') {
-           await fetchLogs(token);
-        } else if (activeTab === 'settings') {
-           try {
-             const res = await axios.get(`${API_BASE_URL}/api/settings`);
-             setSettings(res.data);
-           } catch(e) { console.error(e); }
-        }
+        try {
+            if (activeTab === 'overview') { await fetchStats(token); await fetchUsers(token, 'active'); }
+            else if (activeTab === 'users') { await fetchUsers(token, 'active'); }
+            else if (activeTab === 'deleted_users') { await fetchUsers(token, 'deleted'); }
+            else if (activeTab === 'revenue') { await fetchTransactions(token); }
+            else if (activeTab === 'support') { await fetchMessages(token); }
+            else if (activeTab === 'audit') { await fetchLogs(token); }
+            else if (activeTab === 'settings') { 
+                const res = await axios.get(`${API_BASE_URL}/api/settings`); 
+                setSettings(res.data); 
+            }
+        } catch(e) { console.error(e); }
         setLoading(false);
       };
-
       loadTabData();
-
     } else {
         navigate('/login');
     }
   }, [activeTab, navigate]);
 
-  // --- API CALLS ---
-  const fetchStats = async (token) => { try { const res = await axios.get(`${API_BASE_URL}/api/admin/stats`, { headers: { Authorization: `Bearer ${token}` } }); setStats(res.data); } catch (e) { console.error("Stats error", e); } };
-  const fetchCourses = async (token) => { try { const res = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${token}` } }); setCourses(res.data); } catch (e) { console.error("Courses error", e); } };
-  const fetchUsers = async (token, type) => { try { const res = await axios.get(`${API_BASE_URL}/api/users?type=${type}`, { headers: { Authorization: `Bearer ${token}` } }); setUsers(res.data); } catch (e) { console.error("Users error", e); } };
-  const fetchTransactions = async (token) => { try { const res = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${token}` } }); setTransactions(res.data); } catch (e) { console.error("Tx error", e); } };
-  const fetchMessages = async (token) => { try { const res = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } }); setMessages(res.data); } catch (e) { console.error("Msg error", e); } };
-  const fetchLogs = async (token) => { try { const res = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${token}` } }); setLogs(res.data); } catch (e) { console.error("Log error", e); } };
+  // --- API HELPERS ---
+  const fetchStats = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/stats`, { headers: { Authorization: `Bearer ${t}` } }); setStats(r.data); };
+  const fetchCourses = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
+  const fetchUsers = async (t, type) => { const r = await axios.get(`${API_BASE_URL}/api/users?type=${type}`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const fetchTransactions = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${t}` } }); setTransactions(r.data); };
+  const fetchMessages = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${t}` } }); setMessages(r.data); };
+  const fetchLogs = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${t}` } }); setLogs(r.data); };
 
-  // --- USER HANDLERS ---
-  const handleToggleAdmin = async (user) => {
-    if(!window.confirm(`Change admin status for ${user.name}?`)) return;
-    try {
-        const token = localStorage.getItem('token');
-        await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${token}` } });
-        fetchUsers(token, 'active');
-    } catch (error) { alert("Failed to update role"); }
-  };
-  
-  const openBanModal = (user) => { setSelectedUser(user); setBanDuration(30); setIsBanModalOpen(true); };
-  
-  const handleConfirmBan = async () => { 
-    const token = localStorage.getItem('token'); 
-    await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${token}` } }); 
-    setIsBanModalOpen(false); 
-    fetchUsers(token, 'active'); 
-  };
-
-  const handleUnban = async (user) => { 
-    const token = localStorage.getItem('token'); 
-    await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${token}` } }); 
-    fetchUsers(token, 'active'); 
-  };
-
-  const handleDeleteUser = async (user) => { 
-    if(!window.confirm("Delete user?")) return; 
-    const token = localStorage.getItem('token'); 
-    await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${token}` } }); 
-    fetchUsers(token, 'active'); 
-  };
-
-  const handleRestoreUser = async (user) => { 
-    const token = localStorage.getItem('token'); 
-    await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${token}` } }); 
-    fetchUsers(token, 'deleted'); 
-  };
-  
-  // --- COURSE HANDLERS ---
-  const handleSaveCourse = async () => { 
-    const token = localStorage.getItem('token'); 
-    const res = await axios.post(`${API_BASE_URL}/api/courses`, newCourse, { headers: { Authorization: `Bearer ${token}` } }); 
-    setCourses([...courses, res.data]); 
-    setIsModalOpen(false); 
-  };
-
-  const handleUpdateCourse = async () => { 
-    const token = localStorage.getItem('token'); 
-    await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${token}` } }); 
-    setIsEditModalOpen(false); 
-    fetchCourses(token); 
-  };
-
-  const handleDeleteCourse = async (id) => { 
-    if(!window.confirm("Archive course?")) return; 
-    const token = localStorage.getItem('token'); 
-    await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${token}` } }); 
-    fetchCourses(token); 
-  };
-
+  // --- HANDLERS ---
   const toggleSetting = async (key) => {
     const newValue = !settings[key];
     setSettings(prev => ({ ...prev, [key]: newValue }));
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE_URL}/api/settings`, 
-        { [key]: newValue }, 
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-    } catch (error) {
-      console.error("Failed to save setting", error);
-      setSettings(prev => ({ ...prev, [key]: !newValue }));
-      alert("Failed to update setting");
-    }
+      await axios.post(`${API_BASE_URL}/api/settings`, { [key]: newValue }, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (error) { setSettings(prev => ({ ...prev, [key]: !newValue })); alert("Failed to save setting"); }
   };
 
-  // --- TICKET HANDLERS ---
-  const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
+  const handleToggleAdmin = async (user) => { if(!window.confirm(`Promote/Demote ${user.name}?`)) return; const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
+  const openBanModal = (user) => { setSelectedUser(user); setBanDuration(30); setIsBanModalOpen(true); };
+  const handleConfirmBan = async () => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } }); setIsBanModalOpen(false); fetchUsers(t, 'active'); };
+  const handleUnban = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
+  const handleDeleteUser = async (user) => { if(!window.confirm("Delete?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'active'); };
+  const handleRestoreUser = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); fetchUsers(t, 'deleted'); };
   
-  const confirmCloseTicket = async () => {
-    try {
-        const token = localStorage.getItem('token');
-        await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${token}` } });
-        setMessages(prev => prev.filter(msg => msg.id !== messageToClose));
-        setIsCloseTicketModalOpen(false);
-    } catch (error) { alert("Error closing ticket."); }
-  };
+  const handleSaveCourse = async () => { const t=localStorage.getItem('token'); const r=await axios.post(`${API_BASE_URL}/api/courses`, newCourse, { headers: { Authorization: `Bearer ${t}` } }); setCourses([...courses, r.data]); setIsModalOpen(false); };
+  const handleUpdateCourse = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } }); setIsEditModalOpen(false); fetchCourses(t); };
+  const handleDeleteCourse = async (id) => { if(!window.confirm("Archive?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${t}` } }); fetchCourses(t); };
 
-  // --- CSV EXPORT HANDLER ---
+  const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
+  const confirmCloseTicket = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${t}` } }); setMessages(prev => prev.filter(msg => msg.id !== messageToClose)); setIsCloseTicketModalOpen(false); };
+
   const handleExportCSV = () => {
-    if (transactions.length === 0) return alert("No transactions to export");
-    const headers = ["User", "Email", "Course", "Date", "Status"];
-    const rows = transactions.map(tx => [tx.user, tx.email, tx.course, tx.date, "Paid"].join(","));
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows].join("\n");
-    const encodedUri = encodeURI(csvContent);
+    if (transactions.length === 0) return alert("No data");
+    const headers = ["User,Email,Course,Date,Status"];
+    const rows = transactions.map(tx => `${tx.user},${tx.email},"${tx.course}",${tx.date},Paid`);
+    const csvContent = [headers, ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", URL.createObjectURL(blob));
     link.setAttribute("download", "transactions.csv");
-    document.body.appendChild(link);
-    link.click();
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
 
-  // --- BUILDER HANDLERS ---
   const handleAddModule = (isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = {...t, modules: [...t.modules, {title: "New Module", lessons: []}]}; isEdit ? setEditingCourse(u) : setNewCourse(u); };
   const handleAddLesson = (mIdx, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[mIdx].lessons.push({title: "New Lesson", type: "text", content: ""}); isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
   const handleModuleTitleChange = (i, v, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[i].title = v; isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
   const handleLessonTitleChange = (mIdx, lIdx, v, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[mIdx].lessons[lIdx].title = v; isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
   
-  // --- HELPERS ---
   const handleOpenModal = () => { setNewCourse({ title: '', description: '', price: 29, category: 'HR', modules: [] }); setIsModalOpen(true); };
-  const handleJsonUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const json = JSON.parse(e.target.result);
-        if (json.title && Array.isArray(json.modules)) {
-          setNewCourse({ ...json, price: json.price || 29 });
-          alert("JSON Loaded Successfully!");
-        } else { alert("Invalid JSON format."); }
-      } catch (error) { alert("Error parsing JSON."); }
-    };
-    reader.readAsText(file);
-  };
-
+  const handleJsonUpload = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{const j=JSON.parse(ev.target.result); if(j.title){setNewCourse({...j, price: j.price||29}); alert("Loaded!");}}catch(err){alert("Invalid JSON");} }; r.readAsText(f); };
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
-
-  // Generate Dummy Data for System Chart
   const systemLoadData = [...Array(20)].map((_, i) => ({ time: i, load: 20 + Math.random() * 30 }));
 
   return (
+    // --- LIGHT THEME CONTAINER ---
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 relative">
       
-      {/* --- MOBILE OVERLAY (New: Clicking outside closes sidebar) --- */}
+      {/* MOBILE OVERLAY */}
       {isSidebarOpen && (
         <div 
           onClick={() => setIsSidebarOpen(false)}
@@ -276,18 +175,17 @@ const AdminDashboard = () => {
         />
       )}
 
-      {/* --- SIDEBAR (Light Theme + Mobile Slide Logic) --- */}
+      {/* --- SIDEBAR --- */}
       <div className={`
-        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-30 transform transition-transform duration-300 ease-in-out shadow-xl
+        fixed top-0 left-0 h-full w-64 bg-white border-r border-gray-200 z-30 transform transition-transform duration-300 ease-in-out shadow-lg
         ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
         md:translate-x-0 md:shadow-none
       `}>
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+        <div className="p-6 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-orange-600 rounded-xl flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">A</div>
-            <span className="font-bold text-xl tracking-tight text-gray-900">ADMIN PANEL</span>
+            <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-black rounded-xl flex items-center justify-center font-bold text-white shadow-md">A</div>
+            <span className="font-bold text-xl tracking-tight text-gray-900">ADMIN</span>
           </div>
-          {/* Mobile Close Button */}
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-gray-500 hover:text-red-600">
             <X size={24} />
           </button>
@@ -295,7 +193,6 @@ const AdminDashboard = () => {
 
         <div className="p-4 flex-1 overflow-y-auto h-[calc(100vh-140px)] custom-scrollbar">
           <p className="text-xs font-bold text-gray-400 uppercase mb-2 px-2 mt-2">Main</p>
-          {/* Pass closeMobileMenu so clicking a link closes sidebar on mobile */}
           <SidebarItem id="overview" icon={LayoutDashboard} label="Dashboard" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="courses" icon={BookOpen} label="Courses" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="users" icon={Users} label="Active Users" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -309,34 +206,32 @@ const AdminDashboard = () => {
           <SidebarItem id="settings" icon={Settings} label="Global Settings" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
         </div>
         
-        <div className="absolute bottom-0 w-full p-4 border-t border-gray-200 bg-white">
-            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-medium mb-2"><Eye size={16}/> Student View</button>
+        <div className="absolute bottom-0 w-full p-4 border-t border-gray-100 bg-white">
+            <button onClick={() => navigate('/dashboard')} className="w-full py-2 bg-gray-50 hover:bg-gray-100 text-gray-600 hover:text-black rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold mb-2 border border-gray-200"><Eye size={16}/> Student View</button>
             <button onClick={handleLogout} className="w-full py-2 bg-red-50 border border-red-100 hover:bg-red-100 text-red-600 rounded-lg transition flex items-center justify-center gap-2 text-sm font-bold"><LogOut size={16}/> Log Out</button>
         </div>
       </div>
 
-      {/* --- MAIN CONTENT (Adapts for Sidebar) --- */}
+      {/* --- MAIN CONTENT --- */}
       <div className="flex-1 md:ml-64 p-4 md:p-8 bg-gray-50 min-h-screen transition-all duration-300">
         
-        {/* --- HEADER (New: Mobile Toggle Button) --- */}
+        {/* HEADER */}
         <div className="flex justify-between items-center mb-8 bg-white p-4 rounded-xl border border-gray-200 shadow-sm sticky top-0 z-20">
           <div className="flex items-center gap-4">
-            {/* Hamburger Button (Hidden on Desktop) */}
             <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200">
               <Menu size={24} />
             </button>
             <div>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1>
-                <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1>
+              <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p>
             </div>
           </div>
 
           <div className="flex items-center gap-4 md:gap-6">
-             {/* NOTIFICATION DROPDOWN */}
              <div className="relative">
                 <button onClick={() => setShowNotifications(!showNotifications)} className="p-2 bg-gray-100 rounded-full text-gray-600 hover:text-black relative transition">
                     <Bell size={20} />
-                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-600 rounded-full border-2 border-white"></span>}
+                    {stats.recent_messages && stats.recent_messages.length > 0 && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>}
                 </button>
                 {showNotifications && (
                     <div className="absolute right-0 mt-3 w-80 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
@@ -344,103 +239,52 @@ const AdminDashboard = () => {
                             <span className="font-bold text-gray-900 text-sm">Notifications</span>
                             <span className="text-xs text-gray-500 cursor-pointer hover:text-black" onClick={() => setActiveTab('support')}>View All</span>
                         </div>
-                        {(!stats.recent_messages || stats.recent_messages.length === 0) ? (
-                            <div className="p-6 text-center text-gray-500 text-sm">No new messages</div>
-                        ) : (
-                            stats.recent_messages.map(msg => (
-                                <div key={msg.id} className="p-4 hover:bg-gray-50 border-b border-gray-100 cursor-pointer" onClick={() => setActiveTab('support')}>
-                                    <div className="flex justify-between mb-1">
-                                        <span className="text-gray-900 font-bold text-sm truncate w-40">{msg.subject}</span>
-                                        <span className="text-xs text-gray-500">{msg.time}</span>
-                                    </div>
-                                    <p className="text-xs text-gray-500">From: {msg.name}</p>
-                                </div>
-                            ))
-                        )}
+                        {(!stats.recent_messages || stats.recent_messages.length === 0) ? <div className="p-6 text-center text-gray-500 text-sm">No new messages</div> : stats.recent_messages.map(msg => (<div key={msg.id} className="p-4 hover:bg-gray-50 border-b border-gray-100 cursor-pointer" onClick={() => setActiveTab('support')}><div className="flex justify-between mb-1"><span className="text-gray-900 font-bold text-sm truncate w-40">{msg.subject}</span><span className="text-xs text-gray-500">{msg.time}</span></div><p className="text-xs text-gray-500">From: {msg.name}</p></div>))}
                     </div>
                 )}
              </div>
 
-             {/* PROFILE DROPDOWN */}
              <div className="relative">
                 <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-3 pl-4 md:border-l border-gray-200">
                     <div className="text-right hidden md:block">
                         <p className="text-sm font-bold text-gray-900">{adminName}</p>
                         <p className="text-xs text-green-600">Super Admin</p>
                     </div>
-                    <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center font-bold text-white shadow-lg shadow-red-200">
-                        {adminInitials}
-                    </div>
+                    <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-black rounded-full flex items-center justify-center font-bold text-white shadow-lg">{adminInitials}</div>
                     <ChevronDown size={14} className="text-gray-400 hidden md:block"/>
                 </button>
                 {showProfileMenu && (
                     <div className="absolute right-0 mt-3 w-48 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden animate-fade-in-up z-50">
-                        <button onClick={() => navigate('/dashboard')} className="w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 hover:text-black flex items-center gap-2">
-                            <UserIcon size={16}/> Student View
-                        </button>
-                        <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100">
-                            <LogOut size={16}/> Sign Out
-                        </button>
+                        <button onClick={() => navigate('/dashboard')} className="w-full text-left px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 flex items-center gap-2"><UserIcon size={16}/> Student View</button>
+                        <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 border-t border-gray-100"><LogOut size={16}/> Sign Out</button>
                     </div>
                 )}
              </div>
           </div>
         </div>
 
-        {/* --- TABS CONTENT --- */}
+        {/* --- DYNAMIC CONTENT --- */}
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-green-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white transition"><DollarSign size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Revenue</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-blue-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition"><Users size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.students}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Students</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-purple-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition"><BookOpen size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">Total Courses</p>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 hover:border-orange-500 transition-all group shadow-sm">
-                  <div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600 group-hover:bg-orange-600 group-hover:text-white transition"><Activity size={24}/></div></div>
-                  <h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-wider mt-1">System Uptime</p>
-              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600"><DollarSign size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Revenue</p></div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600"><Users size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.students}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Students</p></div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600"><BookOpen size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Courses</p></div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600"><Activity size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">System Uptime</p></div>
             </div>
-            
-            {/* REVENUE CHART */}
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
                 <h3 className="text-lg font-bold mb-6 text-gray-900">Revenue Overview</h3>
                 <div className="h-80 min-w-[600px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={stats.chart_data && stats.chart_data.length > 0 ? stats.chart_data : MOCK_REVENUE_DATA}>
-                            <defs>
-                                <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/>
-                                    <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-                            <XAxis dataKey="name" stroke="#9ca3af" axisLine={false} tickLine={false} />
-                            <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={val => `$${val}`} />
-                            <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#000', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }} />
-                            <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                    <ResponsiveContainer width="100%" height="100%"><AreaChart data={stats.chart_data && stats.chart_data.length > 0 ? stats.chart_data : MOCK_REVENUE_DATA}><defs><linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/><stop offset="95%" stopColor="#dc2626" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} /><XAxis dataKey="name" stroke="#9ca3af" axisLine={false} tickLine={false} /><YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={val => `$${val}`} /><Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px', color: '#000' }} /><Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={3} fillOpacity={1} fill="url(#colorIncome)" /></AreaChart></ResponsiveContainer>
                 </div>
             </div>
           </div>
         )}
 
-        {/* --- RESPONSIVE TABLES (Scrollable Container Added) --- */}
+        {/* --- TABLES (With Tooltips Restored) --- */}
         {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-                <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 gap-4">
+                <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
                     <div className="w-full flex justify-between items-center md:block">
                         <h3 className="font-bold text-lg text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h3>
                     </div>
@@ -450,13 +294,13 @@ const AdminDashboard = () => {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                                 <input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-500 transition" />
                             </div>
-                            <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200"><Plus size={18} /> Add</button>
+                            <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200 w-full md:w-auto"><Plus size={18} /> Add</button>
                         </div>
                     )}
-                    {activeTab === 'revenue' && <button onClick={handleExportCSV} className="text-xs bg-gray-800 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-800">Export CSV</button>}
+                    {activeTab === 'revenue' && <button onClick={handleExportCSV} className="text-xs bg-gray-900 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-900">Export CSV</button>}
                 </div>
                 
-                <div className="overflow-x-auto"> {/* <--- Horizontal Scroll for Mobile */}
+                <div className="overflow-x-auto">
                     <table className="w-full text-left min-w-[800px]">
                         <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider">
                             <tr>
@@ -467,48 +311,42 @@ const AdminDashboard = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 text-sm">
-                            {activeTab === 'courses' && courses.map(course => (
-                                <tr key={course.id} className="hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4 font-bold text-gray-900">{course.title}</td>
-                                    <td className="px-6 py-4 text-green-600 font-bold">${course.price}</td>
-                                    <td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded border border-gray-200">{course.category}</span></td>
-                                    <td className="px-6 py-4 text-gray-500">{course.modules?.length || 0} Modules</td>
-                                    <td className="px-6 py-4 text-right flex justify-end gap-3">
-                                        <button onClick={() => { setEditingCourse(course); setIsEditModalOpen(true); }} className="text-blue-600 hover:text-blue-800 bg-blue-50 p-2 rounded transition"><Edit size={18}/></button>
-                                        <button onClick={() => handleDeleteCourse(course.id)} className="text-red-600 hover:text-red-800 bg-red-50 p-2 rounded transition"><Archive size={18}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {activeTab === 'users' && users.map(user => (
-                                <tr key={user.id} className="hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4"><div className="font-bold text-gray-900">{user.name}</div><div className="text-xs text-gray-500">{user.email}</div></td>
-                                    <td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${user.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{user.role}</span></td>
-                                    <td className="px-6 py-4">{user.status === 'Banned' ? <span className="text-red-600 font-bold flex items-center gap-1 bg-red-50 px-2 py-1 rounded"><ShieldAlert size={14}/> Banned</span> : <span className="text-green-600 font-bold flex items-center gap-1 bg-green-50 px-2 py-1 rounded"><CheckCircle size={14}/> Active</span>}</td>
-                                    <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => handleToggleAdmin(user)} className="p-2 rounded bg-gray-100 text-gray-500 hover:bg-gray-200">{user.role === 'Admin' ? <ShieldCheck size={18} /> : <Shield size={18} />}</button>
-                                        <button onClick={() => user.status === 'Banned' ? handleUnban(user) : openBanModal(user)} className="p-2 rounded bg-orange-50 text-orange-600 hover:bg-orange-100"><Ban size={18}/></button>
-                                        <button onClick={() => handleDeleteUser(user)} className="p-2 rounded bg-red-50 text-red-600 hover:bg-red-100"><Trash2 size={18}/></button>
-                                    </td>
-                                </tr>
-                            ))}
-                            {activeTab === 'revenue' && transactions.map((tx, i) => (
-                                <tr key={i} className="hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4 font-bold text-gray-900">{tx.user}<div className="text-xs text-gray-500 font-normal">{tx.email}</div></td>
-                                    <td className="px-6 py-4 text-gray-700">{tx.course}</td>
-                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{tx.date}</td>
-                                    <td className="px-6 py-4"><span className="text-green-700 text-xs border border-green-200 bg-green-50 px-2 py-1 rounded font-bold flex items-center gap-1 w-fit"><CheckCircle size={12}/> Paid</span></td>
-                                </tr>
-                            ))}
-                            {activeTab === 'audit' && logs.map((log, i) => (
-                                <tr key={i} className="hover:bg-gray-50 transition">
-                                    <td className="px-6 py-4 font-bold text-gray-900 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-orange-500"></div>{log.action}</td>
-                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.admin}</td>
-                                    <td className="px-6 py-4 text-gray-600 italic">{log.details}</td>
-                                    <td className="px-6 py-4 text-gray-500 font-mono text-xs">{log.date}</td>
-                                </tr>
-                            ))}
+                            {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
+                            {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
+                            {activeTab === 'revenue' && transactions.map((t,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{t.user}</td><td className="px-6 py-4 text-gray-700">{t.course}</td><td className="px-6 py-4 text-gray-500">{t.date}</td><td className="px-6 py-4 text-green-700 font-bold">Paid</td></tr>))}
+                            {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
                         </tbody>
                     </table>
+                </div>
+            </div>
+        )}
+
+        {/* SUPPORT TAB (Fully Functional) */}
+        {activeTab === 'support' && (
+            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm h-[80vh] flex flex-col">
+                <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+                    <h3 className="font-bold text-lg flex items-center gap-2 text-gray-900"><Mail className="text-blue-600"/> Support Inbox</h3>
+                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">{messages.length} Messages</span>
+                </div>
+                <div className="divide-y divide-gray-200 overflow-y-auto flex-1 custom-scrollbar">
+                    {messages.length === 0 ? <div className="p-20 text-center text-gray-500 italic">No support messages received yet.</div> : messages.map(msg => (
+                        <div key={msg.id} className={`p-6 transition cursor-pointer group ${msg.is_read ? 'opacity-50 hover:opacity-80 bg-gray-50' : 'hover:bg-gray-50'}`}>
+                            <div className="flex justify-between mb-2">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow">{msg.name.charAt(0).toUpperCase()}</div>
+                                    <div>
+                                        <h4 className="font-bold text-gray-900 group-hover:text-blue-600 transition flex items-center gap-2">{msg.subject}{!msg.is_read && <span className="bg-red-500 text-white text-[10px] px-2 rounded-full">New</span>}</h4>
+                                        <p className="text-xs text-gray-500">From: <span className="text-gray-900 font-medium">{msg.name}</span> &lt;{msg.email}&gt;</p>
+                                    </div>
+                                </div>
+                                <span className="text-xs text-gray-400 font-mono">{msg.date}</span>
+                            </div>
+                            <div className="pl-13 ml-13 mt-3 bg-gray-50 p-4 rounded-lg border border-gray-200"><p className="text-sm text-gray-700 leading-relaxed">{msg.message}</p></div>
+                            <div className="mt-3 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition">
+                                {!msg.is_read && (<button onClick={() => initiateCloseTicket(msg.id)} title="Close Ticket" className="text-xs bg-gray-800 text-white px-3 py-1 rounded hover:bg-black flex items-center gap-1 shadow-md"><CheckSquare size={12}/> Close Ticket</button>)}
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         )}
@@ -528,11 +366,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="p-6 bg-red-50 rounded-xl border border-red-100 mt-8">
                         <h4 className="font-bold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
-                        <p className="text-gray-600 text-sm mb-4">Irreversible actions for system management.</p>
-                        <div className="flex gap-4">
-                            <button className="px-4 py-2 border border-red-200 text-red-600 rounded hover:bg-red-100 text-sm font-bold transition bg-white">Clear Cache</button>
-                            <button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold transition shadow-lg shadow-red-200">Reset Database (Dev Only)</button>
-                        </div>
+                        <div className="flex gap-4"><button className="px-4 py-2 border border-red-200 text-red-600 rounded hover:bg-red-100 text-sm font-bold bg-white">Clear Cache</button><button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold">Reset Database</button></div>
                     </div>
                 </div>
             </div>
@@ -540,23 +374,50 @@ const AdminDashboard = () => {
 
       </div>
 
-      {/* --- MODALS (Unchanged logic, just wrapped properly) --- */}
-      {/* BAN MODAL (Light) */}
+      {/* --- MODALS --- */}
+      {(isModalOpen || isEditModalOpen) && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+              <div className="bg-white p-6 rounded-xl max-w-4xl w-full h-[90vh] overflow-y-auto border border-gray-200 shadow-2xl">
+                  <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                      <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">{isEditModalOpen ? "Edit Course" : "Create New Course"}</h2>
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600"><X size={24} /></button>
+                  </div>
+                  <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none" placeholder="Title" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
+                        <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}><option>HR</option><option>Business</option><option>Education</option><option>Development</option></select>
+                      </div>
+                      <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
+                      <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
+                      <div className="border-t border-gray-100 pt-6">
+                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700">Curriculum</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded">Add Module</button></div>
+                          {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
+                              <div key={i} className="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
+                                  <div className="flex gap-2 mb-2"><input className="bg-transparent font-bold flex-1 text-gray-900" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600">+ Lesson</button></div>
+                                  <div className="pl-4 border-l-2 border-gray-300 space-y-2">{mod.lessons.map((les, j) => <input key={j} className="w-full text-sm p-1 bg-white border border-gray-300 rounded text-gray-900" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/>)}</div>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+                  <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 mt-6">
+                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded font-bold text-gray-600">Cancel</button>
+                      <button onClick={isEditModalOpen ? handleUpdateCourse : handleSaveCourse} className="px-6 py-3 bg-red-600 text-white rounded font-bold">Save</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {isBanModalOpen && selectedUser && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-            <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
+            <div className="bg-white p-6 rounded-xl max-w-sm w-full shadow-2xl border border-gray-200">
                 <h3 className="text-xl font-bold mb-4 text-gray-900">Ban User</h3>
-                <div className="mb-4">
-                    <label className="text-sm text-gray-600 font-bold">Duration (Days)</label>
-                    <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"/>
-                </div>
-                <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white hover:bg-red-700 transition">Confirm Ban</button>
-                <button onClick={() => setIsBanModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
+                <input type="number" value={banDuration} onChange={(e) => setBanDuration(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mb-4 text-gray-900"/>
+                <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white mb-2">Confirm</button>
+                <button onClick={() => setIsBanModalOpen(false)} className="w-full py-2 text-gray-500">Cancel</button>
             </div>
         </div>
       )}
 
-      {/* CLOSE TICKET MODAL (Light) */}
       {isCloseTicketModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
             <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
@@ -571,41 +432,6 @@ const AdminDashboard = () => {
                 </div>
             </div>
         </div>
-      )}
-
-      {/* COURSE MODAL (Light) */}
-      {(isModalOpen || isEditModalOpen) && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-              <div className="bg-white p-6 rounded-xl max-w-4xl w-full h-[90vh] overflow-y-auto border border-gray-200 shadow-2xl">
-                  <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
-                      <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-                          {isEditModalOpen ? <><Edit size={24} className="text-blue-600"/> Edit Course</> : <><Plus size={24} className="text-red-600"/> Create New Course</>}
-                      </h2>
-                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="text-gray-400 hover:text-red-600 transition"><X size={24} /></button>
-                  </div>
-                  <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" placeholder="Title" value={isEditModalOpen ? editingCourse.title : newCourse.title} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, title: e.target.value}) : setNewCourse({...newCourse, title: e.target.value})}/>
-                        <select className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" value={isEditModalOpen ? editingCourse.category : newCourse.category} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, category: e.target.value}) : setNewCourse({...newCourse, category: e.target.value})}><option>HR</option><option>Development</option><option>Marketing</option><option>Business</option></select>
-                      </div>
-                      <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
-                      <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
-                      <div className="border-t border-gray-100 pt-6">
-                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
-                          {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
-                              <div key={i} className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
-                                  <div className="flex items-center gap-3 mb-3"><span className="text-xs font-bold text-gray-600 bg-gray-200 px-2 py-1 rounded">MOD {i+1}</span><input className="bg-transparent text-gray-900 font-bold flex-1 outline-none border-b border-gray-300 focus:border-blue-600" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
-                                  <div className="space-y-2 pl-2 border-l-2 border-gray-300 ml-4">{mod.lessons.map((les, j) => <input key={j} className="w-full text-sm p-1 bg-white border border-gray-300 rounded text-gray-900" value={les.title} onChange={e => handleLessonTitleChange(i, j, e.target.value, isEditModalOpen)} placeholder="Lesson Title"/>)}</div>
-                              </div>
-                          ))}
-                      </div>
-                  </div>
-                  <div className="pt-6 border-t border-gray-100 flex justify-end gap-3 mt-6">
-                      <button onClick={() => { setIsModalOpen(false); setIsEditModalOpen(false); }} className="px-6 py-3 border border-gray-300 rounded-lg text-gray-600 font-bold hover:bg-gray-100 transition">Cancel</button>
-                      <button onClick={isEditModalOpen ? handleUpdateCourse : handleSaveCourse} className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold shadow-lg shadow-red-200 flex items-center gap-2 transition"><Save size={18}/> {isEditModalOpen ? "Update Course" : "Save & Publish"}</button>
-                  </div>
-              </div>
-          </div>
       )}
     </div>
   );
