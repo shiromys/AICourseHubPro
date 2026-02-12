@@ -45,29 +45,37 @@ const AdminRoute = ({ children }) => {
   return children;
 };
 
-// --- 3. Maintennace Function enabler ---
-const [isMaintenance, setIsMaintenance] = useState(false);
-const [checkingMaintenance, setCheckingMaintenance] = useState(true);
-const userRole = localStorage.getItem('user_role'); // Check if admin
-
-useEffect(() => {
-  axios.get(`${API_BASE_URL}/api/settings`)
-    .then(res => {
-      setIsMaintenance(res.data.maintenance);
-      setCheckingMaintenance(false);
-    })
-    .catch(() => setCheckingMaintenance(false));
-}, []);
-
-if (checkingMaintenance) return null; // Or a loading spinner
-
-// BLOCK ACCESS if Maintenance is ON and user is NOT Admin
-if (isMaintenance && userRole !== 'admin' && !window.location.pathname.includes('/login')) {
-   return <Maintenance />;
-}
-
 
 function App() {
+// =====================================================
+  // 1. MAINTENANCE MODE LOGIC (MUST BE INSIDE THE FUNCTION)
+  // =====================================================
+  const [isMaintenance, setIsMaintenance] = useState(false);
+  const [checkingMaintenance, setCheckingMaintenance] = useState(true);
+  const userRole = localStorage.getItem('user_role'); 
+
+  useEffect(() => {
+    axios.get(`${API_BASE_URL}/api/settings`)
+      .then(res => {
+        setIsMaintenance(res.data.maintenance);
+        setCheckingMaintenance(false);
+      })
+      .catch((e) => {
+        console.error("Maintenance check failed:", e);
+        setCheckingMaintenance(false);
+      });
+  }, []);
+
+  // 2. CHECKING STATE (Show nothing or a spinner while checking)
+  if (checkingMaintenance) return <div className="h-screen w-screen bg-black" />;
+
+  // 3. BLOCK ACCESS IF MAINTENANCE IS ON (And user is not Admin)
+  // We allow access to '/login' so Admins can get in to turn it off.
+  if (isMaintenance && userRole !== 'admin' && !window.location.pathname.includes('/login')) {
+     return <Maintenance />;
+  }
+  // =====================================================
+
   return (
     <BrowserRouter>
     <ScrollToTop />
