@@ -155,26 +155,39 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
-    data = request.json
-    email = data['email'].strip().lower()
-    
-    if User.query.filter_by(email=email).first():
-        return jsonify({"msg": "User already exists"}), 400
-
-    hashed_pw = generate_password_hash(data['password'])
-    
-    new_user = User(email=email, password=hashed_pw, name=data['name'])
-    db.session.add(new_user)
-    db.session.commit()
-
-    # --- SEND WELCOME EMAIL (Using Flask-Mail) ---
     try:
-        msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-        msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com")
-        msg.reply_to = "support@shirotechnologies.com" 
-        msg.body = f"""Hello {data['name']},
+        data = request.json
+        
+        # 1. Safe Data Extraction
+        email = data.get('email', '').strip().lower()
+        password = data.get('password')
+        name = data.get('name')
 
-Welcome to AICourseHub Pro! 
+        # 2. Validation
+        if not email or not password or not name:
+            return jsonify({"msg": "All fields are required"}), 400
+
+        # 3. Check if user exists
+        if User.query.filter_by(email=email).first():
+            return jsonify({"msg": "User already exists"}), 400
+
+        # 4. Create User
+        hashed_pw = generate_password_hash(password)
+        # Ensure 'role' is included if your model requires it
+        new_user = User(email=email, password=hashed_pw, name=name, role='student')
+        
+        db.session.add(new_user)
+        db.session.commit() # <--- Data saved successfully here
+
+        # 5. Send Welcome Email (Safely Wrapped)
+        try:
+            msg = Message("Welcome to AICourseHubPro!", recipients=[email])
+            # Ensure MAIL_USERNAME or sender is configured in .env
+            msg.sender = ("Team AICourseHubPro", "info@aicoursehubpro.com") 
+            msg.reply_to = "support@shirotechnologies.com" 
+            msg.body = f"""Hello {name},
+
+Welcome to AICourseHubPro! 
 
 Your account has been successfully created. You can now log in to start your courses.
 
@@ -183,12 +196,19 @@ Login here: https://aicoursehubpro.com/login
 Best regards,
 Team AICourseHubPro
 """
-        mail.send(msg)
-        print(f"DEBUG: Welcome Email sent to {email}")
-    except Exception as e:
-        print(f"ERROR: Email sending failed: {e}")
+            mail.send(msg)
+            print(f"DEBUG: Welcome Email sent to {email}")
+        except Exception as email_error:
+            # If email fails, we LOG it, but we do NOT crash the response.
+            print(f"WARNING: Email sending failed: {email_error}")
 
-    return jsonify({"msg": "Signup successful"}), 201
+        # 6. Return Success to Frontend
+        return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
+
+    except Exception as e:
+        db.session.rollback() # Undo DB changes if main logic fails
+        print(f"CRITICAL ERROR in Signup: {e}")
+        return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
 
 @app.route('/api/login', methods=['POST'])
