@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
-import { Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react'; // Added icons for better UX
+import { Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import API_BASE_URL from '../config';
 
 const Register = () => {
@@ -10,7 +10,7 @@ const Register = () => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // New States for Feedback
+  // Feedback States
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,21 +22,22 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/signup`, formData);
+      await axios.post(`${API_BASE_URL}/api/signup`, formData);
       
-      // 1. Show Success Message
-      setSuccess("Registration successful! Redirecting to login...");
+      // Show Success Message
+      setSuccess("Account created successfully! Redirecting to login...");
       
-      // 2. Clear Form
-      setFormData({ name: '', email: '', password: '' });
+      // Clear sensitive data
+      setFormData({ ...formData, password: '' });
 
-      // 3. Wait 2 seconds so user can read the message, then redirect
+      // Redirect after 2 seconds
       setTimeout(() => {
         navigate('/login');
       }, 2000);
 
     } catch (err) {
-      setError(err.response?.data?.msg || "Signup failed. Try again.");
+      console.error("Signup Error:", err);
+      setError(err.response?.data?.msg || "Signup failed. Please try again.");
       setLoading(false);
     }
   };
@@ -48,17 +49,17 @@ const Register = () => {
         <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-100">
           <h2 className="text-2xl font-black mb-6 text-center">Create Account</h2>
           
-          {/* --- SUCCESS MESSAGE (New Feature) --- */}
+          {/* --- SUCCESS NOTIFICATION --- */}
           {success && (
-            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 text-sm font-bold border border-green-200 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 text-sm font-bold border border-green-200 flex items-center gap-3 animate-fade-in">
               <CheckCircle size={20} className="shrink-0" />
               <span>{success}</span>
             </div>
           )}
 
-          {/* --- ERROR MESSAGE --- */}
+          {/* --- ERROR NOTIFICATION --- */}
           {error && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm font-bold border border-red-100 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm font-bold border border-red-100 flex items-center gap-3 animate-fade-in">
               <AlertCircle size={20} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -70,11 +71,11 @@ const Register = () => {
               <input 
                 type="text" 
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:opacity-50"
                 placeholder="John Doe"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
-                disabled={loading || success} // Disable input while loading/success
+                disabled={loading || success}
               />
             </div>
             <div>
@@ -82,7 +83,7 @@ const Register = () => {
               <input 
                 type="email" 
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none transition"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:opacity-50"
                 placeholder="you@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -94,7 +95,7 @@ const Register = () => {
               <input 
                 type={showPassword ? "text" : "password"}
                 required
-                className="w-full p-3 border border-gray-300 rounded-lg focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none pr-10 transition"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none pr-10 transition disabled:opacity-50"
                 placeholder="Create a password"
                 value={formData.password}
                 onChange={(e) => setFormData({...formData, password: e.target.value})}
@@ -111,19 +112,17 @@ const Register = () => {
             </div>
             
             <button 
-              type="submit"
+              type="submit" 
               disabled={loading || success}
-              className={`w-full py-3 text-white font-bold rounded-lg transition shadow-md flex items-center justify-center gap-2 ${
-                loading || success 
-                  ? "bg-gray-400 cursor-not-allowed" 
-                  : "bg-red-600 hover:bg-red-700 hover:shadow-lg"
+              className={`w-full py-3 text-white font-bold rounded transition shadow-lg flex items-center justify-center gap-2 ${
+                loading || success ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
               }`}
             >
-              {loading ? "Creating Account..." : success ? "Success!" : "Sign Up"}
+              {loading ? <><Loader2 className="animate-spin" size={20} /> Creating...</> : "Sign Up"}
             </button>
           </form>
           
-          <div className="mt-6 text-center text-sm text-gray-500">
+          <div className="mt-4 text-center text-sm text-gray-500">
               Already have an account? <Link to="/login" className="text-red-600 font-bold hover:underline">Log In</Link>
           </div>
         </div>
