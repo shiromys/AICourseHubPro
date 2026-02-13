@@ -158,47 +158,48 @@ def signup():
     try:
         data = request.json
         
-        # 1. Input Validation
-        if not data.get('email') or not data.get('password') or not data.get('name'):
+        # 1. Validate Inputs
+        email = data.get('email', '').strip().lower()
+        password = data.get('password')
+        name = data.get('name')
+
+        if not email or not password or not name:
             return jsonify({"msg": "All fields are required"}), 400
 
-        email = data['email'].strip().lower()
-        
-        # 2. Check duplicate
+        # 2. Check if User Exists
         if User.query.filter_by(email=email).first():
             return jsonify({"msg": "User already exists"}), 400
 
-        # 3. Create User
-        hashed_pw = generate_password_hash(data['password'])
-        # Ensure your User model has 'role' if required, otherwise remove role='student'
-        new_user = User(email=email, password=hashed_pw, name=data['name'], role='student')
+        # 3. Create and Save User
+        hashed_pw = generate_password_hash(password)
+        # Note: Removing 'role' if your model defaults to it, or keep it if needed.
+        new_user = User(email=email, password=hashed_pw, name=name, role='student')
         
         db.session.add(new_user)
-        db.session.commit()  # <--- Data saved here
+        db.session.commit() # <--- User is saved here. 
 
-        # 4. Send Welcome Email (Safely Wrapped)
+        # 4. Try to Send Email (But DO NOT CRASH if it fails)
         try:
-            msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-            # Ensure sender is configured in your .env or Config
-            msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com") 
-            msg.body = f"Hello {data['name']},\n\nWelcome to AICourseHub Pro! Your account has been successfully created.\n\nLogin here: https://aicoursehubpro.com/login"
-            
-            # Check if 'mail' is defined before sending
-            if 'mail' in globals():
+            # Check if mail object exists before using it
+            if 'mail' in globals() and mail:
+                msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
+                msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com")
+                msg.body = f"Hello {name},\n\nWelcome! Your account is created.\n\nLogin: https://aicoursehubpro.com/login"
                 mail.send(msg)
+                print(f"SUCCESS: Email sent to {email}")
             else:
-                print("WARNING: 'mail' object not found. Skipping email.")
-                
+                print("WARNING: Email skipped (Mail not configured)")
         except Exception as e:
-            # Log error but DO NOT crash the request
-            print(f"WARNING: Email sending failed: {str(e)}")
+            # If email fails, just print error and continue. Do NOT return 500.
+            print(f"WARNING: Email sending failed: {e}")
 
-        # 5. Return Success
-        return jsonify({"msg": "Signup successful", "user": {"email": email}}), 201
+        # 5. Return Success Response (Crucial)
+        return jsonify({"msg": "Signup successful"}), 201
 
     except Exception as e:
+        # Only catch critical database errors here
         db.session.rollback()
-        print(f"CRITICAL ERROR: {str(e)}")
+        print(f"CRITICAL ERROR in Signup: {e}")
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
 
