@@ -172,34 +172,20 @@ def signup():
 
         # 3. Create and Save User
         hashed_pw = generate_password_hash(password)
-        # Note: Removing 'role' if your model defaults to it, or keep it if needed.
+        
+        # Note: If your User model does not have 'role', remove ", role='student'"
         new_user = User(email=email, password=hashed_pw, name=name, role='student')
         
         db.session.add(new_user)
-        db.session.commit() # <--- User is saved here. 
+        db.session.commit() # <--- User is saved here
 
-        # 4. Try to Send Email (But DO NOT CRASH if it fails)
-        try:
-            # Check if mail object exists before using it
-            if 'mail' in globals() and mail:
-                msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-                msg.sender = ("AICourseHub Team", "info@aicoursehubpro.com")
-                msg.body = f"Hello {name},\n\nWelcome! Your account is created.\n\nLogin: https://aicoursehubpro.com/login"
-                mail.send(msg)
-                print(f"SUCCESS: Email sent to {email}")
-            else:
-                print("WARNING: Email skipped (Mail not configured)")
-        except Exception as e:
-            # If email fails, just print error and continue. Do NOT return 500.
-            print(f"WARNING: Email sending failed: {e}")
-
-        # 5. Return Success Response (Crucial)
+        # 4. Return Success IMMEDIATELY (No Email Logic to crash it)
         return jsonify({"msg": "Signup successful"}), 201
 
     except Exception as e:
-        # Only catch critical database errors here
+        # If we get here, it means the DATABASE failed, so we rollback.
         db.session.rollback()
-        print(f"CRITICAL ERROR in Signup: {e}")
+        print(f"CRITICAL DB ERROR: {e}")
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
 
