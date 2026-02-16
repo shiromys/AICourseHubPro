@@ -13,6 +13,7 @@ import resend
 import os
 import uuid
 import stripe
+import sys # Added for forcing logs to print
 
 # Load environment variables
 load_dotenv() 
@@ -38,8 +39,7 @@ app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHubPro", "info@aicoursehubpro.com"
 
 mail = Mail(app)
 
-# --- DATABASE CONFIGURATION (WITH RAILWAY FIX) ---
-# Railway uses 'postgres://' but SQLAlchemy needs 'postgresql://'
+# --- DATABASE CONFIGURATION ---
 db_url = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -124,7 +124,7 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
-    print("--- DEBUG: Signup Request Started ---")
+    print("--- DEBUG: Signup Request Started ---", flush=True)
     try:
         data = request.json
         
@@ -141,35 +141,42 @@ def signup():
         # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         
-        # FIX: We strictly use the columns seen in your DB screenshot.
-        # We explicitly set is_admin and is_deleted to False to prevent 'Not Null' errors.
+        # Explicitly setting flags to avoid NULL errors
         new_user = User(
             email=email, 
             password=hashed_pw, 
             name=name,
-            is_admin=False,   # Explicitly set
-            is_deleted=False  # Explicitly set
+            is_admin=False,
+            is_deleted=False
         )
         
         db.session.add(new_user)
         db.session.commit()
-        print(f"--- DEBUG: User {email} saved to DB successfully ---")
+        
+        # --- CRITICAL FIX: REFRESH USER ---
+        # This reconnects the user object to the session so we can read .id
+        # without causing a DetachedInstanceError crash.
+        db.session.refresh(new_user)
+        
+        print(f"--- DEBUG: User saved with ID: {new_user.id} ---", flush=True)
 
-        # --- EMAIL STEP (SAFE MODE) ---
-        try:
-            msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-            msg.body = f"Hello {name},\n\nWelcome! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login"
-            mail.send(msg)
-            print("--- DEBUG: Email sent successfully ---")
-        except Exception as e:
-            print(f"--- WARNING: Email failed but user created: {str(e)} ---")
+        # --- EMAIL STEP (DISABLED TEMPORARILY) ---
+        # We are commenting this out to PROVE the signup works.
+        # Once you see the success message, we can uncomment it safely.
+        # try:
+        #     msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
+        #     msg.body = f"Hello {name},\n\nWelcome! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login"
+        #     mail.send(msg)
+        #     print("--- DEBUG: Email sent successfully ---")
+        # except Exception as e:
+        #     print(f"--- WARNING: Email failed but user created: {str(e)} ---")
 
         return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
 
     except Exception as e:
         db.session.rollback()
-        # CRITICAL: We print the exact error so we know if it's DB or Code
-        print(f"--- CRITICAL ERROR: {str(e)} ---")
+        # Ensure this prints to Railway logs
+        print(f"--- CRITICAL ERROR: {str(e)} ---", file=sys.stderr, flush=True)
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
 @app.route('/api/login', methods=['POST'])
