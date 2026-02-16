@@ -17,20 +17,15 @@ import stripe
 # Load environment variables
 load_dotenv() 
 
-# ==========================================
-# 1. INITIALIZATION (DONE ONCE)
-# ==========================================
-
-# Initialize Flask with the static folder settings (Combined from your previous duplicate lines)
+# Initialize Flask
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
-# --- CORS CONFIGURATION ---
-# Applied strictly to the ONE app instance we just created
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# ==========================================
+# 1. CONFIGURATION
+# ==========================================
 
-# ==========================================
-# 2. CONFIGURATION
-# ==========================================
+# --- CORS CONFIGURATION ---
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -43,8 +38,13 @@ app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHubPro", "info@aicoursehubpro.com"
 
 mail = Mail(app)
 
-# --- DATABASE & SECURITY CONFIG ---
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
+# --- DATABASE CONFIGURATION (WITH RAILWAY FIX) ---
+# Railway uses 'postgres://' but SQLAlchemy needs 'postgresql://'
+db_url = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
@@ -74,7 +74,7 @@ with app.app_context():
     db.create_all()
 
 # ==========================================
-# 3. HELPER FUNCTIONS
+# 2. HELPER FUNCTIONS
 # ==========================================
 
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
@@ -119,7 +119,7 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
     """
 
 # ==========================================
-# 4. AUTH ROUTES
+# 3. AUTH ROUTES
 # ==========================================
 
 @app.route('/api/signup', methods=['POST'])
@@ -141,15 +141,21 @@ def signup():
         # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         
-        # NOTE: Including role='student' since your DB supports it.
-        new_user = User(email=email, password=hashed_pw, name=name, role='student')
+        # FIX: We strictly use the columns seen in your DB screenshot.
+        # We explicitly set is_admin and is_deleted to False to prevent 'Not Null' errors.
+        new_user = User(
+            email=email, 
+            password=hashed_pw, 
+            name=name,
+            is_admin=False,   # Explicitly set
+            is_deleted=False  # Explicitly set
+        )
         
         db.session.add(new_user)
         db.session.commit()
-        print(f"--- DEBUG: User {email} saved to DB ---")
+        print(f"--- DEBUG: User {email} saved to DB successfully ---")
 
         # --- EMAIL STEP (SAFE MODE) ---
-        # Wrapped in try/except so it NEVER crashes the signup request
         try:
             msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
             msg.body = f"Hello {name},\n\nWelcome! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login"
@@ -162,6 +168,7 @@ def signup():
 
     except Exception as e:
         db.session.rollback()
+        # CRITICAL: We print the exact error so we know if it's DB or Code
         print(f"--- CRITICAL ERROR: {str(e)} ---")
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
@@ -190,7 +197,7 @@ def login():
     })
 
 # ==========================================
-# 5. CONTACT & UTILITY ROUTES
+# 4. CONTACT & UTILITY ROUTES
 # ==========================================
 
 @app.route('/api/contact', methods=['POST'])
@@ -238,7 +245,7 @@ def contact_form():
     return jsonify({"msg": "Message sent and saved"}), 200
 
 # ==========================================
-# 6. USER MANAGEMENT ROUTES
+# 5. USER MANAGEMENT ROUTES
 # ==========================================
 
 @app.route('/api/users', methods=['GET'])
@@ -398,7 +405,7 @@ def restore_user(user_id):
     return jsonify({"msg": "User restored"})
 
 # ==========================================
-# 7. COURSE ROUTES
+# 6. COURSE ROUTES
 # ==========================================
 
 @app.route('/api/courses', methods=['GET'])
@@ -485,7 +492,7 @@ def delete_course(course_id):
     return jsonify({"msg": "Course archived"})
 
 # ==========================================
-# 8. ENROLLMENT & PROGRESS ROUTES
+# 7. ENROLLMENT & PROGRESS ROUTES
 # ==========================================
 
 @app.route('/api/enroll', methods=['POST'])
