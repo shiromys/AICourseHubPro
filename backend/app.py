@@ -155,8 +155,10 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
+    print("DEBUG: Signup request received") # Debug 1
     try:
         data = request.json
+        print(f"DEBUG: Data received: {data}") # Debug 2
         
         # 1. Validate Inputs
         email = data.get('email', '').strip().lower()
@@ -164,28 +166,47 @@ def signup():
         name = data.get('name')
 
         if not email or not password or not name:
+            print("ERROR: Missing fields")
             return jsonify({"msg": "All fields are required"}), 400
 
         # 2. Check if User Exists
-        if User.query.filter_by(email=email).first():
+        existing_user = User.query.filter_by(email=email).first()
+        if existing_user:
+            print(f"ERROR: User {email} already exists")
             return jsonify({"msg": "User already exists"}), 400
 
-        # 3. Create and Save User
+        # 3. Create User (REMOVED 'role' to prevent DB crash)
         hashed_pw = generate_password_hash(password)
         
-        # Note: If your User model does not have 'role', remove ", role='student'"
-        new_user = User(email=email, password=hashed_pw, name=name, role='student')
+        # STOP! If your DB doesn't have a 'role' column, this was causing the crash.
+        # We are using the standard 3 fields only.
+        new_user = User(email=email, password=hashed_pw, name=name)
         
+        print("DEBUG: Adding user to session...")
         db.session.add(new_user)
-        db.session.commit() # <--- User is saved here
+        
+        print("DEBUG: Committing to database...")
+        db.session.commit() # <--- If it fails, it fails HERE.
+        print("DEBUG: Commit successful!")
 
-        # 4. Return Success IMMEDIATELY (No Email Logic to crash it)
-        return jsonify({"msg": "Signup successful"}), 201
+        # 4. Try Email (Safe Mode)
+        try:
+            # Only run this if you are sure mail is configured
+            if 'mail' in globals():
+                msg = Message("Welcome!", recipients=[email])
+                msg.sender = ("AICourseHubPro", "info@aicoursehubpro.com") 
+                msg.body = "Welcome to AICourseHubPro! Login here: https://aicoursehubpro.com/login"
+                mail.send(msg)
+                print("DEBUG: Email sent")
+        except Exception as mail_err:
+            print(f"WARNING: Email failed (ignoring): {mail_err}")
+
+        # 5. Return Success
+        return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
 
     except Exception as e:
-        # If we get here, it means the DATABASE failed, so we rollback.
         db.session.rollback()
-        print(f"CRITICAL DB ERROR: {e}")
+        print(f"CRITICAL ERROR: {str(e)}") # <--- Look for this in your logs!
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
 
