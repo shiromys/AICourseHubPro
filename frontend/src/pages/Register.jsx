@@ -10,7 +10,7 @@ const Register = () => {
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   
-  // Feedback States
+  // UI States
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,21 +22,23 @@ const Register = () => {
     setLoading(true);
 
     try {
-      await axios.post(`${API_BASE_URL}/api/signup`, formData);
+      // Send data to backend
+      const res = await axios.post(`${API_BASE_URL}/api/signup`, formData);
       
-      // Show Success Message
+      // If we get here, it worked (Status 201)
       setSuccess("Account created successfully! Redirecting to login...");
       
-      // Clear sensitive data
+      // Clear password field
       setFormData({ ...formData, password: '' });
 
-      // Redirect after 2 seconds
+      // Redirect after 2 seconds so user sees the message
       setTimeout(() => {
         navigate('/login');
       }, 2000);
 
     } catch (err) {
       console.error("Signup Error:", err);
+      // Display the specific error message from the backend if available
       setError(err.response?.data?.msg || "Signup failed. Please try again.");
       setLoading(false);
     }
@@ -51,7 +53,7 @@ const Register = () => {
           
           {/* --- SUCCESS NOTIFICATION --- */}
           {success && (
-            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 text-sm font-bold border border-green-200 flex items-center gap-3 animate-fade-in">
+            <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 text-sm font-bold border border-green-200 flex items-center gap-3 animate-pulse">
               <CheckCircle size={20} className="shrink-0" />
               <span>{success}</span>
             </div>
@@ -59,7 +61,7 @@ const Register = () => {
 
           {/* --- ERROR NOTIFICATION --- */}
           {error && (
-            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm font-bold border border-red-100 flex items-center gap-3 animate-fade-in">
+            <div className="bg-red-50 text-red-600 p-4 rounded-lg mb-6 text-sm font-bold border border-red-100 flex items-center gap-3">
               <AlertCircle size={20} className="shrink-0" />
               <span>{error}</span>
             </div>
@@ -71,7 +73,7 @@ const Register = () => {
               <input 
                 type="text" 
                 required
-                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:opacity-50"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:bg-gray-100"
                 placeholder="John Doe"
                 value={formData.name}
                 onChange={(e) => setFormData({...formData, name: e.target.value})}
@@ -83,7 +85,7 @@ const Register = () => {
               <input 
                 type="email" 
                 required
-                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:opacity-50"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none transition disabled:bg-gray-100"
                 placeholder="you@example.com"
                 value={formData.email}
                 onChange={(e) => setFormData({...formData, email: e.target.value})}
@@ -95,7 +97,7 @@ const Register = () => {
               <input 
                 type={showPassword ? "text" : "password"}
                 required
-                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none pr-10 transition disabled:opacity-50"
+                className="w-full p-3 border border-gray-300 rounded focus:border-red-500 outline-none pr-10 transition disabled:bg-gray-100"
                 placeholder="Create a password"
                 value={formData.password}
                 onChange={(e) => setFormData({...formData, password: e.target.value})}
@@ -112,13 +114,19 @@ const Register = () => {
             </div>
             
             <button 
-              type="submit" 
+              type="submit"
               disabled={loading || success}
               className={`w-full py-3 text-white font-bold rounded transition shadow-lg flex items-center justify-center gap-2 ${
                 loading || success ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'
               }`}
             >
-              {loading ? <><Loader2 className="animate-spin" size={20} /> Creating...</> : "Sign Up"}
+              {loading ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} /> Creating Account...
+                </>
+              ) : (
+                "Sign Up"
+              )}
             </button>
           </form>
           

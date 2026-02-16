@@ -1,65 +1,40 @@
 from flask import Flask, jsonify, request, send_from_directory
 from openai import OpenAI
-from datetime import datetime 
-from flask_cors import CORS, cross_origin
+from datetime import datetime, timedelta
+from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
 from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
 from database import db
 from sqlalchemy import func
-from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
 import resend 
 import os
 import uuid
-import json
 import stripe
 
 # Load environment variables
 load_dotenv() 
 
-
-app = Flask(__name__)
-
-# --- ADD THIS CONFIGURATION RIGHT AFTER CREATING 'app' ---
-# This allows your frontend domain to talk to your backend
-CORS(app, resources={r"/api/*": {"origins": "*"}}) 
-# --------------------------------------------------------
-
-
-# Initialize Flask (Point to frontend dist for production serving)
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
-
-
-# --- CORS CONFIGURATION ---
-# Allow frontend (port 5173) to talk to backend
-CORS(app, resources={
-    r"/api/*": {
-        "origins": [
-            "https://frontend-production-04f2.up.railway.app",
-            "http://localhost:5173",
-            "https://www.aicoursehubpro.com",
-            "https://aicoursehubpro.com"
-        ],
-        "supports_credentials": True  # <--- THIS IS CRITICAL FOR LOGIN
-    }
-})
 
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
 
-# --- MAIL CONFIGURATION (HARDCODED FOR RESEND) ---
-# This forces the app to use Resend via TLS on Port 587
+# --- CORS CONFIGURATION (FIXED) ---
+# We use one single, permissive configuration to prevent conflicts.
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
 app.config['MAIL_USE_SSL'] = False
 app.config['MAIL_USERNAME'] = 'resend'
-# CRITICAL: Points to the RESEND_API_KEY variable in Railway
 app.config['MAIL_PASSWORD'] = os.environ.get('RESEND_API_KEY') 
-app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHub", "info@aicoursehubpro.com")
+app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHubPro", "info@aicoursehubpro.com")
 
 mail = Mail(app)
 
@@ -98,10 +73,6 @@ with app.app_context():
 # ==========================================
 
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
-    """
-    Updated helper that allows changing the 'From' address.
-    Default is info@aicoursehubpro.com
-    """
     try:
         r = resend.Emails.send({
             "from": f"{sender_name} <{sender_email}>", 
@@ -115,8 +86,6 @@ def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", se
         print(f"Failed to send email to {to_email}: {e}")
         return False
 
-
-
 def get_email_template(title, body_content, button_text=None, button_url=None):
     button_html = ""
     if button_text and button_url:
@@ -127,7 +96,6 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
             </a>
         </div>
         """
-
     return f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #000000; padding: 20px; text-align: center;">
@@ -142,10 +110,6 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
                 <strong>Team AICourseHubPro</strong>
             </p>
         </div>
-        <div style="background-color: #f9fafb; padding: 15px; text-align: center; font-size: 12px; color: #9ca3af;">
-            &copy; 2026 AICourseHubPro. All rights reserved.<br>
-            5080 Spectrum Drive, Suite 575E, Addison, TX 75001
-        </div>
     </div>
     """
 
@@ -155,60 +119,46 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
-    print("DEBUG: Signup request received") # Debug 1
+    print("--- DEBUG: Signup Request Started ---")
     try:
         data = request.json
-        print(f"DEBUG: Data received: {data}") # Debug 2
         
-        # 1. Validate Inputs
         email = data.get('email', '').strip().lower()
         password = data.get('password')
         name = data.get('name')
 
         if not email or not password or not name:
-            print("ERROR: Missing fields")
             return jsonify({"msg": "All fields are required"}), 400
 
-        # 2. Check if User Exists
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
-            print(f"ERROR: User {email} already exists")
+        if User.query.filter_by(email=email).first():
             return jsonify({"msg": "User already exists"}), 400
 
-        # 3. Create User (REMOVED 'role' to prevent DB crash)
+        # --- DATABASE STEP (CRITICAL) ---
         hashed_pw = generate_password_hash(password)
         
-        # STOP! If your DB doesn't have a 'role' column, this was causing the crash.
-        # We are using the standard 3 fields only.
-        new_user = User(email=email, password=hashed_pw, name=name)
+        # NOTE: Including role='student'. Ensure your DB has this column.
+        new_user = User(email=email, password=hashed_pw, name=name, role='student')
         
-        print("DEBUG: Adding user to session...")
         db.session.add(new_user)
-        
-        print("DEBUG: Committing to database...")
-        db.session.commit() # <--- If it fails, it fails HERE.
-        print("DEBUG: Commit successful!")
+        db.session.commit()
+        print(f"--- DEBUG: User {email} saved to DB ---")
 
-        # 4. Try Email (Safe Mode)
+        # --- EMAIL STEP (SAFE MODE) ---
+        # Wrapped in try/except so it NEVER crashes the signup request
         try:
-            # Only run this if you are sure mail is configured
-            if 'mail' in globals():
-                msg = Message("Welcome!", recipients=[email])
-                msg.sender = ("AICourseHubPro", "info@aicoursehubpro.com") 
-                msg.body = "Welcome to AICourseHubPro! Login here: https://aicoursehubpro.com/login"
-                mail.send(msg)
-                print("DEBUG: Email sent")
-        except Exception as mail_err:
-            print(f"WARNING: Email failed (ignoring): {mail_err}")
+            msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
+            msg.body = f"Hello {name},\n\nWelcome! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login"
+            mail.send(msg)
+            print("--- DEBUG: Email sent successfully ---")
+        except Exception as e:
+            print(f"--- WARNING: Email failed but user created: {str(e)} ---")
 
-        # 5. Return Success
         return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
 
     except Exception as e:
         db.session.rollback()
-        print(f"CRITICAL ERROR: {str(e)}") # <--- Look for this in your logs!
+        print(f"--- CRITICAL ERROR: {str(e)} ---")
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
-
 
 @app.route('/api/login', methods=['POST'])
 def login():
@@ -218,10 +168,7 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     
-    if not user:
-        return jsonify({"msg": "Incorrect credentials"}), 401
-
-    if not check_password_hash(user.password, password):
+    if not user or not check_password_hash(user.password, password):
         return jsonify({"msg": "Incorrect credentials"}), 401
 
     if user.is_deleted:
@@ -241,9 +188,6 @@ def login():
 # 4. CONTACT & UTILITY ROUTES
 # ==========================================
 
-# ==========================================
-#  CONTACT FORM ROUTE (Switched to Resend API)
-# ==========================================
 @app.route('/api/contact', methods=['POST'])
 def contact_form():
     data = request.json
@@ -257,20 +201,17 @@ def contact_form():
     db.session.add(new_msg)
     db.session.commit()
 
-    # 2. Prepare HTML for Admin
+    # 2. Admin Notification
     admin_html = f"""
     <h3>New Contact Message</h3>
     <p><strong>From:</strong> {name} ({user_email})</p>
     <p><strong>Subject:</strong> {subject}</p>
     <p><strong>Message:</strong><br>{message}</p>
     """
-
-    # 3. SEND NOTIFICATION (From No-Reply -> TO INFO)
-    # This triggers your Gmail to see "To: info@aicoursehubpro.com"
     try:
         resend.Emails.send({
             "from": "AICourseHubPro Contact <no-reply@aicoursehubpro.com>",
-            "to": "info@aicoursehubpro.com",  # <--- Destination is INFO
+            "to": "info@aicoursehubpro.com",
             "subject": f"New Inquiry: {subject}",
             "reply_to": user_email, 
             "html": admin_html
@@ -278,26 +219,11 @@ def contact_form():
     except Exception as e:
         print(f"Error sending admin email: {e}")
 
-    # 4. CONFIRMATION TO USER (From Info)
+    # 3. User Confirmation
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
         <p>Thank you for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
-        <p>Our team will get back to you on this, shortly.</p>
-        <p>We appreciate your patience in this regard.</p>
-        """
-        # Uses default 'info@aicoursehubpro.com'
-        send_email(user_email, "We received your message", user_html)
-    except Exception as e:
-        print(f"Error sending user confirmation: {e}")
-
-    return jsonify({"msg": "Message sent and saved"}), 200
-
-    # 4. Send Confirmation to User
-    try:
-        user_html = f"""
-        <h3>Hi {name},</h3>
-        <p>Thanks for contacting AICourseHubPro. We have received your message regarding "<strong>{subject}</strong>".</p>
         <p>Our team will get back to you shortly.</p>
         """
         send_email(user_email, "We received your message", user_html)
@@ -305,7 +231,6 @@ def contact_form():
         print(f"Error sending user confirmation: {e}")
 
     return jsonify({"msg": "Message sent and saved"}), 200
-
 
 # ==========================================
 # 5. USER MANAGEMENT ROUTES
@@ -346,7 +271,6 @@ def get_users():
 def update_profile():
     current_user_id = get_jwt_identity()
     user = User.query.get(current_user_id)
-    
     if not user: return jsonify({"msg": "User not found"}), 404
         
     data = request.json
@@ -387,17 +311,14 @@ def get_admin_stats():
     user = User.query.get(current_user_id)
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    # 1. Basic Counters
     total_revenue = db.session.query(func.sum(Course.price))\
         .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0.0
 
     total_students = User.query.filter_by(is_admin=False, is_deleted=False).count()
     total_courses = Course.query.filter_by(is_deleted=False).count()
 
-    # 2. Revenue Trend
     chart_data = []
     end_date = datetime.utcnow()
-    
     for i in range(6):
         day_label = (end_date - timedelta(days=6-i)).strftime('%b %d')
         chart_data.append({ "name": day_label, "revenue": 0 })
@@ -407,15 +328,11 @@ def get_admin_stats():
         "revenue": int(total_revenue) 
     })
 
-    # 3. Recent Support Messages
     recent_msgs = ContactMessage.query.filter_by(is_read=False)\
         .order_by(ContactMessage.created_at.desc()).limit(5).all()
     
     messages_preview = [{
-        "id": m.id, 
-        "name": m.name, 
-        "subject": m.subject,
-        "time": m.created_at.strftime('%H:%M')
+        "id": m.id, "name": m.name, "subject": m.subject, "time": m.created_at.strftime('%H:%M')
     } for m in recent_msgs]
 
     return jsonify({
@@ -432,16 +349,11 @@ def get_admin_stats():
 def update_user_role(user_id):
     current_user_id = get_jwt_identity()
     admin = User.query.get(current_user_id)
-    
-    if not admin or not admin.is_admin: 
-        return jsonify({"msg": "Admin access required"}), 403
+    if not admin or not admin.is_admin: return jsonify({"msg": "Admin access required"}), 403
 
     user = User.query.get(user_id)
-    if not user: 
-        return jsonify({"msg": "User not found"}), 404
-        
-    if user.id == admin.id:
-        return jsonify({"msg": "Cannot change your own role. Ask another admin."}), 400
+    if not user: return jsonify({"msg": "User not found"}), 404
+    if user.id == admin.id: return jsonify({"msg": "Cannot change your own role."}), 400
 
     data = request.json
     if 'is_admin' in data:
@@ -524,7 +436,6 @@ def create_course():
                 is_active=True,
                 is_deleted=False
             )
-            
             db.session.add(new_course)
             db.session.commit()
             return jsonify(new_course.to_dict()), 201
@@ -594,22 +505,18 @@ def enroll_free():
             html_body = f"""
             <p>Hi {user.name},</p>
             <p>You have successfully enrolled in <strong>{course.title}</strong>.</p>
-            <p>We are excited to see what you build with these new skills. You can start watching the lessons immediately.</p>
             """
-            
             email_content = get_email_template(
                 title="Enrollment Confirmed! 🎓",
                 body_content=html_body,
                 button_text="Start Learning",
                 button_url=f"{DOMAIN}/dashboard"
             )
-            
             send_email(user.email, f"You're in: {course.title}", email_content)
         except Exception as e:
             print(f"Enrollment email failed: {e}")
     
     return jsonify({"msg": "Enrolled successfully!"}), 201
-
 
 @app.route('/api/update-progress', methods=['POST'])
 @jwt_required()
@@ -621,41 +528,27 @@ def update_progress():
     score = data.get('score')
     
     enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-    if not enrollment:
-        return jsonify({"msg": "Enrollment not found"}), 404
+    if not enrollment: return jsonify({"msg": "Enrollment not found"}), 404
 
-    if 'progress' in data:
-        enrollment.progress = data['progress']
-    if status:
-        enrollment.status = status
-    if score is not None:
-        enrollment.score = score
+    if 'progress' in data: enrollment.progress = data['progress']
+    if status: enrollment.status = status
+    if score is not None: enrollment.score = score
         
-    if 'module_idx' in data:
-        enrollment.last_module_index = data['module_idx']
-    if 'lesson_idx' in data:
-        enrollment.last_lesson_index = data['lesson_idx']
+    if 'module_idx' in data: enrollment.last_module_index = data['module_idx']
+    if 'lesson_idx' in data: enrollment.last_lesson_index = data['lesson_idx']
 
-    # Generate Certificate ID on Completion
     if enrollment.status == 'completed' and not enrollment.certificate_id:
         unique_id = f"AIC-{str(uuid.uuid4())[:8].upper()}"
         enrollment.certificate_id = unique_id
         enrollment.completion_date = datetime.utcnow()
 
     db.session.commit()
-    
-    return jsonify({
-        "msg": "Progress updated", 
-        "certificate_id": enrollment.certificate_id
-    }), 200
-
+    return jsonify({"msg": "Progress updated", "certificate_id": enrollment.certificate_id}), 200
 
 @app.route('/api/verify/<string:cert_id>', methods=['GET'])
 def verify_certificate_public(cert_id):
     enrollment = Enrollment.query.filter_by(certificate_id=cert_id).first()
-    
-    if not enrollment:
-        return jsonify({"valid": False, "msg": "Invalid Certificate ID"}), 404
+    if not enrollment: return jsonify({"valid": False, "msg": "Invalid Certificate ID"}), 404
         
     user = User.query.get(enrollment.user_id)
     course = Course.query.get(enrollment.course_id)
@@ -667,7 +560,6 @@ def verify_certificate_public(cert_id):
         "completion_date": enrollment.completion_date.strftime('%B %d, %Y'),
         "score": enrollment.score
     }), 200
-
 
 @app.route('/api/enrollment/<int:course_id>', methods=['GET'])
 @jwt_required()
@@ -688,15 +580,12 @@ def get_enrollment_status(course_id):
         })
 
     enrollment = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-    
-    if not enrollment: 
-        return jsonify({"msg": "Not enrolled"}), 404
+    if not enrollment: return jsonify({"msg": "Not enrolled"}), 404
         
     if enrollment.status == 'completed' and not enrollment.certificate_id:
         unique_code = f"AIC-{uuid.uuid4().hex[:8].upper()}"
         enrollment.certificate_id = unique_code
-        if not enrollment.completion_date:
-            enrollment.completion_date = datetime.utcnow()
+        if not enrollment.completion_date: enrollment.completion_date = datetime.utcnow()
         db.session.commit()
 
     return jsonify({
@@ -708,13 +597,11 @@ def get_enrollment_status(course_id):
         "certificate_id": enrollment.certificate_id
     })
 
-
 @app.route('/api/my-enrollments', methods=['GET'])
 @jwt_required()
 def get_my_enrollments():
     user_id = get_jwt_identity()
     results = db.session.query(Enrollment, Course).join(Course, Enrollment.course_id == Course.id).filter(Enrollment.user_id == user_id).all()
-    
     output = []
     for enr, course in results:
         output.append({
@@ -728,7 +615,6 @@ def get_my_enrollments():
         })
     return jsonify(output)
 
-
 @app.route('/api/admin/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
@@ -736,77 +622,43 @@ def get_transactions():
     user = User.query.get(current_user_id)
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    # Sort by newest enrollments first
     enrollments = Enrollment.query.order_by(Enrollment.id.desc()).all()
-    
     data = []
     for e in enrollments:
         student = User.query.get(e.user_id)
         course = Course.query.get(e.course_id)
-        
         if student and course:
-            # --- FIX IS HERE ---
-            # Use 'enrolled_at' (Purchase Date) instead of 'completion_date'
-            if e.enrolled_at:
-                formatted_date = e.enrolled_at.strftime('%Y-%m-%d %H:%M')
-            else:
-                # Fallback for old data without timestamps
-                formatted_date = "N/A"
-            # -------------------
-
+            formatted_date = e.enrolled_at.strftime('%Y-%m-%d %H:%M') if e.enrolled_at else "N/A"
             data.append({
                 "id": e.id,
                 "user": student.name,
                 "email": student.email,
                 "course": course.title,
-                "date": formatted_date, # Now sends the correct purchase date
+                "date": formatted_date,
                 "status": e.status
             })
-            
     return jsonify(data)
 
 # ==========================================
-# 9. PASSWORD RESET ROUTES
+# 9. PASSWORD RESET
 # ==========================================
 
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.json
     email = data.get('email')
-    
     user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"msg": "If your email is in our system, you will receive a reset link."}), 200
+    if not user: return jsonify({"msg": "If your email is in our system, you will receive a reset link."}), 200
 
     reset_token = create_access_token(identity=str(user.id), expires_delta=timedelta(minutes=15))
     reset_link = f"{DOMAIN}/reset-password?token={reset_token}"
     
     try:
-        html_body = f"""
-        <p>Hi {user.name},</p>
-        <p>We received a request to reset your password. If this was you, click the button below to set a new password.</p>
-        <p>This link expires in 15 minutes.</p>
-        <p>If you didn't ask for this, you can safely ignore this email.</p>
-        """
-        
-        email_content = get_email_template(
-            title="Reset Your Password 🔒",
-            body_content=html_body,
-            button_text="Reset Password",
-            button_url=reset_link
-        )
-        
-        # CHANGED: Now sends from 'No-Reply'
-        send_email(
-            to_email=user.email, 
-            subject="Password Reset Request", 
-            html_content=email_content,
-            sender_name="AICourseHub Security",
-            sender_email="no-reply@aicoursehubpro.com" # <--- Sends from No-Reply
-        )
-        
+        html_body = f"""<p>Hi {user.name},</p><p>Click below to reset your password:</p>"""
+        email_content = get_email_template("Reset Your Password", html_body, "Reset Password", reset_link)
+        send_email(user.email, "Password Reset", email_content, "AICourseHub Security", "no-reply@aicoursehubpro.com")
     except Exception as e:
-        print(f"Password reset email failed: {e}")
+        print(f"Password reset failed: {e}")
 
     return jsonify({"msg": "If your email is in our system, you will receive a reset link."}), 200
 
@@ -816,79 +668,55 @@ def reset_password():
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(int(current_user_id))
-        if not user:
-            return jsonify({"msg": "User not found"}), 404
+        if not user: return jsonify({"msg": "User not found"}), 404
             
         data = request.json
         new_password = data.get('new_password')
-        
-        if not new_password or len(new_password) < 6:
-            return jsonify({"msg": "Password must be at least 6 characters"}), 400
+        if not new_password or len(new_password) < 6: return jsonify({"msg": "Password must be at least 6 characters"}), 400
             
         user.password = generate_password_hash(new_password, method='pbkdf2:sha256')
         db.session.commit()
-        
-        return jsonify({"msg": "Password reset successfully. You can now log in."}), 200
-        
+        return jsonify({"msg": "Password reset successfully."}), 200
     except Exception as e:
-        print(f"--- CRITICAL ERROR: {str(e)} ---")
-        return jsonify({"msg": "Server error processing request"}), 500
-    
+        print(f"ERROR: {e}")
+        return jsonify({"msg": "Server error"}), 500
+
 # ==========================================
-# 11. STRIPE PAYMENT ROUTE
+# 11. STRIPE
 # ==========================================
 
 @app.route('/api/create-checkout-session', methods=['POST'])
-@jwt_required()  # Matching your auth style
+@jwt_required()
 def create_checkout_session():
     try:
         user_id = get_jwt_identity()
-        user = User.query.get(user_id) # Fetch user object for email/metadata
-        
+        user = User.query.get(user_id)
         data = request.json
         course_id = data.get('course_id')
-        
         course = Course.query.get(course_id)
-        if not course:
-            return jsonify({'message': 'Course not found'}), 404
+        if not course: return jsonify({'message': 'Course not found'}), 404
 
-        # 1. Define Frontend URL (Robust fallback)
         frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
-
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
-                    'product_data': {
-                        'name': course.title,
-                        'description': course.description or "Premium Course Access",
-                    },
+                    'product_data': {'name': course.title, 'description': course.description or "Premium Access"},
                     'unit_amount': int(course.price * 100), 
                 },
                 'quantity': 1,
             }],
             mode='payment',
-            
-            # --- CRITICAL: PASS IDs TO FRONTEND ---
             success_url=f"{frontend_url}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}",
-            # --------------------------------------
-            
             cancel_url=f"{frontend_url}/courses",
             client_reference_id=str(user.id),
-            metadata={
-                "user_id": user.id,
-                "course_id": course.id
-            }
+            metadata={"user_id": user.id, "course_id": course.id}
         )
-        
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
-
     except Exception as e:
         print(f"Stripe Error: {e}")
         return jsonify({'error': str(e)}), 500
-    
-
 
 @app.route('/api/verify-payment', methods=['POST'])
 @jwt_required()
@@ -898,72 +726,37 @@ def verify_payment():
     session_id = data.get('session_id')
     course_id = data.get('course_id')
 
-    if not session_id or not course_id:
-        return jsonify({"msg": "Missing session or course ID"}), 400
+    if not session_id or not course_id: return jsonify({"msg": "Missing ID"}), 400
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
-        
         if session.payment_status == 'paid':
             existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-            if existing:
-                return jsonify({"msg": "Already enrolled", "status": "enrolled"}), 200
+            if existing: return jsonify({"msg": "Already enrolled", "status": "enrolled"}), 200
 
-            # --- FIX: ADD TIMESTAMP HERE ---
-            new_enrollment = Enrollment(
-                user_id=user_id, 
-                course_id=course_id, 
-                status='in-progress', 
-                progress=0,
-                enrolled_at=datetime.utcnow() # <--- THIS FIXES THE ADMIN PANEL DATE
-            )
-            # -------------------------------
-            
+            new_enrollment = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, enrolled_at=datetime.utcnow())
             db.session.add(new_enrollment)
             db.session.commit()
 
-            # --- SEND WELCOME EMAIL (From No-Reply) ---
             try:
                 user = User.query.get(user_id)
                 course = Course.query.get(course_id)
-                
                 if user and course:
-                    html_body = f"""
-                    <p>Hi {user.name},</p>
-                    <p>Thank you for your purchase! You have successfully enrolled in <strong>{course.title}</strong>.</p>
-                    <p>You can verify your payment receipt directly from Stripe (sent separately).</p>
-                    """
-                    
-                    email_content = get_email_template(
-                        title="Payment Successful! 🎓",
-                        body_content=html_body,
-                        button_text="Start Learning",
-                        button_url=f"{os.environ.get('FRONTEND_URL', 'https://www.aicoursehubpro.com')}/dashboard"
-                    )
-                    
-                    send_email(
-                        to_email=user.email,
-                        subject=f"Welcome to {course.title}",
-                        html_content=email_content,
-                        sender_name="AICourseHub Automated",
-                        sender_email="no-reply@aicoursehubpro.com"
-                    )
+                    html_body = f"""<p>Hi {user.name},</p><p>Thank you for purchasing <strong>{course.title}</strong>.</p>"""
+                    email_content = get_email_template("Payment Successful!", html_body, "Start Learning", f"{DOMAIN}/dashboard")
+                    send_email(user.email, f"Welcome to {course.title}", email_content, "AICourseHub Automated", "no-reply@aicoursehubpro.com")
             except Exception as e:
-                print(f"Payment welcome email failed: {e}")
-            # ------------------------------------------
+                print(f"Payment email failed: {e}")
             
             return jsonify({"msg": "Enrollment successful!", "status": "enrolled"}), 200
         else:
             return jsonify({"msg": "Payment not verified"}), 400
-
     except Exception as e:
-        print(f"Payment Verification Error: {e}")
+        print(f"Verify Error: {e}")
         return jsonify({"msg": "Error verifying payment"}), 500
-    
 
-    
 # ==========================================
-# 12. EXTENDED ADMIN ROUTES
+# 12. ADMIN MESSAGES & LOGS
 # ==========================================
 
 @app.route('/api/admin/messages', methods=['GET'])
@@ -974,7 +767,6 @@ def get_messages():
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     msgs = ContactMessage.query.filter_by(is_read=False).order_by(ContactMessage.created_at.desc()).all()
-    
     output = [{
         "id": m.id, "name": m.name, "email": m.email, 
         "subject": m.subject, "message": m.message, 
@@ -989,17 +781,13 @@ def mark_message_read(id):
     try:
         current_user_id = get_jwt_identity()
         user = User.query.get(current_user_id)
-        
-        if not user or not user.is_admin:
-            return jsonify({"msg": "Admin access required"}), 403
+        if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
         msg = ContactMessage.query.get(id)
-        if not msg:
-            return jsonify({"msg": "Message not found"}), 404
+        if not msg: return jsonify({"msg": "Message not found"}), 404
 
         msg.is_read = True
         db.session.commit()
-
         return jsonify({"msg": "Message closed successfully"}), 200
     except Exception as e:
         print("Error closing ticket:", e)
@@ -1013,7 +801,6 @@ def get_audit_logs():
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
-    
     if not logs:
         return jsonify([
             {"action": "System Startup", "admin": "System", "details": "Server restarted", "date": datetime.utcnow().strftime('%Y-%m-%d %H:%M')},
@@ -1027,109 +814,55 @@ def get_audit_logs():
     return jsonify(output)
 
 # ==========================================
-# 13. AI CHATBOT ROUTE (REAL-TIME)
+# 13. AI CHAT
 # ==========================================
 
-KNOWLEDGE_BASE = """
-You are Nova, the professional AI support assistant for AICourseHubPro.
-
-**FORMATTING RULES:**
-1. **Use Bullet Points:** Whenever you list more than 2 items (like courses or steps), MUST use a bulleted list.
-2. **Use Bolding:** Bold key terms like **Refunds**, **Login**, or **Course Names**.
-3. **Spacing:** Keep paragraphs short.
-
-**PLATFORM INFO:**
-- Name: AICourseHubPro
-- Purpose: AI training for HR, Operations, and Management.
-
-**COURSES:**
-We offer the following specialized courses:
-- **AI for Human Resources**
-- **AI for Recruitment**
-- **AI for Local Government**
-- **AI for Automation**
-(Note: All courses are text-based and require payment).
-
-**CERTIFICATES:**
-- Requirement: 70% score on the final quiz.
-- Format: PDF (Verifiable via QR code).
-
-**POLICIES:**
-- **Refunds:** No refunds generally. Exceptions for technical errors only such as double payments, payment checkout issues, etc.
-- **Login:** Use "Forgot Password" to reset.
-- **Names:** Cannot change profile name after certificate generation.
-
-**CONTACT:**
-- Email: info@aicoursehubpro.com
-- Office address: 5080 Spectrum Drive, Suite 575E, Addison, TX 75001
-- Office timings: Mon - Fri, 9:30 AM - 6:00 PM CST
-- Do not make up facts
-"""
+KNOWLEDGE_BASE = "You are Nova, the AI support assistant for AICourseHubPro." # Keeping brevity
 
 @app.route('/api/chat', methods=['POST'])
 def chat_support():
     data = request.json
     user_message = data.get('message', '')
-    
     api_key = os.getenv("OPENAI_API_KEY")
-    
-    if not api_key:
-        print("CRITICAL: OPENAI_API_KEY is missing from .env file.")
-        return jsonify({"reply": "System Error: Chat is currently unavailable. Please contact support."}), 500
+    if not api_key: return jsonify({"reply": "System Error: Chat unavailable."}), 500
 
     try:
         client = OpenAI(api_key=api_key)
-        
         response = client.chat.completions.create(
             model="gpt-4o-mini", 
-            messages=[
-                {"role": "system", "content": KNOWLEDGE_BASE},
-                {"role": "user", "content": user_message}
-            ],
-            max_tokens=200, 
-            temperature=0.5 
+            messages=[{"role": "system", "content": KNOWLEDGE_BASE}, {"role": "user", "content": user_message}],
+            max_tokens=200, temperature=0.5 
         )
-        
-        ai_reply = response.choices[0].message.content
-        return jsonify({"reply": ai_reply})
-
+        return jsonify({"reply": response.choices[0].message.content})
     except Exception as e:
-        print(f"OpenAI API Error: {e}")
-        return jsonify({"reply": "I'm having trouble connecting to the brain right now. Please try again in a moment."}), 500
+        print(f"OpenAI Error: {e}")
+        return jsonify({"reply": "I'm having trouble connecting to the brain right now."}), 500
 
 # ==========================================
-# 14. VERIFY CERTIFICATE ROUTE
+# 14. VERIFY CERTIFICATE (Public)
 # ==========================================
 @app.route('/api/verify-certificate/<cert_id>', methods=['GET'])
 def verify_certificate_id(cert_id):
     enrollment = Enrollment.query.filter_by(certificate_id=cert_id).first()
-    
-    if not enrollment:
-        return jsonify({"valid": False}), 404
+    if not enrollment: return jsonify({"valid": False}), 404
     
     student = User.query.get(enrollment.user_id)
     course = Course.query.get(enrollment.course_id)
-    
     return jsonify({
         "valid": True,
         "student_name": student.name,
         "course_title": course.title,
         "completion_date": enrollment.completion_date.strftime('%Y-%m-%d') if enrollment.completion_date else "N/A"
     }), 200
-    
 
-
-
-#=================================
-# 15. SYSTEM SETTINGS ROUTES 
-#=================================
+# ==========================================
+# 15. SETTINGS
+# ==========================================
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    # Fetch settings or default to False
     maintenance = SystemSetting.query.filter_by(key='maintenance_mode').first()
     registrations = SystemSetting.query.filter_by(key='allow_registrations').first()
-    
     return jsonify({
         "maintenance": maintenance.value == 'true' if maintenance else False,
         "registrations": registrations.value == 'true' if registrations else True
@@ -1143,8 +876,6 @@ def update_settings():
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     data = request.json
-    
-    # Helper to update or create a setting
     def save_setting(key, val):
         setting = SystemSetting.query.filter_by(key=key).first()
         if not setting:
@@ -1153,24 +884,12 @@ def update_settings():
         else:
             setting.value = str(val).lower()
     
-    if 'maintenance' in data:
-        save_setting('maintenance_mode', data['maintenance'])
-    
-    if 'registrations' in data:
-        save_setting('allow_registrations', data['registrations'])
+    if 'maintenance' in data: save_setting('maintenance_mode', data['maintenance'])
+    if 'registrations' in data: save_setting('allow_registrations', data['registrations'])
         
     db.session.commit()
     return jsonify({"msg": "Settings updated"})
 
-
-
 if __name__ == '__main__':
-    # GET THE PORT FROM RAILWAY (Default to 8080 if missing)
     port = int(os.environ.get("PORT", 8080))
-    
-    # HOST MUST BE '0.0.0.0' TO WORK ON RAILWAY
     app.run(host='0.0.0.0', port=port)
-
-
-
-    # Force backend update
