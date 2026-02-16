@@ -13,17 +13,17 @@ import resend
 import os
 import uuid
 import stripe
-import sys # Added for forcing logs to print
+import sys
 
 # Load environment variables
 load_dotenv() 
 
+# ==========================================
+# 1. INITIALIZATION
+# ==========================================
+
 # Initialize Flask
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
-
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
 
 # --- CORS CONFIGURATION ---
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -141,7 +141,6 @@ def signup():
         # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         
-        # Explicitly setting flags to avoid NULL errors
         new_user = User(
             email=email, 
             password=hashed_pw, 
@@ -153,29 +152,26 @@ def signup():
         db.session.add(new_user)
         db.session.commit()
         
-        # --- CRITICAL FIX: REFRESH USER ---
-        # This reconnects the user object to the session so we can read .id
-        # without causing a DetachedInstanceError crash.
+        # --- CRITICAL REFRESH ---
         db.session.refresh(new_user)
-        
         print(f"--- DEBUG: User saved with ID: {new_user.id} ---", flush=True)
 
-        # --- EMAIL STEP (DISABLED TEMPORARILY) ---
-        # We are commenting this out to PROVE the signup works.
-        # Once you see the success message, we can uncomment it safely.
-        # try:
-        #     msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
-        #     msg.body = f"Hello {name},\n\nWelcome! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login"
-        #     mail.send(msg)
-        #     print("--- DEBUG: Email sent successfully ---")
-        # except Exception as e:
-        #     print(f"--- WARNING: Email failed but user created: {str(e)} ---")
+        # --- EMAIL STEP (ENABLED) ---
+        try:
+            msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
+            msg.body = f"Hello {name},\n\nWelcome to AICourseHub Pro! Your account has been created.\n\nLogin here: https://aicoursehubpro.com/login\n\nBest,\nTeam AICourseHubPro"
+            
+            # Using the mail extension configured with Resend SMTP
+            mail.send(msg)
+            print("--- DEBUG: Email sent successfully ---", flush=True)
+        except Exception as e:
+            # We log the error but allow the request to complete so the user can still log in.
+            print(f"--- WARNING: Email failed but user created: {str(e)} ---", file=sys.stderr, flush=True)
 
         return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
 
     except Exception as e:
         db.session.rollback()
-        # Ensure this prints to Railway logs
         print(f"--- CRITICAL ERROR: {str(e)} ---", file=sys.stderr, flush=True)
         return jsonify({"msg": "Signup failed on server", "error": str(e)}), 500
 
@@ -215,12 +211,11 @@ def contact_form():
     subject = data.get('subject', 'General Inquiry')
     message = data.get('message')
 
-    # 1. Save to DB
     new_msg = ContactMessage(name=name, email=user_email, subject=subject, message=message)
     db.session.add(new_msg)
     db.session.commit()
 
-    # 2. Admin Notification
+    # Admin Notification
     admin_html = f"""
     <h3>New Contact Message</h3>
     <p><strong>From:</strong> {name} ({user_email})</p>
@@ -238,7 +233,7 @@ def contact_form():
     except Exception as e:
         print(f"Error sending admin email: {e}")
 
-    # 3. User Confirmation
+    # User Confirmation
     try:
         user_html = f"""
         <h3>Hi {name},</h3>
