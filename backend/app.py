@@ -17,16 +17,15 @@ import stripe
 # Load environment variables
 load_dotenv() 
 
-# Initialize Flask (Point to frontend dist for production serving)
+# ==========================================
+# 1. INITIALIZATION & CONFIGURATION
+# ==========================================
+
+# --- INITIALIZE FLASK (ONLY ONCE) ---
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
-# ==========================================
-# 1. CONFIGURATION
-# ==========================================
-
-# --- CORS CONFIGURATION (FIXED) ---
-# We use ONE single, permissive configuration to prevent conflicts.
-# This allows the frontend to talk to the backend without getting blocked.
+# --- CORS CONFIGURATION (SINGLE & CORRECT) ---
+# Allows all origins to prevent the "Network Error" / "CORS" block
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # --- MAIL CONFIGURATION ---
@@ -125,7 +124,6 @@ def signup():
     try:
         data = request.json
         
-        # 1. Validation
         email = data.get('email', '').strip().lower()
         password = data.get('password')
         name = data.get('name')
@@ -133,22 +131,20 @@ def signup():
         if not email or not password or not name:
             return jsonify({"msg": "All fields are required"}), 400
 
-        # 2. Check Exists
         if User.query.filter_by(email=email).first():
             return jsonify({"msg": "User already exists"}), 400
 
-        # 3. Create User (Database Step)
+        # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         
-        # We removed 'role' because it caused a DB crash earlier. 
-        # Using the standard 3 fields that worked before.
-        new_user = User(email=email, password=hashed_pw, name=name)
+        # NOTE: Including role='student'. Ensure your DB has this column.
+        new_user = User(email=email, password=hashed_pw, name=name, role='student')
         
         db.session.add(new_user)
         db.session.commit()
         print(f"--- DEBUG: User {email} saved to DB ---")
 
-        # 4. Email Step (Safe Wrapped)
+        # --- EMAIL STEP (SAFE MODE) ---
         # Wrapped in try/except so it NEVER crashes the signup request
         try:
             msg = Message("Welcome to AICourseHub Pro!", recipients=[email])
@@ -156,10 +152,8 @@ def signup():
             mail.send(msg)
             print("--- DEBUG: Email sent successfully ---")
         except Exception as e:
-            # We catch the error so the signup DOES NOT FAIL
             print(f"--- WARNING: Email failed but user created: {str(e)} ---")
 
-        # 5. Success Response
         return jsonify({"msg": "Signup successful", "user_id": new_user.id}), 201
 
     except Exception as e:
