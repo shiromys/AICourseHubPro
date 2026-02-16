@@ -18,15 +18,19 @@ import stripe
 load_dotenv() 
 
 # ==========================================
-# 1. INITIALIZATION & CONFIGURATION
+# 1. INITIALIZATION (DONE ONCE)
 # ==========================================
 
-# --- INITIALIZE FLASK (ONLY ONCE) ---
+# Initialize Flask with the static folder settings (Combined from your previous duplicate lines)
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
-# --- CORS CONFIGURATION (SINGLE & CORRECT) ---
-# Allows all origins to prevent the "Network Error" / "CORS" block
+# --- CORS CONFIGURATION ---
+# Applied strictly to the ONE app instance we just created
 CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# ==========================================
+# 2. CONFIGURATION
+# ==========================================
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -70,7 +74,7 @@ with app.app_context():
     db.create_all()
 
 # ==========================================
-# 2. HELPER FUNCTIONS
+# 3. HELPER FUNCTIONS
 # ==========================================
 
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
@@ -115,7 +119,7 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
     """
 
 # ==========================================
-# 3. AUTH ROUTES
+# 4. AUTH ROUTES
 # ==========================================
 
 @app.route('/api/signup', methods=['POST'])
@@ -137,7 +141,7 @@ def signup():
         # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         
-        # NOTE: Including role='student'. Ensure your DB has this column.
+        # NOTE: Including role='student' since your DB supports it.
         new_user = User(email=email, password=hashed_pw, name=name, role='student')
         
         db.session.add(new_user)
@@ -186,7 +190,7 @@ def login():
     })
 
 # ==========================================
-# 4. CONTACT & UTILITY ROUTES
+# 5. CONTACT & UTILITY ROUTES
 # ==========================================
 
 @app.route('/api/contact', methods=['POST'])
@@ -234,7 +238,7 @@ def contact_form():
     return jsonify({"msg": "Message sent and saved"}), 200
 
 # ==========================================
-# 5. USER MANAGEMENT ROUTES
+# 6. USER MANAGEMENT ROUTES
 # ==========================================
 
 @app.route('/api/users', methods=['GET'])
@@ -394,7 +398,7 @@ def restore_user(user_id):
     return jsonify({"msg": "User restored"})
 
 # ==========================================
-# 6. COURSE ROUTES
+# 7. COURSE ROUTES
 # ==========================================
 
 @app.route('/api/courses', methods=['GET'])
@@ -481,7 +485,7 @@ def delete_course(course_id):
     return jsonify({"msg": "Course archived"})
 
 # ==========================================
-# 7. ENROLLMENT & PROGRESS ROUTES
+# 8. ENROLLMENT & PROGRESS ROUTES
 # ==========================================
 
 @app.route('/api/enroll', methods=['POST'])
