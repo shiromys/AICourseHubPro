@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'; // <--- FIXED: Added hooks i
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from './config';
+import UserProfile from './pages/UserProfile';
 
 // --- IMPORT PAGES ---
 import Home from './pages/Home';
@@ -94,7 +95,8 @@ function App() {
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
         <Route path="/verify/:certId" element={<Verify />} />
-
+        <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
+        
         {/* --- Course View (Public/Private logic handled inside) --- */}
         <Route path="/courses/:id" element={<CourseView />} />
         <Route path="/course/:id" element={<Navigate to="/courses/:id" replace />} />

@@ -5,8 +5,8 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer'; 
 import API_BASE_URL from '../config';
 import { 
-  BookOpen, Award, Flame, Clock, PlayCircle, Trophy, 
-  LayoutDashboard, Search, X, Loader2, ShoppingCart 
+  BookOpen, Award, Clock, PlayCircle, Trophy, 
+  LayoutDashboard, Search, X, Loader2, ShoppingCart, CheckCircle
 } from 'lucide-react';
 
 const Dashboard = () => {
@@ -35,9 +35,25 @@ const Dashboard = () => {
     fetchDashboardData();
   }, []);
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [activeTab, searchQuery, selectedCategory]); 
+  // --- DEDUPLICATION HELPER ---
+  // Fixes the issue where a course appears twice. Keeps the one with higher progress.
+  const getUniqueEnrollments = (rawList) => {
+    const map = new Map();
+    
+    rawList.forEach(item => {
+      const existing = map.get(item.id);
+      if (!existing) {
+        map.set(item.id, item);
+      } else {
+        // If duplicate exists, keep the one with higher progress or 'completed' status
+        if (item.progress > existing.progress || item.status === 'completed') {
+          map.set(item.id, item);
+        }
+      }
+    });
+    
+    return Array.from(map.values());
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -52,7 +68,20 @@ const Dashboard = () => {
         const enrollRes = await axios.get(`${API_BASE_URL}/api/my-enrollments`, {
            headers: { Authorization: `Bearer ${token}` }
         });
-        setEnrollments(enrollRes.data);
+        
+        // 1. Remove Duplicates
+        const uniqueList = getUniqueEnrollments(enrollRes.data);
+
+        // 2. Sort: In-Progress First, then Newest
+        const sortedList = uniqueList.sort((a, b) => {
+            // Prioritize In-Progress over Completed
+            if (a.status === 'in-progress' && b.status !== 'in-progress') return -1;
+            if (a.status !== 'in-progress' && b.status === 'in-progress') return 1;
+            // If status is same, assume the one appearing later in list is newer (or sort by ID if available)
+            return 0; 
+        });
+
+        setEnrollments(sortedList);
       } catch (err) {
         console.warn("Could not fetch enrollments", err);
       }
@@ -67,15 +96,11 @@ const Dashboard = () => {
 
   // --- ACTION HANDLER ---
   const handleCourseAction = async (courseId) => {
-    console.log("ACTION CLICKED for Course:", courseId); // <--- DEBUG LOG
-
-    // 1. IF ADMIN: Go to Course Details
     if (isAdmin) {
         navigate(`/courses/${courseId}`);
         return;
     }
 
-    // 2. IF STUDENT: Start Stripe Checkout
     const token = localStorage.getItem('token');
     setBuying(courseId);
 
@@ -98,21 +123,9 @@ const Dashboard = () => {
     }
   };
 
-  // --- THE DEBUGGED FUNCTION ---
   const handleStartLearning = (courseId) => {
-    console.log(">>> START LEARNING CLICKED <<<");
-    console.log("Target Course ID:", courseId);
-
-    // METHOD A: Standard React Router
-    // navigate(`/courses/${courseId}`);
-
-    // METHOD B: HARD RELOAD (Forces browser to go there)
-    // This proves if the issue is React Router or the Button itself.
-    const targetUrl = `/courses/${courseId}`;
-    console.log("Navigating to:", targetUrl);
-    window.location.href = targetUrl; 
+    navigate(`/courses/${courseId}`);
   };
-  // ----------------------------
 
   const handleViewCertificate = (courseId) => {
     navigate(`/certificate/${courseId}`);
@@ -142,7 +155,9 @@ const Dashboard = () => {
     return matchesSearch && matchesCategory;
   });
 
-  const lastActive = myLearning.length > 0 ? myLearning[0] : null;
+  // LOGIC: Pick the first "In Progress" course. If none, pick the first completed.
+  const activeCourses = enrollments.filter(e => e.status === 'in-progress');
+  const featuredCourse = activeCourses.length > 0 ? activeCourses[0] : (enrollments.length > 0 ? enrollments[0] : null);
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
@@ -157,7 +172,7 @@ const Dashboard = () => {
         <>
           {/* HEADER */}
           <div className="bg-black pt-32 pb-12 text-white relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none" /> {/* ADDED pointer-events-none */}
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none z-0" />
             
             <div className="container mx-auto px-6 relative z-10">
               <div className="flex flex-col md:flex-row justify-between items-end gap-6">
@@ -182,25 +197,29 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* HERO (Last Active) */}
-          {lastActive && activeTab === 'active' && !searchQuery && selectedCategory === 'All' && (
+          {/* HERO (Featured Active Course) */}
+          {featuredCourse && activeTab === 'active' && !searchQuery && selectedCategory === 'All' && (
             <div className="container mx-auto px-6 -mt-8 relative z-20">
               <div className="bg-white rounded-2xl p-8 shadow-xl border-l-8 border-red-600 flex flex-col md:flex-row items-center justify-between gap-8">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 text-red-600 font-bold text-sm uppercase mb-2">
-                    <Clock size={16} /> Jump back in
+                    <Clock size={16} /> {featuredCourse.status === 'completed' ? 'Course Completed' : 'Jump Back In'}
                   </div>
-                  <h2 className="text-3xl font-black text-gray-900 mb-2">{lastActive.title}</h2>
+                  <h2 className="text-3xl font-black text-gray-900 mb-2">{featuredCourse.title}</h2>
                   <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden mb-2 mt-4">
-                    <div className="h-full bg-red-600 rounded-full transition-all duration-1000" style={{ width: `${getProgress(lastActive.id)}%` }}></div>
+                    <div 
+                      className={`h-full rounded-full transition-all duration-1000 ${featuredCourse.status === 'completed' ? 'bg-green-500' : 'bg-red-600'}`} 
+                      style={{ width: `${featuredCourse.progress}%` }}
+                    ></div>
                   </div>
-                  <p className="text-xs text-gray-500 font-bold mb-6">{getProgress(lastActive.id)}% Complete</p>
+                  <p className="text-xs text-gray-500 font-bold mb-6">{featuredCourse.progress}% Complete</p>
 
                   <button 
-                    onClick={() => handleStartLearning(lastActive.id)} 
-                    className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition shadow-lg shadow-red-600/20 relative z-30 cursor-pointer" // Added z-30 and cursor-pointer
+                    onClick={() => handleStartLearning(featuredCourse.id)} 
+                    className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition shadow-lg shadow-red-600/20 relative z-30 cursor-pointer"
                   >
-                    <PlayCircle size={20} /> Continue Learning
+                    {featuredCourse.status === 'completed' ? <CheckCircle size={20}/> : <PlayCircle size={20}/>}
+                    {featuredCourse.status === 'completed' ? 'Review Course' : 'Continue Learning'}
                   </button>
                 </div>
               </div>
@@ -279,7 +298,7 @@ const Dashboard = () => {
                       
                       <div className="h-2 bg-gray-100 w-full relative">
                         {isEnrolled ? (
-                            <div className="h-full bg-red-500 transition-all duration-700" style={{ width: `${percent}%` }}></div>
+                            <div className={`h-full transition-all duration-700 ${completed ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${percent}%` }}></div>
                         ) : (
                             <div className="h-full bg-gray-200 w-full"></div>
                         )}
@@ -300,7 +319,6 @@ const Dashboard = () => {
                         {isEnrolled ? (
                             <button 
                               onClick={() => {
-                                console.log("GRID BUTTON CLICKED for:", course.id); // <--- DEBUG LOG
                                 if (completed) handleViewCertificate(course.id);
                                 else handleStartLearning(course.id);
                               }}
