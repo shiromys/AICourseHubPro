@@ -601,15 +601,38 @@ def get_transactions():
 def chat_support():
     msg = request.json.get('message', '')
     api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key: return jsonify({"reply": "Chat unavailable."}), 500
+    if not api_key: 
+        return jsonify({"reply": "Chat unavailable."}), 500
+        
+    # --- FIXED NOVA CONTEXT PROMPT ---
+    nova_context = """
+    You are Nova, the official AI support assistant for AICourseHubPro.
+    AICourseHubPro is an elite online learning platform that professionals use to learn AI in their daily workflows.
+    Our course categories include HR, Operations, Development, Business, and Marketing.
+    All courses are priced at $29 per course. We also provide the option of buying the "All Course Bundle" which is priced at $159. 
+    Your tone must be helpful, professional, polite, and encouraging.
+    Limit your answers to 2-3 short, highly readable paragraphs. 
+    If a user asks about technical bugs, or specific account issues, politely ask them to contact info@aicoursehubpro.com email address.
+    If a user asks about refunds of any sort, politely make them understand that we do not provide refunds of any sort. Payments once made toward AICourseHUbPro as non-refundable and final.
+    If a user asks about our course offerings, list the courses we offer, namely - AI for Human Resources / Talent / People Ops via Prompts, Prompt-Based Tools for Education & Learning, Prompt-Based Analytics and Reports for Business, Prompting for Automation and Workflow Efficiency, Prompt Engineering for Non-Profits and Social Impact, Prompt-Based AI for Local Government and Public Services. Highlight the courses (bold) and list them one by one.
+    If a user asks about topics completely unrelated to AI, the courses, or the platform, politely decline to answer and guide them back to our offerings.
+    Users can contact our email address - info@aicoursehubpro.com for more information on any queries.
+    If the users want, you can navigate them to the contact page of our application, that is present at the navbar.
+    """
+    
     try:
         client = OpenAI(api_key=api_key)
         res = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are Nova, AI support for AICourseHubPro."}, {"role": "user", "content": msg}]
+            messages=[
+                {"role": "system", "content": nova_context}, 
+                {"role": "user", "content": msg}
+            ],
+            temperature=0.7
         )
         return jsonify({"reply": res.choices[0].message.content})
-    except:
+    except Exception as e:
+        print(f"Chatbot Error: {e}")
         return jsonify({"reply": "I'm having trouble connecting right now."}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
@@ -716,9 +739,8 @@ def roleplay_feedback():
     # 1. Get the current logged-in user's ID from the token
     current_user_id = get_jwt_identity()
     
-    # 2. Query the Database to find the User
-    # We use the 'User' model because that is what your student accounts are.
-    user = User.query.get(int(current_user_id))
+    # 2. Query the Database to find the User - FIXED LEGACY WARNING
+    user = db.session.get(User, int(current_user_id)) 
     
     # 3. Create the 'student_name' variable dynamically
     # If the user exists, use their name. Otherwise, fallback to "The Student".
