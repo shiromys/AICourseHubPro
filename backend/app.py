@@ -682,8 +682,35 @@ def forgot_password():
     if user:
         token = create_access_token(identity=str(user.id), expires_delta=timedelta(minutes=15))
         link = f"{DOMAIN}/reset-password?token={token}"
-        send_email(email, "Reset Password", get_email_template("Reset Password", f"Click here to reset: {link}"))
+        
+        # 1. Create the nice body content matching your screenshot
+        body_content = f"""
+        <p>Hi {user.name},</p>
+        <p>We received a request to reset your password. If this was you, click the button below to set a new password.</p>
+        <p>This link expires in 15 minutes.</p>
+        <p>If you didn't ask for this, you can safely ignore this email.</p>
+        """
+        
+        # 2. Generate the HTML WITH the button
+        html_content = get_email_template(
+            title="Reset Your Password 🔓", 
+            body_content=body_content, 
+            button_text="Reset Password", 
+            button_url=link
+        )
+        
+        # 3. Send using the specific 'no-reply' email and custom name
+        send_email(
+            to_email=email, 
+            subject="Reset Your Password", 
+            html_content=html_content,
+            sender_name="AICourseHub Security",
+            sender_email="no-reply@aicoursehubpro.com"
+        )
+        
     return jsonify({"msg": "If account exists, email sent."})
+
+
 
 @app.route('/api/reset-password', methods=['POST'])
 @jwt_required()
