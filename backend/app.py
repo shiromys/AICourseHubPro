@@ -24,8 +24,7 @@ load_dotenv()
 
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
-# --- CORS CONFIGURATION (Single & Correct) ---
-# Allows frontend to communicate without "Network Error"
+# --- CORS CONFIGURATION ---
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # --- MAIL CONFIGURATION ---
@@ -39,7 +38,7 @@ app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHubPro", "info@aicoursehubpro.com"
 
 mail = Mail(app)
 
-# --- DATABASE CONFIGURATION (Railway Fix) ---
+# --- DATABASE CONFIGURATION ---
 db_url = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
 if db_url and db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
@@ -78,10 +77,6 @@ with app.app_context():
 # ==========================================
 
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
-    """
-    Robust email sender using Resend API directly.
-    Wraps errors internally so the main app doesn't crash.
-    """
     try:
         r = resend.Emails.send({
             "from": f"{sender_name} <{sender_email}>", 
@@ -138,49 +133,38 @@ def signup():
         if not email or not password or not name:
             return jsonify({"msg": "All fields are required"}), 400
 
-        # Check duplicate
         if User.query.filter_by(email=email).first():
             return jsonify({"msg": "User already exists"}), 400
 
-        # --- DATABASE STEP ---
         hashed_pw = generate_password_hash(password)
         new_user = User(
             email=email, 
             password=hashed_pw, 
             name=name,
             is_admin=False,
-            is_deleted=False
+            is_deleted=False,
+            role='student' # Explicitly set role
         )
         
-        # Save to DB
         db.session.add(new_user)
         db.session.commit()
         
-        # --- CRITICAL FIX: Refresh to prevent crash ---
-        # This ensures we have the ID and the session is valid before continuing
         try:
             db.session.refresh(new_user)
             user_id = new_user.id
-        except Exception as refresh_err:
-            print(f"--- WARNING: DB Refresh failed: {refresh_err} ---")
+        except Exception as e:
+            print(f"--- WARNING: Refresh failed: {e} ---")
             user_id = None
 
         print(f"--- DEBUG: User saved. ID: {user_id} ---", flush=True)
 
-        # --- EMAIL STEP (Safe Mode) ---
-        # Wrapped in try/except so email failure DOES NOT crash the signup
         try:
-            html_body = f"""
-            <p>Hello {name},</p>
-            <p>Welcome to AICourseHub Pro! Your account has been created successfully.</p>
-            <p>You can now log in and start your learning journey.</p>
-            """
+            html_body = f"""<p>Hello {name},</p><p>Welcome to AICourseHub Pro! Your account has been created successfully.</p>"""
             email_content = get_email_template("Welcome! 🚀", html_body, "Login Now", f"{DOMAIN}/login")
             send_email(email, "Welcome to AICourseHub Pro!", email_content)
         except Exception as e:
-            print(f"--- EMAIL WARNING: Could not send welcome email: {e} ---")
+            print(f"--- EMAIL WARNING: {e} ---")
 
-        # --- SUCCESS RESPONSE ---
         return jsonify({"msg": "Signup successful", "user_id": user_id}), 201
 
     except Exception as e:
@@ -244,7 +228,7 @@ def contact_form():
 @jwt_required()
 def get_users():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED: Modern syntax
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     users = User.query.filter_by(is_deleted=(request.args.get('type') == 'deleted')).order_by(User.id.desc()).all()
@@ -260,7 +244,7 @@ def get_users():
 @jwt_required()
 def update_profile():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED
     if not user: return jsonify({"msg": "User not found"}), 404
         
     data = request.json
@@ -276,10 +260,10 @@ def update_profile():
 @jwt_required()
 def ban_user(user_id):
     current_user_id = get_jwt_identity()
-    admin = User.query.get(current_user_id)
+    admin = db.session.get(User, current_user_id) # FIXED
     if not admin or not admin.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id) # FIXED
     if not user: return jsonify({"msg": "User not found"}), 404
     
     days = request.json.get('days')
@@ -297,7 +281,7 @@ def ban_user(user_id):
 @jwt_required()
 def get_admin_stats():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     total_revenue = db.session.query(func.sum(Course.price))\
@@ -309,13 +293,9 @@ def get_admin_stats():
     chart_data = []
     end_date = datetime.utcnow()
     for i in range(6):
-        day_label = (end_date - timedelta(days=6-i)).strftime('%b %d')
-        chart_data.append({ "name": day_label, "revenue": 0 })
-
-    chart_data.append({ 
-        "name": end_date.strftime('%b %d'), 
-        "revenue": int(total_revenue) 
-    })
+        day = (end_date - timedelta(days=6-i)).strftime('%b %d')
+        chart_data.append({ "name": day, "revenue": 0 })
+    chart_data.append({ "name": end_date.strftime('%b %d'), "revenue": int(total_revenue) })
 
     recent_msgs = ContactMessage.query.filter_by(is_read=False)\
         .order_by(ContactMessage.created_at.desc()).limit(5).all()
@@ -337,13 +317,12 @@ def get_admin_stats():
 @jwt_required()
 def update_user_role(user_id):
     current_user_id = get_jwt_identity()
-    admin = User.query.get(current_user_id)
+    admin = db.session.get(User, current_user_id) # FIXED
     if not admin or not admin.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id) # FIXED
     if not user: return jsonify({"msg": "User not found"}), 404
-    if user.id == admin.id: return jsonify({"msg": "Cannot modify yourself"}), 400
-
+    
     data = request.json
     if 'is_admin' in data:
         user.is_admin = data['is_admin']
@@ -355,13 +334,12 @@ def update_user_role(user_id):
 @jwt_required()
 def soft_delete_user(user_id):
     current_user_id = get_jwt_identity()
-    admin = User.query.get(current_user_id)
+    admin = db.session.get(User, current_user_id) # FIXED
     if not admin or not admin.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id) # FIXED
     if not user: return jsonify({"msg": "User not found"}), 404
-    if user.id == admin.id: return jsonify({"msg": "Cannot delete yourself"}), 400
-
+    
     user.is_deleted = True
     db.session.commit()
     return jsonify({"msg": "User deleted"})
@@ -370,10 +348,10 @@ def soft_delete_user(user_id):
 @jwt_required()
 def restore_user(user_id):
     current_user_id = get_jwt_identity()
-    admin = User.query.get(current_user_id)
+    admin = db.session.get(User, current_user_id) # FIXED
     if not admin or not admin.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id) # FIXED
     if user:
         user.is_deleted = False
         db.session.commit()
@@ -400,7 +378,7 @@ def get_courses():
 @jwt_required()
 def create_course():
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     data = request.json
@@ -422,10 +400,10 @@ def create_course():
 @jwt_required()
 def update_course(course_id):
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    course = Course.query.get(course_id)
+    course = db.session.get(Course, course_id) # FIXED
     if not course: return jsonify({"msg": "Course not found"}), 404
 
     data = request.json
@@ -442,10 +420,10 @@ def update_course(course_id):
 @jwt_required()
 def delete_course(course_id):
     current_user_id = get_jwt_identity()
-    user = User.query.get(current_user_id)
+    user = db.session.get(User, current_user_id) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    course = Course.query.get(course_id)
+    course = db.session.get(Course, course_id) # FIXED
     if not course: return jsonify({"msg": "Course not found"}), 404
 
     course.is_deleted = True
@@ -461,7 +439,7 @@ def delete_course(course_id):
 def create_checkout_session():
     user_id = get_jwt_identity()
     data = request.json
-    course = Course.query.get(data.get('course_id'))
+    course = db.session.get(Course, data.get('course_id')) # FIXED
     if not course: return jsonify({'message': 'Course not found'}), 404
 
     try:
@@ -506,8 +484,8 @@ def verify_payment():
                 db.session.commit()
                 
                 # Send Welcome Email
-                user = User.query.get(user_id)
-                course = Course.query.get(course_id)
+                user = db.session.get(User, user_id) # FIXED
+                course = db.session.get(Course, course_id) # FIXED
                 email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
                 send_email(user.email, f"Welcome to {course.title}", email_content)
 
@@ -563,7 +541,7 @@ def get_my_enrollments():
 @jwt_required()
 def get_enrollment_status(course_id):
     user_id = get_jwt_identity()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id) # FIXED
     if user.is_admin:
         return jsonify({"status": "completed", "progress": 100, "certificate_id": "ADMIN_PREVIEW"})
         
@@ -584,7 +562,7 @@ def get_enrollment_status(course_id):
 @app.route('/api/admin/messages', methods=['GET'])
 @jwt_required()
 def get_messages():
-    user = User.query.get(get_jwt_identity())
+    user = db.session.get(User, get_jwt_identity()) # FIXED
     if not user.is_admin: return jsonify({"msg": "Admin only"}), 403
     msgs = ContactMessage.query.order_by(ContactMessage.created_at.desc()).all()
     return jsonify([{"id": m.id, "name": m.name, "subject": m.subject, "message": m.message, "is_read": m.is_read, "date": m.created_at.strftime('%Y-%m-%d')} for m in msgs])
@@ -592,8 +570,8 @@ def get_messages():
 @app.route('/api/admin/messages/<int:id>/read', methods=['PUT'])
 @jwt_required()
 def mark_message_read(id):
-    if not User.query.get(get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403
-    msg = ContactMessage.query.get(id)
+    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
+    msg = db.session.get(ContactMessage, id) # FIXED
     if msg: 
         msg.is_read = True
         db.session.commit()
@@ -602,19 +580,19 @@ def mark_message_read(id):
 @app.route('/api/admin/logs', methods=['GET'])
 @jwt_required()
 def get_audit_logs():
-    if not User.query.get(get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403
+    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
     return jsonify([{"action": l.action, "admin": l.admin_email, "details": l.details, "date": l.timestamp.strftime('%Y-%m-%d %H:%M')} for l in logs])
 
 @app.route('/api/admin/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
-    if not User.query.get(get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403
+    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
     enrollments = Enrollment.query.order_by(Enrollment.id.desc()).all()
     data = []
     for e in enrollments:
-        u = User.query.get(e.user_id)
-        c = Course.query.get(e.course_id)
+        u = db.session.get(User, e.user_id) # FIXED
+        c = db.session.get(Course, e.course_id) # FIXED
         if u and c:
             data.append({"id": e.id, "user": u.name, "email": u.email, "course": c.title, "date": e.enrolled_at.strftime('%Y-%m-%d') if e.enrolled_at else "N/A", "status": "Paid"})
     return jsonify(data)
@@ -635,7 +613,7 @@ def chat_support():
         return jsonify({"reply": "I'm having trouble connecting right now."}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
-@jwt_required(optional=True) # Optional for GET, Required for POST
+@jwt_required(optional=True) 
 def settings():
     if request.method == 'GET':
         m = SystemSetting.query.filter_by(key='maintenance_mode').first()
@@ -646,7 +624,7 @@ def settings():
         })
     
     # POST
-    user = User.query.get(get_jwt_identity())
+    user = db.session.get(User, get_jwt_identity()) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
     
     data = request.json
@@ -665,8 +643,8 @@ def settings():
 def verify_cert(cert_id):
     enr = Enrollment.query.filter_by(certificate_id=cert_id).first()
     if not enr: return jsonify({"valid": False}), 404
-    u = User.query.get(enr.user_id)
-    c = Course.query.get(enr.course_id)
+    u = db.session.get(User, enr.user_id) # FIXED
+    c = db.session.get(Course, enr.course_id) # FIXED
     return jsonify({
         "valid": True, 
         "student_name": u.name, 
@@ -674,7 +652,6 @@ def verify_cert(cert_id):
         "completion_date": enr.completion_date.strftime('%Y-%m-%d')
     })
 
-# Password Reset
 @app.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
     email = request.json.get('email')
@@ -688,16 +665,118 @@ def forgot_password():
 @app.route('/api/reset-password', methods=['POST'])
 @jwt_required()
 def reset_password():
-    user = User.query.get(get_jwt_identity())
+    user = db.session.get(User, get_jwt_identity()) # FIXED
     user.password = generate_password_hash(request.json.get('new_password'))
     db.session.commit()
     return jsonify({"msg": "Password updated"})
 
+# ==========================================
+#  AI ROLEPLAY ROUTES (NEW)
+# ==========================================
+
+@app.route('/api/roleplay/chat', methods=['POST'])
+@jwt_required()
+def roleplay_chat():
+    """
+    Handles the conversation for a simulation lesson.
+    """
+    data = request.json
+    messages = data.get('messages', [])
+    persona = data.get('persona', 'You are a helpful assistant.')
+    
+    # Construct conversation: System Instruction + Chat History
+    conversation = [{"role": "system", "content": persona}] + messages
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key: 
+        return jsonify({"role": "assistant", "content": "AI Service Unavailable (Check Server Key)"}), 500
+
+    try:
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o", # Use GPT-4o or gpt-3.5-turbo for speed
+            messages=conversation,
+            temperature=0.7 
+        )
+        ai_reply = response.choices[0].message.content
+        return jsonify({"role": "assistant", "content": ai_reply})
+    except Exception as e:
+        print(f"Roleplay Error: {e}")
+        return jsonify({"role": "assistant", "content": "I'm having trouble connecting. Please try again."}), 500
+
+
+
+@app.route('/api/roleplay/feedback', methods=['POST'])
+@jwt_required()
+def roleplay_feedback():
+    """
+    Analyzes the transcript and generates structured feedback + score.
+    Personalized with the user's real name.
+    """
+    # 1. Get the current logged-in user's ID from the token
+    current_user_id = get_jwt_identity()
+    
+    # 2. Query the Database to find the User
+    # We use the 'User' model because that is what your student accounts are.
+    user = User.query.get(int(current_user_id))
+    
+    # 3. Create the 'student_name' variable dynamically
+    # If the user exists, use their name. Otherwise, fallback to "The Student".
+    student_name = user.name if user else "The Student"
+
+    # 4. Get Request Data
+    data = request.json
+    messages = data.get('messages', [])
+    learning_objectives = data.get('objectives', 'Professional communication')
+    
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        return jsonify({"error": "Server missing API Key"}), 500
+
+    client = OpenAI(api_key=api_key)
+
+    # 5. Enhanced System Prompt with the Name
+    analysis_prompt = f"""
+    You are an expert instructor grading a roleplay simulation.
+    
+    **The Participants:**
+    - **Student:** {student_name} (Referred to as 'user' in the transcript).
+    - **Scenario Character:** The AI (Referred to as 'assistant' in the transcript).
+    
+    **Your Task:**
+    Analyze the transcript below based on these objectives: {learning_objectives}.
+    
+    **Output Guidelines:**
+    1. **Speak directly to {student_name}.** (e.g., "Great job, {student_name}!" or "{student_name} could have been firmer.").
+    2. **NEVER use the word 'Assistant' or 'User'.** Instead, refer to the AI character by their role (e.g., "The Manager", "The Client") and the student by their real name.
+    3. Be encouraging but honest.
+    
+    **Return strictly valid JSON:**
+    {{
+        "score": (integer 0-100),
+        "strengths": ["point 1", "point 2", "point 3"],
+        "improvements": ["point 1", "point 2", "point 3"],
+        "summary": "A short, personalized paragraph summary addressing {student_name}."
+    }}
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a personalized roleplay grader. Output JSON only."},
+                {"role": "user", "content": f"{analysis_prompt}\n\nTRANSCRIPT:\n{str(messages)}"}
+            ],
+            response_format={ "type": "json_object" }
+        )
+        feedback = response.choices[0].message.content
+        return jsonify(feedback)
+    except Exception as e:
+        print(f"Feedback Error: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 
 if __name__ == '__main__':
-    # 1. Tries to find the 'PORT' var (Railway always sets this).
-    # 2. If not found (Localhost), it defaults to 5000.
     port = int(os.environ.get("PORT", 5000))
-    
     print(f"--- Starting Server on Port {port} ---") 
     app.run(host='0.0.0.0', port=port)

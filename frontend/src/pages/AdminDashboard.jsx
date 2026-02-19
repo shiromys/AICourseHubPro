@@ -10,7 +10,7 @@ import {
   LayoutDashboard, BookOpen, DollarSign, Users, Mail, Activity, Plus, 
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
-  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu
+  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson
 } from 'lucide-react';
 
 // --- MOCK DATA ---
@@ -179,7 +179,38 @@ const AdminDashboard = () => {
   const handleLessonTitleChange = (mIdx, lIdx, v, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[mIdx].lessons[lIdx].title = v; isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
   
   const handleOpenModal = () => { setNewCourse({ title: '', description: '', price: 29, category: 'HR', modules: [] }); setIsModalOpen(true); };
-  const handleJsonUpload = (e) => { const f=e.target.files[0]; if(!f)return; const r=new FileReader(); r.onload=(ev)=>{ try{const j=JSON.parse(ev.target.result); if(j.title){setNewCourse({...j, price: j.price||29}); alert("Loaded!");}}catch(err){alert("Invalid JSON");} }; r.readAsText(f); };
+  
+  // --- JSON UPLOAD LOGIC ---
+  const handleJsonUpload = (e) => { 
+    const f=e.target.files[0]; 
+    if(!f)return; 
+    const r=new FileReader(); 
+    r.onload=(ev)=>{ 
+        try{
+            const j=JSON.parse(ev.target.result); 
+            // Handles both full course object or just modules array
+            const loadedModules = Array.isArray(j) ? j : (j.modules || []);
+            const loadedTitle = j.title || newCourse.title;
+            const loadedDesc = j.description || newCourse.description;
+            const loadedPrice = j.price || newCourse.price;
+            const loadedCat = j.category || newCourse.category;
+
+            setNewCourse({
+                ...newCourse, 
+                title: loadedTitle,
+                description: loadedDesc,
+                price: loadedPrice,
+                category: loadedCat,
+                modules: loadedModules
+            }); 
+            alert(`Loaded ${loadedModules.length} modules from JSON!`);
+        } catch(err){
+            alert("Invalid JSON format");
+        } 
+    }; 
+    r.readAsText(f); 
+  };
+
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
   
   // REAL-TIME CHART DATA GENERATOR
@@ -476,7 +507,20 @@ const AdminDashboard = () => {
                       <input className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" type="number" placeholder="Price" value={isEditModalOpen ? editingCourse.price : newCourse.price} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, price: parseFloat(e.target.value)}) : setNewCourse({...newCourse, price: parseFloat(e.target.value)})}/>
                       <textarea className="w-full bg-white border border-gray-300 p-3 rounded text-gray-900 focus:border-red-600 outline-none transition" rows="3" placeholder="Description" value={isEditModalOpen ? editingCourse.description : newCourse.description} onChange={e => isEditModalOpen ? setEditingCourse({...editingCourse, description: e.target.value}) : setNewCourse({...newCourse, description: e.target.value})}/>
                       <div className="border-t border-gray-100 pt-6">
-                          <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4><button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button></div>
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-bold text-gray-700 uppercase text-sm">Curriculum Builder</h4>
+                            
+                            {/* --- JSON UPLOAD BUTTON (NEW) --- */}
+                            <div className="flex gap-2">
+                                {!isEditModalOpen && (
+                                    <label className="cursor-pointer text-xs bg-gray-800 hover:bg-black text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold transition">
+                                        <FileJson size={14}/> Upload JSON
+                                        <input type="file" className="hidden" accept=".json" onChange={handleJsonUpload} />
+                                    </label>
+                                )}
+                                <button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button>
+                            </div>
+                          </div>
                           {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
                               <div key={i} className="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
                                   <div className="flex gap-2 mb-2"><input className="bg-transparent font-bold flex-1 text-gray-900" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
