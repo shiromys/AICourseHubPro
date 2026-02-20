@@ -4,13 +4,14 @@ import axios from 'axios';
 import API_BASE_URL from '../config';
 import { 
   User, Lock, Save, BookOpen, Award, 
-  CheckCircle, AlertCircle, Loader2 
+  CheckCircle, AlertCircle, Loader2, CreditCard, Receipt
 } from 'lucide-react';
 
 const UserProfile = () => {
   const [activeTab, setActiveTab] = useState('activity');
   const [user, setUser] = useState({ name: '', email: '', role: '' });
   const [enrollments, setEnrollments] = useState([]);
+  const [payments, setPayments] = useState([]); // NEW: State for payments
   const [loading, setLoading] = useState(true);
   
   // Form States
@@ -46,14 +47,16 @@ const UserProfile = () => {
       const role = localStorage.getItem('user_role');
       setUser({ name: name || 'Student', role: role || 'Student' });
 
-      // Get Activity
-      const res = await axios.get(`${API_BASE_URL}/api/my-enrollments`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      // NEW: Fetch Enrollments and Payments simultaneously
+      const [enrollmentsRes, paymentsRes] = await Promise.all([
+        axios.get(`${API_BASE_URL}/api/my-enrollments`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_BASE_URL}/api/my-payments`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
       
       // Clean duplicate entries from bad DB data
-      const cleanList = getUniqueEnrollments(res.data);
+      const cleanList = getUniqueEnrollments(enrollmentsRes.data);
       setEnrollments(cleanList);
+      setPayments(paymentsRes.data); // Set payment history data
       
       setLoading(false);
     } catch (err) {
@@ -137,6 +140,12 @@ const UserProfile = () => {
                   <BookOpen size={18}/> Learning Activity
                 </button>
                 <button 
+                  onClick={() => setActiveTab('payments')}
+                  className={`w-full text-left px-6 py-4 font-bold text-sm flex items-center gap-3 transition ${activeTab === 'payments' ? 'bg-red-50 text-red-600 border-l-4 border-red-600' : 'text-gray-600 hover:bg-gray-50'}`}
+                >
+                  <CreditCard size={18}/> Payment History
+                </button>
+                <button 
                   onClick={() => setActiveTab('security')}
                   className={`w-full text-left px-6 py-4 font-bold text-sm flex items-center gap-3 transition ${activeTab === 'security' ? 'bg-red-50 text-red-600 border-l-4 border-red-600' : 'text-gray-600 hover:bg-gray-50'}`}
                 >
@@ -180,6 +189,49 @@ const UserProfile = () => {
                           </div>
                         </div>
                       ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* --- PAYMENTS TAB (NEW) --- */}
+              {activeTab === 'payments' && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8 animate-fade-in">
+                  <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2"><CreditCard className="text-red-600"/> Payment History</h2>
+                  
+                  {payments.length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                      <Receipt size={48} className="mx-auto text-gray-300 mb-4"/>
+                      <p className="text-gray-500 font-medium">No payment history found.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-gray-200">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50 text-gray-500 text-xs uppercase border-b border-gray-200">
+                            <th className="p-4 font-bold rounded-tl-lg">Date</th>
+                            <th className="p-4 font-bold">Course</th>
+                            <th className="p-4 font-bold">Amount</th>
+                            <th className="p-4 font-bold">Status</th>
+                            <th className="p-4 font-bold rounded-tr-lg">Receipt</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {payments.map((pay, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50 transition">
+                              <td className="p-4 text-sm text-gray-600 font-medium whitespace-nowrap">{pay.date}</td>
+                              <td className="p-4 text-sm text-gray-900 font-bold">{pay.course}</td>
+                              <td className="p-4 text-sm text-gray-900 font-bold">${pay.amount}</td>
+                              <td className="p-4">
+                                <span className="bg-green-100 text-green-700 px-2 py-1 rounded text-xs font-bold border border-green-200">
+                                  {pay.status}
+                                </span>
+                              </td>
+                              <td className="p-4 text-sm font-mono text-gray-500">{pay.receipt}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </div>

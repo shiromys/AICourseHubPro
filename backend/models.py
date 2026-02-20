@@ -57,6 +57,7 @@ class Course(db.Model):
         }
 
 # 3. ENROLLMENT MODEL
+# 3. ENROLLMENT MODEL
 class Enrollment(db.Model):
     __tablename__ = 'enrollments'
     
@@ -72,10 +73,13 @@ class Enrollment(db.Model):
     last_module_index = db.Column(db.Integer, default=0)
     last_lesson_index = db.Column(db.Integer, default=0)
 
-    # Certification
+    # Certification & Payment (NEW COLUMN ADDED HERE)
     certificate_id = db.Column(db.String(50), unique=True, nullable=True) 
+    stripe_session_id = db.Column(db.String(255), nullable=True) # <-- NEW
+    
     completion_date = db.Column(db.DateTime, nullable=True)
     enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
 
 # 4. CONTACT MESSAGE MODEL
 class ContactMessage(db.Model):

@@ -463,6 +463,8 @@ def create_checkout_session():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
+
 @app.route('/api/verify-payment', methods=['POST'])
 @jwt_required()
 def verify_payment():
@@ -476,16 +478,21 @@ def verify_payment():
         if session.payment_status == 'paid':
             existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
             if not existing:
+                # NEW: We now save the real session_id from Stripe directly into the database
                 new_enrollment = Enrollment(
-                    user_id=user_id, course_id=course_id, 
-                    status='in-progress', progress=0, enrolled_at=datetime.utcnow()
+                    user_id=user_id, 
+                    course_id=course_id, 
+                    status='in-progress', 
+                    progress=0, 
+                    enrolled_at=datetime.utcnow(),
+                    stripe_session_id=session_id  # <--- SAVING STRIPE ID HERE
                 )
                 db.session.add(new_enrollment)
                 db.session.commit()
                 
                 # Send Welcome Email
-                user = db.session.get(User, user_id) # FIXED
-                course = db.session.get(Course, course_id) # FIXED
+                user = db.session.get(User, user_id)
+                course = db.session.get(Course, course_id)
                 email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
                 send_email(user.email, f"Welcome to {course.title}", email_content)
 
@@ -493,6 +500,8 @@ def verify_payment():
     except Exception as e:
         return jsonify({"msg": str(e)}), 500
     return jsonify({"msg": "Payment failed"}), 400
+
+
 
 @app.route('/api/enroll', methods=['POST'])
 @jwt_required()
@@ -536,6 +545,34 @@ def get_my_enrollments():
         "id": c.id, "title": c.title, "description": c.description,
         "progress": e.progress, "status": e.status
     } for e, c in results])
+
+
+
+@app.route('/api/my-payments', methods=['GET'])
+@jwt_required()
+def get_my_payments():
+    user_id = get_jwt_identity()
+    # Join Enrollments and Courses to get the price and title
+    results = db.session.query(Enrollment, Course).join(Course, Enrollment.course_id == Course.id).filter(Enrollment.user_id == user_id).order_by(Enrollment.enrolled_at.desc()).all()
+    
+    payments = []
+    for e, c in results:
+        # NEW: Try to use the real Stripe ID. If they bypassed payment (free enrollment as Admin), fallback to a generated ID.
+        real_receipt = e.stripe_session_id if e.stripe_session_id else f"REC-FREE-{e.id}{user_id}"
+        
+        payments.append({
+            "id": e.id,
+            "course": c.title,
+            "amount": c.price,
+            "date": e.enrolled_at.strftime('%b %d, %Y') if e.enrolled_at else "N/A",
+            "status": "Paid",
+            "receipt": real_receipt # <--- SENDING REAL STRIPE ID HERE
+        })
+        
+    return jsonify(payments), 200
+
+
+
 
 @app.route('/api/enrollment/<int:course_id>', methods=['GET'])
 @jwt_required()
