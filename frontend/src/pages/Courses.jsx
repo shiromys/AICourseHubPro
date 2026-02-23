@@ -8,6 +8,7 @@ import API_BASE_URL from '../config';
 
 const Courses = () => {
   const [courses, setCourses] = useState([]);
+  const [enrolledCourseIds, setEnrolledCourseIds] = useState([]); // NEW: Store what the user owns
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -23,11 +24,33 @@ const Courses = () => {
   const categories = ['All', 'HR', 'Operations', 'Development', 'Business', 'Marketing'];
 
   useEffect(() => {
-    const fetchCourses = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const res = await axios.get(`${API_BASE_URL}/api/courses`);
-        setCourses(res.data);
+        const token = localStorage.getItem('token');
+        
+        // Fetch all courses
+        const coursesPromise = axios.get(`${API_BASE_URL}/api/courses`);
+        
+        // Fetch user enrollments if they are logged in and NOT an admin
+        let enrollmentsPromise = Promise.resolve({ data: [] });
+        if (token && !isAdmin) {
+          enrollmentsPromise = axios.get(`${API_BASE_URL}/api/my-enrollments`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
+
+        // Wait for both requests to finish
+        const [coursesRes, enrollmentsRes] = await Promise.all([coursesPromise, enrollmentsPromise]);
+        
+        setCourses(coursesRes.data);
+        
+        // Extract just the course IDs from the enrollments for easy checking
+        if (enrollmentsRes.data.length > 0) {
+          const ids = enrollmentsRes.data.map(course => course.id);
+          setEnrolledCourseIds(ids);
+        }
+
       } catch (err) {
         console.error("Error fetching courses:", err);
         setError("Failed to load courses. Please try refreshing.");
@@ -36,12 +59,13 @@ const Courses = () => {
       }
     };
 
-    fetchCourses();
-  }, []);
+    fetchData();
+  }, [isAdmin]);
 
   const handleCourseAction = async (courseId) => {
-    if (isAdmin) {
-      navigate(`/learn/text/${courseId}`);
+    // NEW: If they are admin OR they already own the course, let them in!
+    if (isAdmin || enrolledCourseIds.includes(courseId)) {
+      navigate(`/course/${courseId}`); 
       return;
     }
 
@@ -150,6 +174,10 @@ const Courses = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredCourses.map(course => {
               const isBuying = buying === course.id;
+              
+              // NEW: Determine button state based on enrollment
+              const isEnrolled = enrolledCourseIds.includes(course.id);
+              const canAccess = isAdmin || isEnrolled;
 
               return (
                 // --- LIGHT THEME CARD: White background, Light Border ---
@@ -185,15 +213,15 @@ const Courses = () => {
                   <div className="p-4 bg-gray-50 border-t border-gray-100">
                      <button 
                        onClick={() => handleCourseAction(course.id)}
-                       disabled={isBuying}
+                       disabled={isBuying && !canAccess}
                        className={`flex items-center justify-center gap-2 w-full font-bold py-3 rounded-xl transition-all shadow-md ${
-                         isAdmin 
+                         canAccess 
                            ? "bg-green-600 hover:bg-green-700 text-white" 
                            : "bg-red-600 hover:bg-red-700 text-white"
                        }`}
                      >
-                       {isAdmin ? (
-                         <> <BookOpen size={16} /> Review Course </>
+                       {canAccess ? (
+                         <> <BookOpen size={16} /> {isAdmin ? "Review Course" : "Continue Course"} </>
                        ) : (
                          isBuying ? <Loader2 className="animate-spin" size={16}/> : <> Enroll Now <ChevronRight size={16} /> </>
                        )}

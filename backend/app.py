@@ -159,9 +159,9 @@ def signup():
         print(f"--- DEBUG: User saved. ID: {user_id} ---", flush=True)
 
         try:
-            html_body = f"""<p>Hello {name},</p><p>Welcome to AICourseHub Pro! Your account has been created successfully.</p>"""
+            html_body = f"""<p>Hello {name},</p><p>Welcome to AICourseHubPro! Your account has been created successfully.</p>"""
             email_content = get_email_template("Welcome! 🚀", html_body, "Login Now", f"{DOMAIN}/login")
-            send_email(email, "Welcome to AICourseHub Pro!", email_content)
+            send_email(email, "Welcome to AICourseHubPro!", email_content)
         except Exception as e:
             print(f"--- EMAIL WARNING: {e} ---")
 
@@ -215,7 +215,7 @@ def contact_form():
     admin_html = f"<h3>From: {name} ({user_email})</h3><p>{message}</p>"
     send_email("info@aicoursehubpro.com", f"New Inquiry: {subject}", admin_html, "Contact Form", "no-reply@aicoursehubpro.com")
     
-    user_html = f"<p>Hi {name}, we received your message regarding '{subject}'. We will reply shortly.</p>"
+    user_html = f"<p>Hi {name}, we received your message regarding '{subject}'. We will get back to you shortly.</p>"
     send_email(user_email, "We received your message", get_email_template("Message Received", user_html))
 
     return jsonify({"msg": "Message sent"}), 200
