@@ -6,6 +6,7 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 import { CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-react';
 import TextCoursePlayer from '../components/TextCoursePlayer'; 
+import { Helmet } from 'react-helmet-async'; // <-- 1. IMPORT HELMET HERE
 
 const CourseView = () => {
   const { id } = useParams();
@@ -101,11 +102,30 @@ const CourseView = () => {
   if (!course) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Course not found.</div>;
 
   if (isEnrolled) {
-      return <TextCoursePlayer courseId={id} courseData={course} />;
+      return (
+        <>
+          {/* Keep title updated even when learning */}
+          <Helmet>
+            <title>{course.title} | Learning | AICourseHubPro</title>
+          </Helmet>
+          <TextCoursePlayer courseId={id} courseData={course} />
+        </>
+      );
   }
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100">
+      
+      {/* --- 2. DYNAMIC SEO TAGS INJECTED HERE --- */}
+      <Helmet>
+        <title>{course.title} | AICourseHubPro</title>
+        <meta name="description" content={course.description.substring(0, 160)} />
+        <meta property="og:title" content={`${course.title} | AICourseHubPro`} />
+        <meta property="og:description" content={course.description.substring(0, 160)} />
+        <meta property="twitter:title" content={`${course.title} | AICourseHubPro`} />
+        <meta property="twitter:description" content={course.description.substring(0, 160)} />
+      </Helmet>
+
       <Navbar />
       <div className="relative pt-32 pb-20 px-6 overflow-hidden">
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-red-900/20 blur-[120px] rounded-full pointer-events-none"></div>

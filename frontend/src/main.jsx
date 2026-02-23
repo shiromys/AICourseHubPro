@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 import axios from 'axios';
+import { HelmetProvider } from 'react-helmet-async';
 
 // --- GLOBAL AXIOS INTERCEPTOR ---
 // This code runs for every HTTP request across the entire app.
@@ -33,6 +34,8 @@ axios.interceptors.response.use(
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <HelmetProvider>  {/* 2. WRAP YOUR APP */}
+      <App />
+    </HelmetProvider>
   </React.StrictMode>,
 );
