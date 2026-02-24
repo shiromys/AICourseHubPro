@@ -13,10 +13,12 @@ const PaymentSuccess = () => {
   // Extract data from URL (sent by Backend during Stripe redirect)
   const sessionId = searchParams.get('session_id');
   const courseId = searchParams.get('course_id');
+  const isBundle = searchParams.get('bundle') === 'true'; // NEW: Check for bundle flag
 
   useEffect(() => {
     const verifyEnrollment = async () => {
-      if (!sessionId || !courseId) {
+      // FIX: Require sessionId, and EITHER a courseId OR the bundle flag
+      if (!sessionId || (!courseId && !isBundle)) {
         setStatus('error');
         return;
       }
@@ -29,9 +31,13 @@ const PaymentSuccess = () => {
            return;
         }
 
-        // Call the NEW backend endpoint
+        // Call the backend endpoint, explicitly passing the bundle flag
         await axios.post(`${API_BASE_URL}/api/verify-payment`, 
-          { session_id: sessionId, course_id: courseId },
+          { 
+            session_id: sessionId, 
+            course_id: courseId,
+            bundle: isBundle ? 'true' : 'false' // Let backend know it's a bundle
+          },
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
@@ -47,7 +53,7 @@ const PaymentSuccess = () => {
     };
 
     verifyEnrollment();
-  }, [sessionId, courseId, navigate]);
+  }, [sessionId, courseId, isBundle, navigate]);
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">
@@ -67,7 +73,9 @@ const PaymentSuccess = () => {
             <>
               <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
               <h2 className="text-2xl font-bold mb-2 text-green-500">Payment Successful!</h2>
-              <p className="text-gray-400 mb-6">You have been enrolled in the course.</p>
+              <p className="text-gray-400 mb-6">
+                {isBundle ? "You have unlocked all courses!" : "You have been enrolled in the course."}
+              </p>
               <button 
                 onClick={() => navigate('/dashboard')}
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"

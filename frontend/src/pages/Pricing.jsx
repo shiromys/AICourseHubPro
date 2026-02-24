@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
@@ -9,14 +9,50 @@ import API_BASE_URL from '../config';
 const Pricing = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [ownedCount, setOwnedCount] = useState(0);
+  const [totalCourses, setTotalCourses] = useState(0);
 
   // Check if user is logged in
   const isLoggedIn = !!localStorage.getItem('token');
+  const role = localStorage.getItem('user_role');
+  const isAdmin = role === 'admin';
 
-  const handleBuy = async (courseId) => {
-    // 1. If not logged in, force login
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        // 1. Fetch total available courses
+        const coursesRes = await axios.get(`${API_BASE_URL}/api/courses`);
+        setTotalCourses(coursesRes.data.length);
+
+        // 2. Fetch owned courses if logged in and not an admin
+        const token = localStorage.getItem('token');
+        if (token && !isAdmin) {
+          const enrollmentsRes = await axios.get(`${API_BASE_URL}/api/my-enrollments`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          // Use a Set to ensure we only count unique course IDs
+          const uniqueIds = new Set(enrollmentsRes.data.map(e => e.id));
+          setOwnedCount(uniqueIds.size);
+        } else if (isAdmin) {
+          // Admins own everything by default
+          setOwnedCount(coursesRes.data.length);
+        }
+      } catch (err) {
+        console.error("Error fetching stats:", err);
+      }
+    };
+    fetchStats();
+  }, [isAdmin]);
+
+  // --- DYNAMIC MATH ---
+  const basePrice = 159;
+  const discount = ownedCount * 29;
+  const finalPrice = Math.max(basePrice - discount, 0);
+  const ownsAll = totalCourses > 0 && ownedCount >= totalCourses;
+
+  const handleBundleBuy = async () => {
     if (!isLoggedIn) {
-      alert("Please log in or create an account to purchase.");
+      alert("Please log in or create an account to purchase the bundle.");
       navigate('/login');
       return;
     }
@@ -25,19 +61,18 @@ const Pricing = () => {
     try {
       const token = localStorage.getItem('token');
       
-      // 2. Call Backend to get Stripe URL
-      await axios.post(`${API_BASE_URL}/api/create-checkout-session`, ... 
-        { course_id: courseId },
+      // Call the NEW bundle checkout route
+      const res = await axios.post(`${API_BASE_URL}/api/create-bundle-checkout`, 
+        {}, // No specific course_id needed, the backend handles it
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // 3. Redirect to Stripe
       if (res.data.url) {
         window.location.href = res.data.url;
       }
     } catch (error) {
       console.error("Payment Error:", error);
-      alert("Failed to initialize payment. Please check your connection.");
+      alert(error.response?.data?.error || "Failed to initialize payment. Please try again.");
       setLoading(false);
     }
   };
@@ -108,8 +143,29 @@ const Pricing = () => {
               </h3>
               <p className="text-gray-400 mb-6 relative z-10">Access everything. Forever.</p>
               
-              <div className="text-5xl font-black text-white mb-8 relative z-10">
-                $159<span className="text-lg font-medium text-gray-500">/one-time</span>
+              {/* --- DYNAMIC PRICING DISPLAY --- */}
+              <div className="text-5xl font-black text-white mb-2 relative z-10">
+                ${finalPrice}
+                {!ownsAll && discount > 0 && (
+                  <span className="text-2xl text-gray-500 line-through ml-3">${basePrice}</span>
+                )}
+                {!ownsAll && discount === 0 && (
+                  <span className="text-lg font-medium text-gray-500">/one-time</span>
+                )}
+              </div>
+              
+              {/* Discount Message */}
+              <div className="h-6 mb-6 relative z-10">
+                {!ownsAll && discount > 0 && (
+                   <span className="text-green-400 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full border border-green-800">
+                     -${discount} Upgrade Discount Applied!
+                   </span>
+                )}
+                {ownsAll && (
+                   <span className="text-green-400 font-bold text-sm bg-green-900/30 px-3 py-1 rounded-full border border-green-800">
+                     You own all available courses!
+                   </span>
+                )}
               </div>
 
               <ul className="space-y-4 mb-10 text-gray-300 font-medium relative z-10">
@@ -127,13 +183,17 @@ const Pricing = () => {
                 </li>
               </ul>
 
-              {/* --- STRIPE PAYMENT BUTTON --- */}
+              {/* --- DYNAMIC BUTTON --- */}
               <button 
-                onClick={() => handleBuy(1)} // Buying Course ID 1
-                disabled={loading}
-                className="w-full py-4 bg-red-600 text-white font-bold rounded-xl shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-700 hover:scale-[1.02] transition-all relative z-10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100"
+                onClick={handleBundleBuy}
+                disabled={loading || ownsAll}
+                className={`w-full py-4 font-bold rounded-xl transition-all relative z-10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:scale-100 ${
+                  ownsAll 
+                    ? "bg-gray-700 text-gray-400 border border-gray-600 cursor-not-allowed" 
+                    : "bg-red-600 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-700 hover:scale-[1.02]"
+                }`}
               >
-                {loading ? <Loader2 className="animate-spin" /> : "Get All-Access Pass"}
+                {loading ? <Loader2 className="animate-spin" /> : (ownsAll ? "All Courses Unlocked" : "Get All-Access Pass")}
               </button>
             </div>
 
@@ -151,7 +211,7 @@ const Pricing = () => {
           <div className="space-y-6">
             {[
               { q: "Is this a monthly subscription?", a: "No! We hate subscriptions too. You pay once and own the content forever." },
-              { q: "Can I upgrade later?", a: "Yes. you can buy a single course first and then upgrade to the bundle later." },
+              { q: "Can I upgrade later?", a: "Yes. you can buy a single course first and then upgrade to the bundle later. We automatically discount the bundle based on what you already own!" },
               { q: "Do you offer refunds?", a: "No, we do not offer any refunds excluding special cases such as double payments." },
               { q: "Are the certificates accredited?", a: "Our certificates are industry-recognized and verifiable via a unique ID, perfect for LinkedIn." },
             ].map((faq, i) => (

@@ -462,6 +462,55 @@ def create_checkout_session():
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+
+
+@app.route('/api/create-bundle-checkout', methods=['POST'])
+@jwt_required()
+def create_bundle_checkout():
+    user_id = get_jwt_identity()
+    
+    # 1. Calculate how many distinct courses they own
+    owned_enrollments = Enrollment.query.filter_by(user_id=user_id).all()
+    owned_course_ids = set([e.course_id for e in owned_enrollments])
+    owned_count = len(owned_course_ids)
+    
+    # 2. Total courses in system
+    total_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).count()
+    
+    if owned_count >= total_courses:
+        return jsonify({'error': 'You already own all available courses!'}), 400
+
+    # 3. Calculate dynamic price (159 - (owned * 29))
+    base_bundle_price = 159.0
+    discount = owned_count * 29.0
+    final_price = max(base_bundle_price - discount, 0.0)
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'usd',
+                    'product_data': {
+                        'name': 'AICourseHubPro All-Access Pass',
+                        'description': f'Unlocks all remaining courses. (Includes ${int(discount)} credit for past purchases)' if discount > 0 else 'Unlocks all current and future courses.'
+                    },
+                    'unit_amount': int(final_price * 100), 
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&bundle=true",
+            cancel_url=f"{DOMAIN}/pricing",
+            client_reference_id=str(user_id),
+            # NEW: Tag this as a bundle purchase!
+            metadata={"user_id": user_id, "is_bundle": "true"}
+        )
+        return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 
 
 
@@ -471,35 +520,62 @@ def verify_payment():
     user_id = get_jwt_identity()
     data = request.json
     session_id = data.get('session_id')
-    course_id = data.get('course_id')
+    course_id = data.get('course_id') # Might be None if it's a bundle
+    is_bundle = data.get('bundle') == 'true'
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == 'paid':
-            existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
-            if not existing:
-                # NEW: We now save the real session_id from Stripe directly into the database
-                new_enrollment = Enrollment(
-                    user_id=user_id, 
-                    course_id=course_id, 
-                    status='in-progress', 
-                    progress=0, 
-                    enrolled_at=datetime.utcnow(),
-                    stripe_session_id=session_id  # <--- SAVING STRIPE ID HERE
-                )
-                db.session.add(new_enrollment)
+            
+            # --- BUNDLE LOGIC ---
+            if is_bundle or session.metadata.get("is_bundle") == "true":
+                all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
+                owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
+                
+                enrolled_count = 0
+                for course in all_courses:
+                    if course.id not in owned:
+                        new_enr = Enrollment(
+                            user_id=user_id, course_id=course.id, 
+                            status='in-progress', progress=0, 
+                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                        )
+                        db.session.add(new_enr)
+                        enrolled_count += 1
+                
                 db.session.commit()
                 
-                # Send Welcome Email
                 user = db.session.get(User, user_id)
-                course = db.session.get(Course, course_id)
-                email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
-                send_email(user.email, f"Welcome to {course.title}", email_content)
+                email_content = get_email_template("All-Access Pass Unlocked! 🚀", f"You have successfully unlocked all {enrolled_count} remaining courses.", "Go to Dashboard", f"{DOMAIN}/dashboard")
+                send_email(user.email, "Welcome to the All-Access Pass", email_content)
+                
+                return jsonify({"msg": "Bundle Enrolled", "status": "enrolled", "courses_added": enrolled_count}), 200
 
-            return jsonify({"msg": "Enrolled", "status": "enrolled"}), 200
+            # --- SINGLE COURSE LOGIC ---
+            else:
+                existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+                if not existing:
+                    new_enrollment = Enrollment(
+                        user_id=user_id, course_id=course_id, 
+                        status='in-progress', progress=0, 
+                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                    )
+                    db.session.add(new_enrollment)
+                    db.session.commit()
+                    
+                    user = db.session.get(User, user_id)
+                    course = db.session.get(Course, course_id)
+                    email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
+                    send_email(user.email, f"Welcome to {course.title}", email_content)
+
+                return jsonify({"msg": "Enrolled", "status": "enrolled"}), 200
+                
     except Exception as e:
+        print(f"Payment Verification Error: {e}", flush=True)
         return jsonify({"msg": str(e)}), 500
+        
     return jsonify({"msg": "Payment failed"}), 400
+
 
 
 
@@ -555,22 +631,63 @@ def get_my_payments():
     # Join Enrollments and Courses to get the price and title
     results = db.session.query(Enrollment, Course).join(Course, Enrollment.course_id == Course.id).filter(Enrollment.user_id == user_id).order_by(Enrollment.enrolled_at.desc()).all()
     
-    payments = []
+    grouped = {}
+    free_count = 0
+    
+    # 1. Group enrollments by their Stripe Receipt ID
     for e, c in results:
-        # NEW: Try to use the real Stripe ID. If they bypassed payment (free enrollment as Admin), fallback to a generated ID.
-        real_receipt = e.stripe_session_id if e.stripe_session_id else f"REC-FREE-{e.id}{user_id}"
+        key = e.stripe_session_id
+        if not key:
+            free_count += 1
+            key = f"free_{free_count}"
+            
+        if key not in grouped:
+            grouped[key] = {
+                "id": e.id,
+                "date_obj": e.enrolled_at or datetime.min,
+                "date": e.enrolled_at.strftime('%b %d, %Y') if e.enrolled_at else "N/A",
+                "status": "Paid",
+                "receipt": e.stripe_session_id if e.stripe_session_id else f"REC-FREE-{e.id}{user_id}",
+                "courses": []
+            }
+        grouped[key]["courses"].append(c)
         
-        payments.append({
-            "id": e.id,
-            "course": c.title,
-            "amount": c.price,
-            "date": e.enrolled_at.strftime('%b %d, %Y') if e.enrolled_at else "N/A",
-            "status": "Paid",
-            "receipt": real_receipt # <--- SENDING REAL STRIPE ID HERE
-        })
+    total_courses_in_db = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).count()
+    
+    payments = []
+    for key, data in grouped.items():
+        if len(data["courses"]) > 1:
+            # 2. BUNDLE LOGIC: If one receipt unlocked multiple courses, show it as a bundle
+            prior_owned = total_courses_in_db - len(data["courses"])
+            paid_amount = max(159.0 - (prior_owned * 29.0), 0.0)
+            
+            payments.append({
+                "id": data["id"],
+                "course": f"All-Access Pro Bundle ({len(data['courses'])} courses)",
+                "amount": paid_amount,
+                "date_obj": data["date_obj"],
+                "date": data["date"],
+                "status": "Paid",
+                "receipt": data["receipt"]
+            })
+        else:
+            # 3. SINGLE COURSE LOGIC
+            payments.append({
+                "id": data["id"],
+                "course": data["courses"][0].title,
+                "amount": data["courses"][0].price,
+                "date_obj": data["date_obj"],
+                "date": data["date"],
+                "status": "Paid",
+                "receipt": data["receipt"]
+            })
+    
+    # Sort by date (newest first) and clean up before sending to frontend
+    payments.sort(key=lambda x: x["date_obj"], reverse=True)
+    for p in payments:
+        del p["date_obj"]
         
     return jsonify(payments), 200
-
 
 
 
