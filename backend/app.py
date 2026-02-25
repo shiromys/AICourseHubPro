@@ -709,6 +709,93 @@ def get_enrollment_status(course_id):
         "certificate_id": enr.certificate_id
     })
 
+
+@app.route('/api/webhook', methods=['POST'])
+def stripe_webhook():
+    payload = request.data
+    sig_header = request.headers.get('Stripe-Signature')
+    
+    # SECURITY FIX: Strictly fetch from environment variables. No hardcoded secrets!
+    endpoint_secret = os.environ.get('STRIPE_WEBHOOK_SECRET')
+
+    if not endpoint_secret:
+        print("Webhook Error: STRIPE_WEBHOOK_SECRET is not set!", flush=True)
+        return jsonify({'error': 'Webhook secret not configured'}), 500
+
+    try:
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, endpoint_secret
+        )
+    except ValueError as e:
+        # Invalid payload
+        return jsonify({'error': 'Invalid payload'}), 400
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return jsonify({'error': 'Invalid signature'}), 400
+
+    # Handle the checkout.session.completed event
+    if event['type'] == 'checkout.session.completed':
+        session = event['data']['object']
+        
+        # Extract the data we passed in the checkout session
+        session_id = session.get('id')
+        metadata = session.get('metadata', {})
+        user_id = metadata.get('user_id')
+        is_bundle = metadata.get('is_bundle') == 'true'
+        course_id = metadata.get('course_id')
+        
+        if not user_id:
+            print("Webhook Error: No user_id in metadata", flush=True)
+            return jsonify({'status': 'success'}), 200 # Return 200 so Stripe stops trying
+
+        # --- BUNDLE UNLOCK LOGIC ---
+        if is_bundle:
+            all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
+            owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
+            
+            enrolled_count = 0
+            for course in all_courses:
+                if course.id not in owned:
+                    # Double check to prevent race conditions with the frontend verify route
+                    existing = Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first()
+                    if not existing:
+                        new_enr = Enrollment(
+                            user_id=user_id, course_id=course.id, 
+                            status='in-progress', progress=0, 
+                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                        )
+                        db.session.add(new_enr)
+                        enrolled_count += 1
+            
+            db.session.commit()
+            
+            # Send welcome email silently in the background
+            user = db.session.get(User, user_id)
+            if user and enrolled_count > 0:
+                email_content = get_email_template("All-Access Pass Unlocked! 🚀", f"You have successfully unlocked all {enrolled_count} remaining courses.", "Go to Dashboard", f"{DOMAIN}/dashboard")
+                send_email(user.email, "Welcome to the All-Access Pass", email_content)
+            
+        # --- SINGLE COURSE UNLOCK LOGIC ---
+        elif course_id:
+            existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+            if not existing:
+                new_enrollment = Enrollment(
+                    user_id=user_id, course_id=course_id, 
+                    status='in-progress', progress=0, 
+                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                )
+                db.session.add(new_enrollment)
+                db.session.commit()
+                
+                user = db.session.get(User, user_id)
+                course = db.session.get(Course, course_id)
+                if user and course:
+                    email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
+                    send_email(user.email, f"Welcome to {course.title}", email_content)
+
+    return jsonify({'status': 'success'}), 200
+
+
 # ==========================================
 # 8. ADMIN & MISC ROUTES
 # ==========================================
