@@ -20,43 +20,40 @@ const TermsOfUse = () => {
             </div>
             <div>
                 <h1 className="text-4xl font-black tracking-tight text-white">Terms of Use</h1>
-                <p className="text-gray-500 font-medium mt-1">Effective Date: January 28, 2026</p>
+                <p className="text-gray-500 font-medium mt-1">Effective Date: March 2026</p>
             </div>
           </div>
 
           <div className="space-y-10 text-lg leading-relaxed">
             
             <section>
-                <h3 className="text-xl font-bold text-white mb-3">1. Acceptance of Terms</h3>
+                <h3 className="text-xl font-bold text-white mb-3">1. Educational Purposes Only (No Promises)</h3>
                 <p className="text-gray-400">
-                  By accessing AICourseHubPro, you agree to be bound by these Terms. If you disagree with any part of the terms, you may not access the Service.
+                  All content provided by AICourseHubPro is for educational and informational purposes only. <strong>We make no promises, guarantees, or warranties regarding specific outcomes.</strong> Completing a course does not guarantee employment, career advancement, or salary increases.
                 </p>
             </section>
 
             <section>
-                <h3 className="text-xl font-bold text-white mb-3">2. Intellectual Property</h3>
-                <p className="text-gray-400 mb-4">
-                  The Service and its original content, features, and functionality are and will remain the exclusive property of AICourseHubPro.
+                <h3 className="text-xl font-bold text-white mb-3">2. FTC Compliance & Earnings Disclaimer</h3>
+                <p className="text-gray-400">
+                  In accordance with FTC guidelines, any testimonials or examples of career success shown on our website represent exceptional results and do not apply to the average purchaser. We do not guarantee that you will achieve similar results or earn any money using the techniques taught.
                 </p>
-                <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            </section>
+
+            <section>
+                <h3 className="text-xl font-bold text-white mb-3">3. Non-Discrimination (29 CFR § 1625.2)</h3>
+                <p className="text-gray-400">
+                  AICourseHubPro strictly adheres to the principles of equal opportunity. In accordance with 29 CFR § 1625.2 (Age Discrimination in Employment Act guidelines), we do not discriminate in our marketing, access, or educational provisions based on age, race, gender, or national origin. Our platform is universally accessible to all professionals.
+                </p>
+            </section>
+
+            <section>
+                <h3 className="text-xl font-bold text-white mb-3">4. Intellectual Property</h3>
+                <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm mt-4">
                     <li className="bg-black/30 p-3 rounded border border-gray-800 flex items-center gap-2"><ChevronRight size={14} className="text-red-500"/> No copying course content</li>
                     <li className="bg-black/30 p-3 rounded border border-gray-800 flex items-center gap-2"><ChevronRight size={14} className="text-red-500"/> No sharing accounts</li>
                     <li className="bg-black/30 p-3 rounded border border-gray-800 flex items-center gap-2"><ChevronRight size={14} className="text-red-500"/> No reselling materials</li>
                 </ul>
-            </section>
-
-            <section>
-                <h3 className="text-xl font-bold text-white mb-3">3. Certificates & Identity</h3>
-                <p className="text-gray-400">
-                  Certificates are issued to the name on the account. You agree that your profile name matches your legal identity. Names cannot be modified after certificate issuance for verification integrity.
-                </p>
-            </section>
-
-            <section>
-                <h3 className="text-xl font-bold text-white mb-3">4. Termination</h3>
-                <p className="text-gray-400">
-                  We may terminate or suspend access to our Service immediately, without prior notice or liability, for any reason whatsoever, including without limitation if you breach the Terms.
-                </p>
             </section>
 
           </div>

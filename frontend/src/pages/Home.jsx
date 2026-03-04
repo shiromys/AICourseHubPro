@@ -26,8 +26,6 @@ const Home = () => {
   const [charIndex, setCharIndex] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
   const typingWords = ["Human Resources", "Public Services","Automation", "Education", "Business"];
-  const [userCount, setUserCount] = useState(0);
-  const targetCount = 1000;
   const [openFaq, setOpenFaq] = useState(null);
 
   // --- CAROUSEL STATE ---
@@ -92,24 +90,6 @@ const Home = () => {
     return () => clearTimeout(timer);
   }, [charIndex, isDeleting, textIndex]);
 
-  // Counter Logic
-  useEffect(() => {
-    let start = 0;
-    const duration = 2000;
-    const incrementTime = 20;
-    const step = Math.ceil(targetCount / (duration / incrementTime));
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= targetCount) {
-        setUserCount(targetCount);
-        clearInterval(timer);
-      } else {
-        setUserCount(start);
-      }
-    }, incrementTime);
-    return () => clearInterval(timer);
-  }, []);
-
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
       <Navbar />
@@ -142,14 +122,7 @@ const Home = () => {
             Less theory. More real-life AI. Learn how to apply AI to everyday challenges, decisions, and workflows—no complexity, just clarity.
           </p>
 
-          <div className="inline-flex items-center gap-3 px-6 py-3 bg-gray-900/80 border border-gray-700 rounded-full mb-10 backdrop-blur-md">
-            <div className="w-3 h-3 bg-green-500 rounded-full shadow-[0_0_10px_rgba(34,197,94,0.8)] animate-pulse" />
-            <span className="text-lg text-gray-300">
-              <strong className="text-white font-black text-xl">{userCount.toLocaleString()}+</strong> active learners
-            </span>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-6">
             <button onClick={() => navigate('/courses')} className="px-10 py-4 bg-red-600 text-white font-bold rounded-full shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-700 hover:scale-105 transition-all duration-300 border border-red-500">
               Explore Catalog
             </button>
@@ -160,23 +133,7 @@ const Home = () => {
         </div>
       </div>
 
-      {/* ================= 2. TICKER SECTION ================= */}
-      <div className="py-10 bg-white border-b border-gray-100 overflow-hidden">
-        <p className="text-center text-xs font-black text-gray-400 uppercase tracking-widest mb-8">Trusted by industry leaders</p>
-        <div className="relative w-full overflow-hidden group">
-          <div className="flex w-[200%] animate-marquee group-hover:[animation-play-state:paused]">
-            {[...Array(2)].map((_, i) => (
-              <div key={i} className="flex justify-around w-1/2 shrink-0 gap-10 px-10">
-                 {['DELOITTE', 'EY', 'ACCENTURE', 'IBM', 'SALESFORCE', 'ADOBE', 'SPOTIFY'].map(company => (
-                   <span key={company} className="text-3xl md:text-4xl font-black text-gray-300 select-none hover:text-black transition-colors cursor-default">
-                     {company}
-                   </span>
-                 ))}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      
 
       {/* ================= 3. FEATURES GRID ================= */}
       <section className="py-24 bg-gray-50">
@@ -337,7 +294,7 @@ const Home = () => {
         <div className="container mx-auto px-6 text-center">
           <h2 className="text-4xl md:text-5xl font-black mb-8">Ready to Future-Proof Your Career?</h2>
           <p className="text-gray-400 text-xl font-medium mb-12 max-w-2xl mx-auto">
-            Join 1000+ professionals who are leading the AI revolution in their companies.
+            Join ambitious professionals who are leading the AI revolution in their companies.
           </p>
           
           <button 

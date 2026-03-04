@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'; // <--- FIXED: Added hooks imports
+import React, { useState, useEffect } from 'react'; 
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from './config';
@@ -23,6 +23,7 @@ import TermsOfUse from './pages/TermsOfUse';
 import RefundPolicy from './pages/RefundPolicy';
 import CourseView from './pages/CourseView'; 
 import Maintenance from './pages/Maintenance';
+import CookieConsent from './components/CookieConsent';
 
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
@@ -79,7 +80,12 @@ function App() {
 
   return (
     <BrowserRouter>
-    <ScrollToTop />
+      <ScrollToTop />
+      
+      {/* --- GDPR Cookie Consent Banner --- */}
+      {/* This acts as the gatekeeper for all Meta and Google Analytics tracking */}
+      <CookieConsent />
+      
       <Routes>
         {/* --- Public Routes --- */}
         <Route path="/" element={<Home />} />
