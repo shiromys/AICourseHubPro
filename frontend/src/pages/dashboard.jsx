@@ -36,7 +36,6 @@ const Dashboard = () => {
   }, []);
 
   // --- DEDUPLICATION HELPER ---
-  // Fixes the issue where a course appears twice. Keeps the one with higher progress.
   const getUniqueEnrollments = (rawList) => {
     const map = new Map();
     
@@ -45,7 +44,6 @@ const Dashboard = () => {
       if (!existing) {
         map.set(item.id, item);
       } else {
-        // If duplicate exists, keep the one with higher progress or 'completed' status
         if (item.progress > existing.progress || item.status === 'completed') {
           map.set(item.id, item);
         }
@@ -69,15 +67,10 @@ const Dashboard = () => {
            headers: { Authorization: `Bearer ${token}` }
         });
         
-        // 1. Remove Duplicates
         const uniqueList = getUniqueEnrollments(enrollRes.data);
-
-        // 2. Sort: In-Progress First, then Newest
         const sortedList = uniqueList.sort((a, b) => {
-            // Prioritize In-Progress over Completed
             if (a.status === 'in-progress' && b.status !== 'in-progress') return -1;
             if (a.status !== 'in-progress' && b.status === 'in-progress') return 1;
-            // If status is same, assume the one appearing later in list is newer (or sort by ID if available)
             return 0; 
         });
 
@@ -142,11 +135,15 @@ const Dashboard = () => {
     return record && record.status === 'completed';
   };
 
-  const categories = ["All", ...new Set(courses.map(c => c.category || "General"))];
+  // NEW HELPER: Checks if the backend actually generated a certificate ID
+  const hasCertificate = (courseId) => {
+    const record = enrollments.find(e => e.id === courseId);
+    return record ? !!(record.certId || record.cert_id) : false;
+  };
 
+  const categories = ["All", ...new Set(courses.map(c => c.category || "General"))];
   const myLearningIds = new Set(enrollments.map(e => e.id));
   const myLearning = courses.filter(c => myLearningIds.has(c.id));
-  
   const baseList = activeTab === 'active' ? myLearning : courses;
   
   const displayList = baseList.filter(course => {
@@ -155,9 +152,13 @@ const Dashboard = () => {
     return matchesSearch && matchesCategory;
   });
 
-  // LOGIC: Pick the first "In Progress" course. If none, pick the first completed.
   const activeCourses = enrollments.filter(e => e.status === 'in-progress');
   const featuredCourse = activeCourses.length > 0 ? activeCourses[0] : (enrollments.length > 0 ? enrollments[0] : null);
+  
+  // HERO SECTION LOGIC
+  const isFeaturedCertified = featuredCourse ? !!(featuredCourse.certId || featuredCourse.cert_id) : false;
+  const isFeaturedFinished = featuredCourse ? (featuredCourse.status === 'completed' || featuredCourse.progress === 100) : false;
+  const isFeaturedNeedsRetake = isFeaturedFinished && !isFeaturedCertified;
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
@@ -203,12 +204,12 @@ const Dashboard = () => {
               <div className="bg-white rounded-2xl p-8 shadow-xl border-l-8 border-red-600 flex flex-col md:flex-row items-center justify-between gap-8">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 text-red-600 font-bold text-sm uppercase mb-2">
-                    <Clock size={16} /> {featuredCourse.status === 'completed' ? 'Course Completed' : 'Jump Back In'}
+                    <Clock size={16} /> {isFeaturedCertified ? 'Course Completed' : (isFeaturedNeedsRetake ? 'Needs Retake' : 'Jump Back In')}
                   </div>
                   <h2 className="text-3xl font-black text-gray-900 mb-2">{featuredCourse.title}</h2>
                   <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden mb-2 mt-4">
                     <div 
-                      className={`h-full rounded-full transition-all duration-1000 ${featuredCourse.status === 'completed' ? 'bg-green-500' : 'bg-red-600'}`} 
+                      className={`h-full rounded-full transition-all duration-1000 ${isFeaturedCertified ? 'bg-green-500' : 'bg-red-600'}`} 
                       style={{ width: `${featuredCourse.progress}%` }}
                     ></div>
                   </div>
@@ -218,8 +219,8 @@ const Dashboard = () => {
                     onClick={() => handleStartLearning(featuredCourse.id)} 
                     className="flex items-center gap-2 px-8 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition shadow-lg shadow-red-600/20 relative z-30 cursor-pointer"
                   >
-                    {featuredCourse.status === 'completed' ? <CheckCircle size={20}/> : <PlayCircle size={20}/>}
-                    {featuredCourse.status === 'completed' ? 'Review Course' : 'Continue Learning'}
+                    {isFeaturedCertified ? <CheckCircle size={20}/> : <PlayCircle size={20}/>}
+                    {isFeaturedCertified ? 'Review Course' : (isFeaturedNeedsRetake ? 'Retake Assessment' : 'Continue Learning')}
                   </button>
                 </div>
               </div>
@@ -290,7 +291,8 @@ const Dashboard = () => {
                 {displayList.map((course) => {
                   const percent = getProgress(course.id);
                   const isEnrolled = myLearningIds.has(course.id);
-                  const completed = isCompleted(course.id);
+                  const completed = isCompleted(course.id); 
+                  const certified = hasCertificate(course.id); // Check if they actually passed
                   const isBuying = buying === course.id;
                   
                   return (
@@ -298,7 +300,7 @@ const Dashboard = () => {
                       
                       <div className="h-2 bg-gray-100 w-full relative">
                         {isEnrolled ? (
-                            <div className={`h-full transition-all duration-700 ${completed ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${percent}%` }}></div>
+                            <div className={`h-full transition-all duration-700 ${certified ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${percent}%` }}></div>
                         ) : (
                             <div className="h-full bg-gray-200 w-full"></div>
                         )}
@@ -307,7 +309,10 @@ const Dashboard = () => {
                       <div className="p-6 flex-1 flex flex-col">
                         <div className="flex justify-between items-start mb-4">
                           <span className="bg-red-50 text-red-600 text-xs font-bold uppercase px-3 py-1 rounded-full">{course.category || 'General'}</span>
-                          {completed && <span className="text-green-600 flex items-center gap-1 text-xs font-bold"><Award size={14}/> Certified</span>}
+                          
+                          {/* DYNAMIC BADGE */}
+                          {certified && <span className="text-green-600 flex items-center gap-1 text-xs font-bold"><Award size={14}/> Certified</span>}
+                          {!certified && (completed || percent === 100) && <span className="text-orange-500 flex items-center gap-1 text-xs font-bold"><Clock size={14}/> Needs Retake</span>}
                           {!isEnrolled && <span className="text-gray-900 font-black text-lg">${course.price}</span>}
                         </div>
                         
@@ -319,15 +324,15 @@ const Dashboard = () => {
                         {isEnrolled ? (
                             <button 
                               onClick={() => {
-                                if (completed) handleViewCertificate(course.id);
+                                if (certified) handleViewCertificate(course.id);
                                 else handleStartLearning(course.id);
                               }}
                               className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors relative z-10 ${
-                                completed ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-900 text-white hover:bg-black'
+                                certified ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-900 text-white hover:bg-black'
                               }`}
                             >
-                              {completed ? "View Certificate" : (percent > 0 ? "Continue Learning" : "Start Course")} 
-                              {completed ? <Award size={16} /> : <PlayCircle size={16} />}
+                              {certified ? "View Certificate" : ((completed || percent === 100) ? "Retake Assessment" : (percent > 0 ? "Continue Learning" : "Start Course"))} 
+                              {certified ? <Award size={16} /> : <PlayCircle size={16} />}
                             </button>
                         ) : (
                             <button 

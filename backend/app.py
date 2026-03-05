@@ -617,9 +617,15 @@ def update_progress():
 def get_my_enrollments():
     user_id = get_jwt_identity()
     results = db.session.query(Enrollment, Course).join(Course, Enrollment.course_id == Course.id).filter(Enrollment.user_id == user_id).all()
+    
+    # FIXED: Added cert_id to the JSON response so the Dashboard knows you passed!
     return jsonify([{
-        "id": c.id, "title": c.title, "description": c.description,
-        "progress": e.progress, "status": e.status
+        "id": c.id, 
+        "title": c.title, 
+        "description": c.description,
+        "progress": e.progress, 
+        "status": e.status,
+        "cert_id": e.certificate_id
     } for e, c in results])
 
 
@@ -854,11 +860,12 @@ def chat_support():
     Your tone must be helpful, professional, polite, and encouraging.
     Limit your answers to 2-3 short, highly readable paragraphs. 
     If a user asks about technical bugs, or specific account issues, politely ask them to contact info@aicoursehubpro.com email address.
-    If a user asks about refunds of any sort, politely make them understand that we do not provide refunds of any sort. Payments once made toward AICourseHUbPro as non-refundable and final.
+    If a user asks about refunds of any sort, politely make them understand that we do not provide refunds of any sort. Payments once made toward AICourseHUbPro are non-refundable and final.
     If a user asks about our course offerings, list the courses we offer, namely - AI for Human Resources / Talent / People Ops via Prompts, Prompt-Based Tools for Education & Learning, Prompt-Based Analytics and Reports for Business, Prompting for Automation and Workflow Efficiency, Prompt Engineering for Non-Profits and Social Impact, Prompt-Based AI for Local Government and Public Services. Highlight the courses (bold) and list them one by one.
     If a user asks about topics completely unrelated to AI, the courses, or the platform, politely decline to answer and guide them back to our offerings.
     Users can contact our email address - info@aicoursehubpro.com for more information on any queries.
     If the users want, you can navigate them to the contact page of our application, that is present at the navbar.
+    If the user asks about the certificate of completion, tell them that users get a verifiable certificate of course completion which can be downloaded in PDF format. But to receive the certificate, users must complete the course and appear for an assessment and pass it with minimum score of 70%.
     """
     
     try:
