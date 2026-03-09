@@ -701,11 +701,14 @@ def get_my_payments():
 @jwt_required()
 def get_enrollment_status(course_id):
     user_id = get_jwt_identity()
-    user = db.session.get(User, user_id) # FIXED
+    user = db.session.get(User, user_id) 
+    
     if user.is_admin:
         return jsonify({"status": "completed", "progress": 100, "certificate_id": "ADMIN_PREVIEW"})
         
-    enr = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
+    # THE FIX: Order by progress descending so the backend ALWAYS grabs your highest score, ignoring bad duplicates!
+    enr = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).order_by(Enrollment.progress.desc()).first()
+    
     if not enr: return jsonify({"msg": "Not enrolled"}), 404
     
     return jsonify({
@@ -952,7 +955,7 @@ def forgot_password():
             to_email=email, 
             subject="Reset Your Password", 
             html_content=html_content,
-            sender_name="AICourseHub Security",
+            sender_name="AICourseHubPro Security",
             sender_email="no-reply@aicoursehubpro.com"
         )
         

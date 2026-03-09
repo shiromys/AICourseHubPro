@@ -81,6 +81,9 @@ const Certificate = () => {
     </div>
   );
 
+  // --- THE CRITICAL FIX: Stops the app from crashing if the data is empty! ---
+  if (!data) return null;
+
   return (
     <div className="min-h-screen bg-gray-900 font-sans text-gray-100 flex flex-col">
       <Navbar />

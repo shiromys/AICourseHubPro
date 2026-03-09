@@ -9,7 +9,7 @@ const ChatWidget = () => {
   const [messages, setMessages] = useState([
     { 
       role: 'bot', 
-      text: 'Hi! 👋 I am Nova. Ask me about courses, certificates, or refunds!' 
+      text: 'Hi! 👋 I am Nova. Ask me about courses, certificates, and more!' 
     }
   ]);
   const [input, setInput] = useState('');
