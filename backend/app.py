@@ -213,7 +213,8 @@ def contact_form():
     db.session.commit()
 
     admin_html = f"<h3>From: {name} ({user_email})</h3><p>{message}</p>"
-    send_email("info@aicoursehubpro.com", f"New Inquiry: {subject}", admin_html, "Contact Form", "no-reply@aicoursehubpro.com")
+    # FIXED: Send directly to the real inbox to bypass Dynadot forwarder spam blocks
+    send_email("support@shirotechnologies.com", f"New Inquiry: {subject}", admin_html, "Contact Form", "no-reply@aicoursehubpro.com")
     
     user_html = f"<p>Hi {name}, we received your message regarding '{subject}'. We will get back to you shortly.</p>"
     send_email(user_email, "We received your message", get_email_template("Message Received", user_html))
