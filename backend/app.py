@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect
 from openai import OpenAI
 from datetime import datetime, timedelta
 from flask_cors import CORS
@@ -71,6 +71,16 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 # Create Database Tables
 with app.app_context():
     db.create_all()
+
+
+@app.before_request
+def enforce_https():
+    # Railway passes the original protocol in the X-Forwarded-Proto header.
+    # If it's HTTP, instantly redirect them to the HTTPS version.
+    if request.headers.get('X-Forwarded-Proto') == 'http':
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+    
 
 # ==========================================
 # 2. HELPER FUNCTIONS
