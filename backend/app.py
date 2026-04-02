@@ -977,10 +977,32 @@ def forgot_password():
 @app.route('/api/reset-password', methods=['POST'])
 @jwt_required()
 def reset_password():
-    user = db.session.get(User, get_jwt_identity()) # FIXED
-    user.password = generate_password_hash(request.json.get('new_password'))
-    db.session.commit()
-    return jsonify({"msg": "Password updated"})
+    try:
+        # 1. Get the identity and force it to an integer
+        user_id = int(get_jwt_identity()) 
+        
+        # 2. Use the modern session.get syntax
+        user = db.session.get(User, user_id) 
+        
+        if not user:
+            return jsonify({"msg": "User not found"}), 404
+
+        # 3. Get the new password from the request
+        data = request.json
+        new_password = data.get('new_password')
+        
+        if not new_password or len(new_password) < 6:
+            return jsonify({"msg": "Password too short"}), 400
+
+        # 4. Update and commit
+        user.password = generate_password_hash(new_password)
+        db.session.commit()
+        
+        return jsonify({"msg": "Password updated"}), 200
+
+    except Exception as e:
+        print(f"Reset Password Error: {e}")
+        return jsonify({"msg": "Internal server error"}), 500
 
 # ==========================================
 #  AI ROLEPLAY ROUTES (NEW)

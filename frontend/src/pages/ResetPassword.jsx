@@ -17,22 +17,34 @@ const ResetPassword = () => {
     e.preventDefault();
     setStatus('loading');
     
+    // 1. Double check the token exists
     if (!token) {
-        alert("Invalid Link");
+        alert("Invalid Link: Token missing from URL");
         setStatus('error');
         return;
     }
 
     try {
-      // Send the token in the Header as Authorization
-      await axios.post(`${API_BASE_URL}/api/reset-password`, ... 
+      // 2. CLEAN AXIOS CALL (No "..." dots)
+      await axios.post(`${API_BASE_URL}/api/reset-password`, 
         { new_password: newPassword },
-        { headers: { Authorization: `Bearer ${token}` } } 
+        { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        } 
       );
+
       setStatus('success');
-      setTimeout(() => navigate('/login'), 3000); // Redirect after 3s
+      setTimeout(() => navigate('/login'), 3000);
     } catch (err) {
-      alert("Link expired or invalid. Please request a new one.");
+      // 3. LOG THE ACTUAL ERROR TO CONSOLE
+      console.error("DEBUG ERROR:", err.response?.data || err.message);
+      
+      // If the server returns a 401, it means the token expired (15 min limit)
+      const errorMsg = err.response?.data?.msg || "Link expired or invalid. Please request a new one.";
+      alert(errorMsg);
       setStatus('error');
     }
   };
