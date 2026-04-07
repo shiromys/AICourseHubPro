@@ -20,14 +20,14 @@ const CookieConsent = () => {
 
     // 2. Load Google Analytics (Replace G-XXXXXXXXXX with your ID)
     const gaScript = document.createElement('script');
-    gaScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX';
+    gaScript.src = "https://www.googletagmanager.com/gtag/js?id=G-K56PJHNGKM";
     gaScript.async = true;
     document.head.appendChild(gaScript);
     
     window.dataLayer = window.dataLayer || [];
     function gtag(){window.dataLayer.push(arguments);}
     gtag('js', new Date());
-    gtag('config', 'G-XXXXXXXXXX');
+    gtag('config', 'G-K56PJHNGKM');
   };
 
   const handleAccept = () => {
