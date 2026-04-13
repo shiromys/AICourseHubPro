@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
+from flask_migrate import Migrate
 from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
 from database import db
 from sqlalchemy import func
@@ -62,6 +63,7 @@ app.config['COURSES_FOLDER'] = os.path.join(app.static_folder, 'courses')
 
 # Initialize Extensions
 db.init_app(app)
+migrate = Migrate(app, db)
 jwt = JWTManager(app)
 
 # Create Folders
@@ -190,12 +192,27 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     
+    # 1. Credential Check
     if not user or not check_password_hash(user.password, password):
         return jsonify({"msg": "Incorrect credentials"}), 401
 
+    # 2. Status Check
     if user.is_deleted:
         return jsonify({"msg": "Account deactivated"}), 403
 
+    # --- 3. ANALYTICS UPDATE (NEW) ---
+    try:
+        user.last_login = datetime.utcnow()
+        # Using (user.login_count or 0) handles existing users who have None in this column
+        user.login_count = (user.login_count or 0) + 1
+        db.session.commit()
+    except Exception as e:
+        # We log the error but don't stop the login process if analytics fail
+        print(f"Analytics update failed: {e}")
+        db.session.rollback()
+    # ---------------------------------
+
+    # 4. Token Generation
     token = create_access_token(identity=str(user.id))
     role = "admin" if user.is_admin else "student"
     

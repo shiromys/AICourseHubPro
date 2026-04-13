@@ -10,6 +10,8 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
     name = db.Column(db.String(100), nullable=False)
+    last_login = db.Column(db.DateTime, nullable=True)
+    login_count = db.Column(db.Integer, default=0)
     
     # Auth & Permissions
     is_admin = db.Column(db.Boolean, default=False)
