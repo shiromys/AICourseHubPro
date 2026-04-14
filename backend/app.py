@@ -26,15 +26,8 @@ load_dotenv()
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
-CORS(app, resources={r"/api/*": {
-    "origins": [
-        "https://www.aicoursehubpro.com",
-        "https://aicoursehubpro.com",
-        "http://localhost:5173"
-    ],
-    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"]
-}})
+
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -83,14 +76,20 @@ with app.app_context():
     db.create_all()
 
 
+@app.route('/api/health')
+def health():
+    return jsonify({"status": "awake"}), 200
+
+
+
 @app.before_request
 def enforce_https():
-    # Railway passes the original protocol in the X-Forwarded-Proto header.
-    # If it's HTTP, instantly redirect them to the HTTPS version.
+    if request.method == 'OPTIONS':
+        return  # Don't redirect preflight requests
+    
     if request.headers.get('X-Forwarded-Proto') == 'http':
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
-    
 
 # ==========================================
 # 2. HELPER FUNCTIONS
