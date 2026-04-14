@@ -73,7 +73,7 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 
 # Create Database Tables
 with app.app_context():
-    db.create_all()
+    #db.create_all()
 
 
 @app.route('/api/health')
