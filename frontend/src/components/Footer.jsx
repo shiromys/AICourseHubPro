@@ -1,7 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Facebook, Twitter, Linkedin, Mail, MapPin } from 'lucide-react';
-import { MapPin, Mail, Phone } from 'lucide-react';
+import { Twitter, Linkedin, Mail, MapPin, Phone } from 'lucide-react';
 
 const Footer = () => {
   return (
@@ -13,16 +12,21 @@ const Footer = () => {
           {/* 1. BRAND COLUMN */}
           <div>
             <div className="flex items-center gap-2 mb-6">
-              {/* Use your logo image if you prefer, or this text logo */}
               <img src="/logo.png" alt="AICourseHubPro Logo" className="h-10 w-auto object-contain" />
-              <span className="text-xl font-black tracking-tighter">AICourseHub<span className="text-red-600">Pro</span></span>
+              <span className="text-xl font-black tracking-tighter">
+                AICourseHub<span className="text-red-600">Pro</span>
+              </span>
             </div>
             <p className="text-gray-500 text-sm leading-relaxed mb-6">
               Empowering professionals with practical, prompt-based AI skills for the modern workplace.
             </p>
             <div className="flex gap-4">
-              <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition"><Twitter size={16} /></a>
-              <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition"><Linkedin size={16} /></a>
+              <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition">
+                <Twitter size={16} />
+              </a>
+              <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition">
+                <Linkedin size={16} />
+              </a>
             </div>
           </div>
 
@@ -37,7 +41,7 @@ const Footer = () => {
             </ul>
           </div>
 
-          {/* 3. LEGAL (NEW POLICY LINKS) */}
+          {/* 3. LEGAL */}
           <div>
             <h4 className="font-bold text-lg mb-6">Legal</h4>
             <ul className="space-y-4 text-sm text-gray-500">
@@ -57,11 +61,15 @@ const Footer = () => {
               </li>
               <li className="flex items-center gap-3">
                 <Mail size={18} className="text-red-600 shrink-0" />
-                <a href="mailto:info@aicoursehubpro.com" className="hover:text-white transition">info@aicoursehubpro.com</a>
+                <a href="mailto:info@aicoursehubpro.com" className="hover:text-white transition">
+                  info@aicoursehubpro.com
+                </a>
               </li>
               <li className="flex items-center gap-3">
                 <Phone size={18} className="text-red-600 shrink-0" />
-                <a href="tel:+18009718013" className="hover:text-white transition">+1 (800) 971-8013</a>
+                <a href="tel:+18009718013" className="hover:text-white transition">
+                  +1 (800) 971-8013
+                </a>
               </li>
             </ul>
           </div>
