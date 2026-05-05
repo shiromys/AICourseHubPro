@@ -59,6 +59,10 @@ const Footer = () => {
                 <Mail size={18} className="text-red-600 shrink-0" />
                 <a href="mailto:info@aicoursehubpro.com" className="hover:text-white transition">info@aicoursehubpro.com</a>
               </li>
+              <li className="flex items-center gap-3">
+                <Phone size={18} className="text-red-600 shrink-0" />
+                <a href="tel:+18009718013" className="hover:text-white transition">+1 (800) 971-8013</a>
+              </li>
             </ul>
           </div>
 

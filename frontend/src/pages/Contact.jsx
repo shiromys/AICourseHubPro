@@ -56,7 +56,7 @@ const Contact = () => {
                   <Phone className="text-red-500 mt-1" />
                   <div>
                     <h3 className="font-bold text-sm text-gray-300 uppercase tracking-wider">Phone</h3>
-                    <p className="text-lg font-medium">+1 (555) 123-4567</p>
+                    <p className="text-lg font-medium">+1 (800) 971-8013</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
