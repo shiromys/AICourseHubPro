@@ -23,6 +23,7 @@ import TermsOfUse from './pages/TermsOfUse';
 import RefundPolicy from './pages/RefundPolicy';
 import CourseView from './pages/CourseView'; 
 import Maintenance from './pages/Maintenance';
+import Blog from './pages/Blog';
 import CookieConsent from './components/CookieConsent';
 
 // --- IMPORT COMPONENTS ---
@@ -95,6 +96,7 @@ function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/courses" element={<Courses />} />
         <Route path="/contact" element={<Contact />} />
+        <Route path="/blog" element={<Blog />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
