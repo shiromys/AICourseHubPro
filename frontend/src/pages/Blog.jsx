@@ -254,7 +254,7 @@ const Blog = () => {
               { label: 'Articles Published', value: articles.length },
               { label: 'Topics Covered', value: CATEGORIES.length - 1 },
               { label: 'Avg. Read Time', value: '6 mins' },
-              { label: 'New Article', value: 'Every Tuesday' },
+              { label: 'New Article', value: 'Every Tuesday and Thursday' },
             ].map((stat) => (
               <div key={stat.label} className="flex items-center gap-2">
                 <span className="font-black text-white text-base">{stat.value}</span>
