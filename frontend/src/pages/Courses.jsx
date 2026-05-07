@@ -21,7 +21,7 @@ const Courses = () => {
   const role = localStorage.getItem('user_role');
   const isAdmin = role === 'admin';
 
-  const categories = ['All', 'HR', 'Operations', 'Development', 'Business', 'Marketing'];
+  const categories = ['All', 'HR', 'Development', 'Business'];
 
   useEffect(() => {
     const fetchData = async () => {
