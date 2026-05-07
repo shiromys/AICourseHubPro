@@ -16,13 +16,13 @@ const HASHNODE_BASE = 'https://blog.aicoursehubpro.com';
 const articles = [
   {
     id: 1,
-    title: 'What is Prompt Engineering & Why It Matters in 2026',
+    title: '5 AI Trends Shaping the Future of Work in 2026',
     excerpt:
-      'Prompt engineering is the art of communicating with AI effectively. Learn why this skill is becoming the most in-demand competency for professionals across every industry.',
-    category: 'Beginner Guide',
+      'AI is reshaping hiring, HR, and the workweek. Here are the 5 trends every professional in HR, business and beyond needs to understand right now.',
+    category: 'Industry News',
     readTime: '6 min read',
-    date: 'May 13, 2026',
-    slug: 'what-is-prompt-engineering-2026',
+    date: 'May 7, 2026',
+    slug: '5-ai-trends-future-of-work-2026',
     featured: true,
   },
   {
