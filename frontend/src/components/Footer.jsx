@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { XTwitter, Linkedin, Mail, MapPin, Phone } from 'lucide-react';
+import { X, Linkedin, Mail, MapPin, Phone } from 'lucide-react';
 
 const Footer = () => {
   return (
@@ -22,7 +22,7 @@ const Footer = () => {
             </p>
             <div className="flex gap-4">
               <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition">
-                <XTwitter size={16} />
+                <X size={16} />
               </a>
               <a href="#" className="w-8 h-8 bg-gray-900 rounded-full flex items-center justify-center text-gray-400 hover:bg-red-600 hover:text-white transition">
                 <Linkedin size={16} />
