@@ -48,7 +48,7 @@ if db_url and db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)
 
 # --- API KEYS ---
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -153,7 +153,6 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
-    print("--- DEBUG: Signup Request Started ---", flush=True)
     try:
         data = request.json
         email = data.get('email', '').strip().lower()
@@ -217,6 +216,9 @@ def login():
     # 2. Status Check
     if user.is_deleted:
         return jsonify({"msg": "Account deactivated"}), 403
+
+    if user.ban_expiry and user.ban_expiry > datetime.utcnow():
+        return jsonify({"msg": "Your account has been temporarily suspended. Please contact support."}), 403
 
     # --- 3. ANALYTICS UPDATE (NEW) ---
     try:

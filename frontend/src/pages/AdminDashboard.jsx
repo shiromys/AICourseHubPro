@@ -147,16 +147,70 @@ const AdminDashboard = () => {
     }
   };
 
-  const handleToggleAdmin = async (user) => { if(!window.confirm(`Promote/Demote ${user.name}?`)) return; const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const handleToggleAdmin = async (user) => {
+    if (!window.confirm(`${user.role === 'Admin' ? 'Demote' : 'Promote'} ${user.name}?`)) return;
+    try {
+      const t = localStorage.getItem('token');
+      await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
+      setUsers(r.data);
+    } catch (e) { console.error("Role change failed:", e); alert("Failed to update role. Please try again."); }
+  };
   const openBanModal = (user) => { setSelectedUser(user); setBanDuration(30); setIsBanModalOpen(true); };
-  const handleConfirmBan = async () => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } }); setIsBanModalOpen(false); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
-  const handleUnban = async (user) => { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
-  const handleDeleteUser = async (user) => { if(!window.confirm("Delete?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); };
+  const handleConfirmBan = async () => {
+    try {
+      const t = localStorage.getItem('token');
+      await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } });
+      setIsBanModalOpen(false);
+      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
+      setUsers(r.data);
+    } catch (e) { console.error("Ban failed:", e); alert("Failed to ban user. Please try again."); }
+  };
+  const handleUnban = async (user) => {
+    try {
+      const t = localStorage.getItem('token');
+      await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
+      setUsers(r.data);
+    } catch (e) { console.error("Unban failed:", e); alert("Failed to unban user. Please try again."); }
+  };
+  const handleDeleteUser = async (user) => {
+    if (!window.confirm(`Delete ${user.name}? This will move them to Deleted Accounts.`)) return;
+    try {
+      const t = localStorage.getItem('token');
+      await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
+      setUsers(r.data);
+    } catch (e) { console.error("Delete failed:", e); alert("Failed to delete user. Please try again."); }
+  };
   const handleRestoreUser = async (user) => { if(!window.confirm(`Restore ${user.name}? They will regain access to their account.`)) return; try { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); } catch(e) { console.error("Restore failed:", e); alert("Failed to restore user. Please try again."); } };
   
-  const handleSaveCourse = async () => { const t=localStorage.getItem('token'); const r=await axios.post(`${API_BASE_URL}/api/courses`, newCourse, { headers: { Authorization: `Bearer ${t}` } }); setCourses([...courses, r.data]); setIsModalOpen(false); };
-  const handleUpdateCourse = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } }); setIsEditModalOpen(false); const r=await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
-  const handleDeleteCourse = async (id) => { if(!window.confirm("Archive?")) return; const t=localStorage.getItem('token'); await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
+  const handleSaveCourse = async () => {
+    try {
+      const t = localStorage.getItem('token');
+      const r = await axios.post(`${API_BASE_URL}/api/courses`, newCourse, { headers: { Authorization: `Bearer ${t}` } });
+      setCourses([...courses, r.data]);
+      setIsModalOpen(false);
+    } catch (e) { console.error("Save course failed:", e); alert("Failed to save course. Please try again."); }
+  };
+  const handleUpdateCourse = async () => {
+    try {
+      const t = localStorage.getItem('token');
+      await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } });
+      setIsEditModalOpen(false);
+      const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } });
+      setCourses(r.data);
+    } catch (e) { console.error("Update course failed:", e); alert("Failed to update course. Please try again."); }
+  };
+  const handleDeleteCourse = async (id) => {
+    if (!window.confirm("Archive this course? It will be hidden from students.")) return;
+    try {
+      const t = localStorage.getItem('token');
+      await axios.delete(`${API_BASE_URL}/api/courses/${id}`, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } });
+      setCourses(r.data);
+    } catch (e) { console.error("Delete course failed:", e); alert("Failed to archive course. Please try again."); }
+  };
 
   const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
   const confirmCloseTicket = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${t}` } }); setMessages(prev => prev.filter(msg => msg.id !== messageToClose)); setIsCloseTicketModalOpen(false); };
