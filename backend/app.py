@@ -95,6 +95,17 @@ def enforce_https():
 # 2. HELPER FUNCTIONS
 # ==========================================
 
+def log_action(admin_email, action, details=""):
+    """Write an entry to the audit_logs table."""
+    try:
+        entry = AuditLog(admin_email=admin_email, action=action, details=details)
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as e:
+        # Don't let logging failure break the main operation
+        db.session.rollback()
+        print(f"[AuditLog Error] {e}")
+
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
     try:
         r = resend.Emails.send({
@@ -305,9 +316,11 @@ def ban_user(user_id):
     if days:
         user.ban_expiry = datetime.utcnow() + timedelta(days=int(days))
         msg = f"User banned for {days} days"
+        log_action(admin.email, "BAN_USER", f"Banned {user.email} for {days} days")
     else:
         user.ban_expiry = None
         msg = "User unbanned"
+        log_action(admin.email, "UNBAN_USER", f"Unbanned {user.email}")
         
     db.session.commit()
     return jsonify({"msg": msg})
@@ -360,8 +373,10 @@ def update_user_role(user_id):
     
     data = request.json
     if 'is_admin' in data:
+        new_role = "Admin" if data['is_admin'] else "Student"
         user.is_admin = data['is_admin']
         db.session.commit()
+        log_action(admin.email, "CHANGE_ROLE", f"Changed {user.email} role to {new_role}")
         return jsonify({"msg": "Role updated"})
     return jsonify({"msg": "No changes"}), 400
 
@@ -377,6 +392,7 @@ def soft_delete_user(user_id):
     
     user.is_deleted = True
     db.session.commit()
+    log_action(admin.email, "DELETE_USER", f"Soft-deleted user {user.email} (ID: {user_id})")
     return jsonify({"msg": "User deleted"})
 
 @app.route('/api/users/<int:user_id>/restore', methods=['POST'])
@@ -390,6 +406,7 @@ def restore_user(user_id):
     if user:
         user.is_deleted = False
         db.session.commit()
+        log_action(admin.email, "RESTORE_USER", f"Restored user {user.email} (ID: {user_id})")
     return jsonify({"msg": "User restored"})
 
 # ==========================================
@@ -463,6 +480,7 @@ def delete_course(course_id):
 
     course.is_deleted = True
     db.session.commit()
+    log_action(user.email, "DELETE_COURSE", f"Archived course '{course.title}' (ID: {course_id})")
     return jsonify({"msg": "Archived"})
 
 # ==========================================
