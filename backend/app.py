@@ -23,7 +23,7 @@ load_dotenv()
 # 1. INITIALIZATION & CONFIGURATION
 # ==========================================
 
-app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
+app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/static_assets")
 
 # --- CORS CONFIGURATION ---
 
@@ -1198,3 +1198,22 @@ if __name__ == '__main__':
 
 
 # triggering fresh deployment
+# ==========================================
+# SPA CATCH-ALL — must be last
+# Serves React app for all non-API routes
+# and static assets from dist/
+# ==========================================
+
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    return send_from_directory(os.path.join(app.static_folder, 'assets'), filename)
+
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_spa(path):
+    if path.startswith('api/'):
+        return jsonify({"msg": "Not found"}), 404
+    file_path = os.path.join(app.static_folder, path)
+    if path and os.path.exists(file_path) and os.path.isfile(file_path):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, 'index.html')
