@@ -12,7 +12,7 @@ const TextCoursePlayer = () => {
   const [loading, setLoading] = useState(true);
   
   // UI State
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false); // Default closed on mobile
 
   // Navigation State
   const [activeModuleIndex, setActiveModuleIndex] = useState(0);
@@ -185,8 +185,20 @@ const TextCoursePlayer = () => {
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
       
+      {/* MOBILE OVERLAY - dims background when sidebar open */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-10 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <div className={`${sidebarOpen ? 'w-80' : 'w-0'} bg-white border-r border-gray-200 transition-all duration-300 flex flex-col flex-shrink-0 relative z-20`}>
+      <div className={`
+        fixed md:relative inset-y-0 left-0 z-20
+        ${sidebarOpen ? 'w-72 md:w-80' : 'w-0'}
+        bg-white border-r border-gray-200 transition-all duration-300 flex flex-col flex-shrink-0
+      `}>
         <div className="p-4 border-b border-gray-200 bg-gray-50">
            <button onClick={() => navigate('/dashboard')} className="mb-2 text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition">
              <ChevronLeft size={14} /> Back to Dashboard
@@ -203,7 +215,6 @@ const TextCoursePlayer = () => {
               <div>
                 {module.lessons.map((lesson, lIdx) => {
                   const isActive = mIdx === activeModuleIndex && lIdx === activeLessonIndex;
-                  // Determine Icon based on type
                   let Icon = FileText;
                   if (lesson.type === 'video') Icon = PlayCircle;
                   if (lesson.type === 'roleplay') Icon = MessageSquare; 
@@ -211,7 +222,7 @@ const TextCoursePlayer = () => {
                   return (
                     <button
                       key={lIdx}
-                      onClick={() => handleLessonChange(mIdx, lIdx)}
+                      onClick={() => { handleLessonChange(mIdx, lIdx); setSidebarOpen(false); }}
                       className={`w-full text-left px-4 py-3 flex items-start gap-3 text-sm transition border-l-4 ${
                         isActive 
                         ? 'bg-red-50 border-red-600 text-red-700 font-medium' 
@@ -230,20 +241,29 @@ const TextCoursePlayer = () => {
       </div>
 
       {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col h-full relative bg-white">
-        <button onClick={() => setSidebarOpen(!sidebarOpen)} className="absolute top-4 left-4 z-10 p-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:text-red-600 transition">
-          <Menu size={20} />
-        </button>
+      <div className="flex-1 flex flex-col h-full relative bg-white min-w-0">
+        {/* Top bar - always visible */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white sticky top-0 z-10 shadow-sm">
+          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:text-red-600 transition flex-shrink-0">
+            <Menu size={20} />
+          </button>
+          {!sidebarOpen && (
+            <button onClick={() => navigate('/dashboard')} className="text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition flex-shrink-0">
+              <ChevronLeft size={14} /> Dashboard
+            </button>
+          )}
+          <span className="text-sm font-bold text-gray-700 truncate">{currentLesson?.title || course.title}</span>
+        </div>
 
-        <div className="flex-1 overflow-y-auto p-6 lg:p-12 flex justify-center">
-          <div className="max-w-4xl w-full pt-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-12 flex justify-center">
+          <div className="max-w-4xl w-full">
             {currentLesson ? (
               <div className="animate-fade-in">
                   
                   {/* Header */}
                   <div className="border-b border-gray-100 pb-6 mb-8">
                       <span className="text-red-600 font-bold text-xs uppercase tracking-wide">{currentModule?.title}</span>
-                      <h1 className="text-3xl font-black text-gray-900 mt-2">{currentLesson.title}</h1>
+                      <h1 className="text-2xl md:text-3xl font-black text-gray-900 mt-2">{currentLesson.title}</h1>
                   </div>
 
                   {/* --- 1. VIDEO RENDERER --- */}
@@ -264,71 +284,70 @@ const TextCoursePlayer = () => {
                     </div>
                   )}
 
-                  {/* --- 3. AI ROLEPLAY RENDERER (NEW) --- */}
+                  {/* --- 3. AI ROLEPLAY RENDERER --- */}
                   {currentLesson.type === 'roleplay' && (
                     <RoleplayLesson 
                       lesson={currentLesson} 
                       onNext={goToNextLesson} 
-                      onPrevious={goToPrevLesson} // <--- NEW: Pass the previous function
+                      onPrevious={goToPrevLesson}
                       onComplete={(score) => {
                         saveProgress(activeModuleIndex, activeLessonIndex, 'completed', score);
                       }}
                     />
                   )}
-                  
 
                   {/* --- 4. QUIZ RENDERER --- */}
                   {currentLesson.type === 'quiz' && currentLesson.questions && (
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
                       {showResults ? (
-                        <div className="p-10 text-center flex flex-col items-center justify-center space-y-6">
+                        <div className="p-6 md:p-10 text-center flex flex-col items-center justify-center space-y-6">
                           <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-2 ${passed ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                             {passed ? <CheckCircle size={40} /> : <div className="text-3xl font-bold">X</div>}
                           </div>
                           <div>
-                            <h2 className="text-3xl font-bold text-gray-900 mb-2">{passed ? "Assessment Passed!" : "Assessment Failed"}</h2>
+                            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{passed ? "Assessment Passed!" : "Assessment Failed"}</h2>
                             <p className="text-gray-500 text-lg">You scored <span className={`font-bold ${passed ? 'text-green-600' : 'text-red-600'}`}>{score}</span> / <span className="font-bold">{currentLesson.questions.length}</span></p>
                           </div>
-                          <div className="flex gap-4 pt-4">
+                          <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto">
                             <button onClick={resetQuiz} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
                             {passed && (
-                              <button onClick={() => navigate(`/certificate/${course.id}`)} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-lg">
+                              <button onClick={() => navigate(`/certificate/${course.id}`)} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg">
                                 <Award size={18} /> View Certificate
                               </button>
                             )}
                           </div>
                         </div>
                       ) : (
-                        <div className="p-8 space-y-8">
+                        <div className="p-4 md:p-8 space-y-8">
                           {currentLesson.questions.map((q, qIdx) => (
                             <div key={qIdx} className="space-y-3">
-                              <p className="font-bold text-gray-900 text-lg"><span className="text-gray-400 mr-2">{qIdx + 1}.</span> {q.question}</p>
-                              <div className="space-y-2 pl-4">
+                              <p className="font-bold text-gray-900 text-base md:text-lg"><span className="text-gray-400 mr-2">{qIdx + 1}.</span> {q.question}</p>
+                              <div className="space-y-2">
                                 {Object.entries(q.options).map(([key, text]) => {
                                   const isSelected = userAnswers[qIdx] === key;
                                   return (
-                                    <div key={key} onClick={() => handleOptionSelect(qIdx, key)} className={`flex items-center p-4 border rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-red-50 border-red-500 ring-1 ring-red-500 text-red-900 font-bold' : 'border-gray-200 hover:bg-gray-50'}`}>
-                                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 bg-white ${isSelected ? 'border-red-600' : 'border-gray-300'}`}>{isSelected && <div className="w-2.5 h-2.5 bg-red-600 rounded-full" />}</div>
-                                      <span>{text}</span>
+                                    <div key={key} onClick={() => handleOptionSelect(qIdx, key)} className={`flex items-center p-3 md:p-4 border rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-red-50 border-red-500 ring-1 ring-red-500 text-red-900 font-bold' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <div className={`w-5 h-5 rounded-full border flex-shrink-0 flex items-center justify-center mr-3 bg-white ${isSelected ? 'border-red-600' : 'border-gray-300'}`}>{isSelected && <div className="w-2.5 h-2.5 bg-red-600 rounded-full" />}</div>
+                                      <span className="text-sm md:text-base">{text}</span>
                                     </div>
                                   );
                                 })}
                               </div>
                             </div>
                           ))}
-                          <div className="pt-6 text-right">
-                            <button onClick={submitQuiz} disabled={Object.keys(userAnswers).length < currentLesson.questions.length} className="px-8 py-3 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition">Submit Answers</button>
+                          <div className="pt-6 flex justify-end">
+                            <button onClick={submitQuiz} disabled={Object.keys(userAnswers).length < currentLesson.questions.length} className="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition">Submit Answers</button>
                           </div>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {/* FOOTER NAV (Hidden for Quiz & Roleplay) */}
+                  {/* FOOTER NAV */}
                   {currentLesson.type !== 'quiz' && currentLesson.type !== 'roleplay' && (
-                    <div className="mt-16 flex justify-between border-t border-gray-100 pt-8">
+                    <div className="mt-12 flex flex-col sm:flex-row justify-between gap-3 border-t border-gray-100 pt-8">
                       <button onClick={goToPrevLesson} disabled={isFirstLesson} className="px-6 py-3 rounded-lg border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-50 transition">&larr; Previous Lesson</button>
-                      <button onClick={goToNextLesson} disabled={isLastLesson} className="px-6 py-3 rounded-lg bg-gray-900 text-white font-bold hover:bg-black disabled:opacity-50 transition flex items-center gap-2">Next Lesson &rarr;</button>
+                      <button onClick={goToNextLesson} disabled={isLastLesson} className="px-6 py-3 rounded-lg bg-gray-900 text-white font-bold hover:bg-black disabled:opacity-50 transition flex items-center justify-center gap-2">Next Lesson &rarr;</button>
                     </div>
                   )}
               </div>
