@@ -25,6 +25,7 @@ import CourseView from './pages/CourseView';
 import Maintenance from './pages/Maintenance';
 import Blog from './pages/Blog';
 import CookieConsent from './components/CookieConsent';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
@@ -153,6 +154,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
       <ChatWidget />
+      <PWAInstallPrompt />
     </BrowserRouter>
   );
 }
