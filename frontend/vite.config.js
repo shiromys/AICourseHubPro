@@ -18,7 +18,29 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
-        start_url: '/',
+        start_url: '/?source=pwa',
+        id: 'com.aicoursehubpro.app',
+        dir: 'ltr',
+        lang: 'en',
+        display_override: ['standalone', 'minimal-ui'],
+        prefer_related_applications: false,
+        related_applications: [],
+        shortcuts: [
+          {
+            name: 'My Dashboard',
+            short_name: 'Dashboard',
+            description: 'Go to your learning dashboard',
+            url: '/dashboard',
+            icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
+          },
+          {
+            name: 'Browse Courses',
+            short_name: 'Courses',
+            description: 'Browse all AI courses',
+            url: '/courses',
+            icons: [{ src: '/icons/icon-96x96.png', sizes: '96x96' }]
+          }
+        ],
         icons: [
           { src: '/icons/icon-72x72.png',   sizes: '72x72',   type: 'image/png' },
           { src: '/icons/icon-96x96.png',   sizes: '96x96',   type: 'image/png' },
@@ -52,7 +74,6 @@ export default defineConfig({
           }
         ],
         categories: ['education', 'productivity'],
-        lang: 'en'
       },
       workbox: {
         // Cache the app shell and static assets

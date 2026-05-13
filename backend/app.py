@@ -80,6 +80,41 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 def health():
     return jsonify({"status": "awake"}), 200
 
+# ==========================================
+# PWA STATIC FILE ROUTES
+# Explicit routes needed so Flask sets correct headers
+# for service worker scope and manifest MIME type
+# ==========================================
+
+@app.route('/sw.js')
+def service_worker():
+    response = send_from_directory(app.static_folder, 'sw.js')
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Service-Worker-Allowed'] = '/'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+@app.route('/workbox-<path:filename>')
+def workbox(filename):
+    response = send_from_directory(app.static_folder, f'workbox-{filename}')
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
+@app.route('/manifest.webmanifest')
+def manifest():
+    response = send_from_directory(app.static_folder, 'manifest.webmanifest')
+    response.headers['Content-Type'] = 'application/manifest+json'
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+@app.route('/registerSW.js')
+def register_sw():
+    response = send_from_directory(app.static_folder, 'registerSW.js')
+    response.headers['Content-Type'] = 'application/javascript'
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    return response
+
 
 
 @app.before_request
