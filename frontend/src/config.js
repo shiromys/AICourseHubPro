@@ -1,9 +1,5 @@
 // frontend/src/config.js
-const backendUrl = import.meta.env.VITE_API_BASE_URL;
-
-// Debug: Let's see if the variable exists
-console.log("Vite Env Check:", backendUrl);
-
-const API_BASE_URL = backendUrl || "http://localhost:5000";
+// API base URL - points to Flask backend on Railway
+const API_BASE_URL = "https://aicoursehubpro-production.up.railway.app";
 
 export default API_BASE_URL;
