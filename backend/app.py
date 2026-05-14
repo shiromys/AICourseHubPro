@@ -771,7 +771,8 @@ def get_enrollment_status(course_id):
         "progress": enr.progress, "status": enr.status, 
         "last_module_index": enr.last_module_index,
         "last_lesson_index": enr.last_lesson_index,
-        "certificate_id": enr.certificate_id
+        "certificate_id": enr.certificate_id,
+        "completion_date": enr.completion_date.strftime('%B %d, %Y') if enr.completion_date else None
     })
 
 

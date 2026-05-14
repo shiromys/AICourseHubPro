@@ -45,7 +45,7 @@ const Certificate = () => {
 
         setData({
             courseTitle: course?.title || "Unknown Course",
-            completionDate: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
+            completionDate: enrollRes.data.completion_date || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
             score: enrollRes.data.score || 100,
             certId: enrollRes.data.certificate_id || "PENDING"
         });
