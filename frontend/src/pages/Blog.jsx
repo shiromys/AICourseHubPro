@@ -22,6 +22,16 @@ const articles = [
     slug: '5-ai-trends-future-of-work-2026',
     featured: true,
   },
+  {
+    id: 2,
+    title: 'How to Use AI in Your Daily Workflow (Without Feeling Overwhelmed)',
+    excerpt: 'AI is most useful not in some distant future, but in the ordinary moments of your workday. A practical, no-fluff guide to getting started today.',
+    category: 'How-To',
+    readTime: '6 min read',
+    date: 'May 14, 2026',
+    slug: 'how-to-use-ai-in-your-daily-workflow-without-feeling-overwhelmed',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
   // {
   //   id: 2,
