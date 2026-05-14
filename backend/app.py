@@ -116,12 +116,13 @@ def get_blog_posts():
     }
     """
     try:
+        pat = os.getenv('HASHNODE_PAT', '').strip()
         response = http_requests.post(
             'https://gql.hashnode.com',
             json={'query': query},
             headers={
                 'Content-Type': 'application/json',
-                'Authorization': os.getenv('HASHNODE_PAT', '')
+                'Authorization': f'Bearer {pat}' if pat else ''
             },
             timeout=10
         )
