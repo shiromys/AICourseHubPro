@@ -5,9 +5,6 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { ArrowUpRight, Clock, Tag, Search, Rss, AlertCircle } from 'lucide-react';
 
-// ─────────────────────────────────────────────
-//  CONFIG — your Hashnode publication host
-// ─────────────────────────────────────────────
 const HASHNODE_HOST = 'blog.aicoursehubpro.com';
 const HASHNODE_GQL  = 'https://gql.hashnode.com';
 
@@ -32,9 +29,6 @@ const POSTS_QUERY = `
   }
 `;
 
-// ─────────────────────────────────────────────
-//  HELPERS
-// ─────────────────────────────────────────────
 const formatDate = (iso) => {
   if (!iso) return '';
   return new Date(iso).toLocaleDateString('en-US', {
@@ -45,10 +39,10 @@ const formatDate = (iso) => {
 const primaryTag = (tags) => tags && tags.length > 0 ? tags[0].name : 'AI';
 
 const categoryColors = {
-  'AI': 'bg-blue-100 text-blue-700',
-  'HR': 'bg-red-100 text-red-700',
-  'Career': 'bg-green-100 text-green-700',
-  'How-To': 'bg-purple-100 text-purple-700',
+  'AI':       'bg-blue-100 text-blue-700',
+  'HR':       'bg-red-100 text-red-700',
+  'Career':   'bg-green-100 text-green-700',
+  'How-To':   'bg-purple-100 text-purple-700',
   'Industry': 'bg-yellow-100 text-yellow-700',
 };
 
@@ -59,9 +53,6 @@ const tagColor = (tag) => {
   return categoryColors[key] || 'bg-gray-100 text-gray-600';
 };
 
-// ─────────────────────────────────────────────
-//  BADGE
-// ─────────────────────────────────────────────
 const Badge = ({ tag }) => (
   <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${tagColor(tag)}`}>
     <Tag size={10} />
@@ -69,9 +60,6 @@ const Badge = ({ tag }) => (
   </span>
 );
 
-// ─────────────────────────────────────────────
-//  SKELETON LOADERS
-// ─────────────────────────────────────────────
 const SkeletonCard = () => (
   <div className="bg-white border border-gray-200 rounded-2xl p-6 animate-pulse">
     <div className="h-4 bg-gray-200 rounded w-24 mb-4" />
@@ -79,7 +67,7 @@ const SkeletonCard = () => (
     <div className="h-5 bg-gray-200 rounded w-3/4 mb-4" />
     <div className="h-3 bg-gray-100 rounded w-full mb-2" />
     <div className="h-3 bg-gray-100 rounded w-5/6 mb-6" />
-    <div className="h-3 bg-gray-100 rounded w-24 mt-4 pt-4 border-t border-gray-100" />
+    <div className="h-3 bg-gray-100 rounded w-24" />
   </div>
 );
 
@@ -97,9 +85,6 @@ const FeaturedSkeleton = () => (
   </div>
 );
 
-// ─────────────────────────────────────────────
-//  FEATURED CARD
-// ─────────────────────────────────────────────
 const FeaturedCard = ({ post }) => (
   <a
     href={post.url}
@@ -144,9 +129,6 @@ const FeaturedCard = ({ post }) => (
   </a>
 );
 
-// ─────────────────────────────────────────────
-//  ARTICLE CARD
-// ─────────────────────────────────────────────
 const ArticleCard = ({ post }) => (
   <a
     href={post.url}
@@ -183,9 +165,6 @@ const ArticleCard = ({ post }) => (
   </a>
 );
 
-// ─────────────────────────────────────────────
-//  ERROR & EMPTY STATES
-// ─────────────────────────────────────────────
 const ErrorState = () => (
   <div className="col-span-full flex flex-col items-center py-24 text-center">
     <div className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mb-6">
@@ -211,9 +190,6 @@ const EmptyState = ({ query }) => (
   </div>
 );
 
-// ─────────────────────────────────────────────
-//  MAIN BLOG PAGE
-// ─────────────────────────────────────────────
 const Blog = () => {
   const navigate = useNavigate();
   const [posts, setPosts]     = useState([]);
@@ -267,7 +243,6 @@ const Blog = () => {
 
       <Navbar />
 
-      {/* ── HERO ── */}
       <div className="relative bg-gradient-to-b from-gray-800 to-black text-white pt-36 pb-20 overflow-hidden">
         <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-red-900/20 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gray-700/20 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/4 pointer-events-none" />
@@ -296,15 +271,14 @@ const Blog = () => {
         </div>
       </div>
 
-      {/* ── STATS BAR ── */}
       <div className="bg-gray-900 border-b border-gray-800">
         <div className="container mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center gap-8 text-sm text-gray-400">
             {[
               { label: 'Articles Published', value: loading ? '—' : posts.length },
-              { label: 'New Article', value: 'Every Tuesday' },
-              { label: 'Target Audience', value: 'US · Canada · EU' },
-              { label: 'Avg. Read Time', value: '5–8 mins' },
+              { label: 'New Article',        value: 'Every Tuesday' },
+              { label: 'Target Audience',    value: 'US · Canada · EU' },
+              { label: 'Avg. Read Time',     value: '5–8 mins' },
             ].map(stat => (
               <div key={stat.label} className="flex items-center gap-2">
                 <span className="font-black text-white text-base">{stat.value}</span>
@@ -315,16 +289,13 @@ const Blog = () => {
         </div>
       </div>
 
-      {/* ── MAIN CONTENT ── */}
       <div className="container mx-auto px-6 py-16">
-        {/* Featured */}
         {loading ? (
           <div className="mb-16"><FeaturedSkeleton /></div>
         ) : !error && featured && !searchQuery && (
           <div className="mb-16"><FeaturedCard post={featured} /></div>
         )}
 
-        {/* Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {loading ? (
             [...Array(3)].map((_, i) => <SkeletonCard key={i} />)
@@ -337,7 +308,6 @@ const Blog = () => {
           )}
         </div>
 
-        {/* Coming soon nudge */}
         {!loading && !error && posts.length < 4 && (
           <div className="mt-16 text-center py-12 bg-gray-50 rounded-2xl border border-gray-200">
             <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -351,7 +321,6 @@ const Blog = () => {
         )}
       </div>
 
-      {/* ── CTA ── */}
       <div className="bg-gradient-to-br from-red-900 via-red-950 to-black text-white py-24">
         <div className="container mx-auto px-6 text-center">
           <h2 className="text-4xl md:text-5xl font-black mb-6">Ready to Go Deeper?</h2>
