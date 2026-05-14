@@ -109,7 +109,10 @@ def get_blog_posts():
         response = http_requests.post(
             'https://gql.hashnode.com',
             json={'query': query},
-            headers={'Content-Type': 'application/json'},
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': os.getenv('HASHNODE_PAT', '')
+            },
             timeout=10
         )
         data = response.json()
