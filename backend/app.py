@@ -83,6 +83,16 @@ def health():
 
 # ── Hashnode Blog Proxy ──────────────────────────────────────────
 # Proxies GraphQL requests to Hashnode server-side to avoid CORS.
+@app.route('/api/blog/debug', methods=['GET'])
+def blog_debug():
+    pat = os.getenv('HASHNODE_PAT', 'NOT_SET')
+    return jsonify({
+        'pat_set': pat != 'NOT_SET',
+        'pat_length': len(pat),
+        'pat_preview': pat[:6] + '...' if len(pat) > 6 else 'too_short'
+    }), 200
+
+
 @app.route('/api/blog/posts', methods=['GET'])
 def get_blog_posts():
     query = """
