@@ -15,7 +15,6 @@ import os
 import uuid
 import stripe
 import sys
-import requests as http_requests
 
 # Load environment variables
 load_dotenv() 
@@ -80,63 +79,6 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 @app.route('/api/health')
 def health():
     return jsonify({"status": "awake"}), 200
-
-# ── Hashnode Blog Proxy ──────────────────────────────────────────
-# Proxies GraphQL requests to Hashnode server-side to avoid CORS.
-@app.route('/api/blog/debug', methods=['GET'])
-def blog_debug():
-    pat = os.getenv('HASHNODE_PAT', 'NOT_SET')
-    return jsonify({
-        'pat_set': pat != 'NOT_SET',
-        'pat_length': len(pat),
-        'pat_preview': pat[:6] + '...' if len(pat) > 6 else 'too_short'
-    }), 200
-
-
-@app.route('/api/blog/posts', methods=['GET'])
-def get_blog_posts():
-    query = """
-    query Publication {
-      publication(host: "blog.aicoursehubpro.com") {
-        id
-        posts(first: 20) {
-          edges {
-            node {
-              id
-              title
-              brief
-              slug
-              url
-              publishedAt
-              readTimeInMinutes
-              coverImage { url }
-              tags { id name }
-            }
-          }
-        }
-      }
-    }
-    """
-    try:
-        pat = os.getenv('HASHNODE_PAT', '').strip()
-        response = http_requests.post(
-            'https://gql.hashnode.com',
-            json={'query': query},
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {pat}' if pat else ''
-            },
-            timeout=15
-        )
-        if not response.text or not response.text.strip():
-            return jsonify({'error': 'Empty response from Hashnode', 'http_status': response.status_code, 'posts': []}), 500
-        data = response.json()
-        edges = data.get('data', {}).get('publication', {}).get('posts', {}).get('edges', [])
-        posts = [edge['node'] for edge in edges]
-        return jsonify({'posts': posts}), 200
-    except Exception as e:
-        raw = response.text[:300] if 'response' in locals() else 'no response object'
-        return jsonify({'error': str(e), 'http_status': response.status_code if 'response' in locals() else 0, 'raw_response': raw, 'posts': []}), 500
     try:
         pat = os.getenv('HASHNODE_PAT', '').strip()
         response = http_requests.post(

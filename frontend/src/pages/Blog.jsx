@@ -1,101 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
-import { ArrowUpRight, Clock, Tag, Search, Rss, AlertCircle } from 'lucide-react';
-import API_BASE_URL from '../config';
+import { ArrowUpRight, Clock, Tag, Search, Rss } from 'lucide-react';
 
-const formatDate = (iso) => {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric'
-  });
-};
+// ─────────────────────────────────────────────
+//  ARTICLES — Add a new entry here every time
+//  you publish on Hashnode. Takes 2 minutes.
+// ─────────────────────────────────────────────
+const HASHNODE_BASE = 'https://blog.aicoursehubpro.com';
 
-const primaryTag = (tags) => tags && tags.length > 0 ? tags[0].name : 'AI';
+const articles = [
+  {
+    id: 1,
+    title: '5 AI Trends Shaping the Future of Work in 2026',
+    excerpt: 'AI is reshaping hiring, HR, and the workweek. Here are the 5 trends every professional in HR, business and beyond needs to understand right now.',
+    category: 'Industry News',
+    readTime: '6 min read',
+    date: 'May 7, 2026',
+    slug: '5-ai-trends-future-of-work-2026',
+    featured: true,
+  },
+  // ── Add new articles below this line ──────
+  // {
+  //   id: 2,
+  //   title: 'Your Article Title',
+  //   excerpt: 'Your article excerpt...',
+  //   category: 'Beginner Guide',
+  //   readTime: '5 min read',
+  //   date: 'May 13, 2026',
+  //   slug: 'your-article-slug',
+  //   featured: false,
+  // },
+];
+
+const CATEGORIES = ['All', 'Beginner Guide', 'AI in HR', 'Career Growth', 'How-To', 'Industry News'];
 
 const categoryColors = {
-  'AI':       'bg-blue-100 text-blue-700',
-  'HR':       'bg-red-100 text-red-700',
-  'Career':   'bg-green-100 text-green-700',
-  'How-To':   'bg-purple-100 text-purple-700',
-  'Industry': 'bg-yellow-100 text-yellow-700',
+  'Beginner Guide': 'bg-blue-100 text-blue-700',
+  'AI in HR':       'bg-red-100 text-red-700',
+  'Career Growth':  'bg-green-100 text-green-700',
+  'How-To':         'bg-purple-100 text-purple-700',
+  'Industry News':  'bg-yellow-100 text-yellow-700',
 };
 
-const tagColor = (tag) => {
-  const key = Object.keys(categoryColors).find(k =>
-    tag.toLowerCase().includes(k.toLowerCase())
-  );
-  return categoryColors[key] || 'bg-gray-100 text-gray-600';
-};
-
-const Badge = ({ tag }) => (
-  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${tagColor(tag)}`}>
+const Badge = ({ category }) => (
+  <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide ${categoryColors[category] || 'bg-gray-100 text-gray-600'}`}>
     <Tag size={10} />
-    {tag}
+    {category}
   </span>
 );
 
-const SkeletonCard = () => (
-  <div className="bg-white border border-gray-200 rounded-2xl p-6 animate-pulse">
-    <div className="h-4 bg-gray-200 rounded w-24 mb-4" />
-    <div className="h-5 bg-gray-200 rounded w-full mb-2" />
-    <div className="h-5 bg-gray-200 rounded w-3/4 mb-4" />
-    <div className="h-3 bg-gray-100 rounded w-full mb-2" />
-    <div className="h-3 bg-gray-100 rounded w-5/6 mb-6" />
-    <div className="h-3 bg-gray-100 rounded w-24" />
-  </div>
-);
-
-const FeaturedSkeleton = () => (
-  <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-black rounded-2xl p-8 md:p-12 animate-pulse">
-    <div className="h-6 bg-gray-700 rounded w-40 mb-6" />
-    <div className="h-8 bg-gray-700 rounded w-3/4 mb-3" />
-    <div className="h-8 bg-gray-700 rounded w-1/2 mb-6" />
-    <div className="h-4 bg-gray-800 rounded w-full mb-2" />
-    <div className="h-4 bg-gray-800 rounded w-5/6 mb-8" />
-    <div className="flex justify-between">
-      <div className="h-4 bg-gray-700 rounded w-32" />
-      <div className="h-10 bg-gray-700 rounded-full w-36" />
-    </div>
-  </div>
-);
-
-const FeaturedCard = ({ post }) => (
+const FeaturedCard = ({ article }) => (
   <a
-    href={post.url}
+    href={`${HASHNODE_BASE}/${article.slug}`}
     target="_blank"
     rel="noopener noreferrer"
-    className="group block relative bg-gradient-to-br from-gray-900 via-gray-800 to-black rounded-2xl border border-gray-700 hover:border-red-600 transition-all duration-300 overflow-hidden"
+    className="group block relative bg-gradient-to-br from-gray-900 via-gray-800 to-black rounded-2xl p-8 md:p-12 border border-gray-700 hover:border-red-600 transition-all duration-300 overflow-hidden"
   >
-    {post.coverImage?.url && (
-      <div className="relative h-64 md:h-80 overflow-hidden">
-        <img
-          src={post.coverImage.url}
-          alt={post.title}
-          className="w-full h-full object-cover opacity-60 group-hover:opacity-75 group-hover:scale-105 transition-all duration-500"
-        />
-        <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/60 to-transparent" />
-      </div>
-    )}
     <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-    <div className="relative z-10 p-8 md:p-12">
+    <div className="relative z-10">
       <div className="flex items-center gap-3 mb-6">
         <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-red-600/20 border border-red-600/40 text-red-400 text-xs font-bold uppercase tracking-wide">
           <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-          Latest Article
+          Featured Article
         </span>
-        <Badge tag={primaryTag(post.tags)} />
+        <Badge category={article.category} />
       </div>
       <h2 className="text-2xl md:text-4xl font-black text-white leading-tight mb-4 group-hover:text-red-400 transition-colors">
-        {post.title}
+        {article.title}
       </h2>
-      <p className="text-gray-400 text-lg leading-relaxed mb-8 max-w-2xl">{post.brief}</p>
+      <p className="text-gray-400 text-lg leading-relaxed mb-8 max-w-2xl">{article.excerpt}</p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 text-gray-500 text-sm">
-          <span className="flex items-center gap-1"><Clock size={14} />{post.readTimeInMinutes} min read</span>
-          <span>{formatDate(post.publishedAt)}</span>
+          <span className="flex items-center gap-1"><Clock size={14} />{article.readTime}</span>
+          <span>{article.date}</span>
         </div>
         <div className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white font-bold rounded-full group-hover:bg-red-700 transition-colors shadow-lg shadow-red-900/30">
           Read Article
@@ -106,53 +86,25 @@ const FeaturedCard = ({ post }) => (
   </a>
 );
 
-const ArticleCard = ({ post }) => (
+const ArticleCard = ({ article }) => (
   <a
-    href={post.url}
+    href={`${HASHNODE_BASE}/${article.slug}`}
     target="_blank"
     rel="noopener noreferrer"
-    className="group flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-xl hover:border-red-600 hover:-translate-y-1 transition-all duration-300"
+    className="group flex flex-col bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-red-600 hover:-translate-y-1 transition-all duration-300"
   >
-    {post.coverImage?.url && (
-      <div className="h-44 overflow-hidden">
-        <img
-          src={post.coverImage.url}
-          alt={post.title}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
-      </div>
-    )}
-    <div className="flex flex-col flex-1 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <Badge tag={primaryTag(post.tags)} />
-        <ArrowUpRight size={18} className="text-gray-300 group-hover:text-red-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-      </div>
-      <h3 className="text-lg font-black text-gray-900 leading-snug mb-3 group-hover:text-red-600 transition-colors flex-1">
-        {post.title}
-      </h3>
-      <p className="text-gray-500 text-sm leading-relaxed mb-6 flex-1">
-        {post.brief?.length > 120 ? post.brief.substring(0, 120) + '...' : post.brief}
-      </p>
-      <div className="flex items-center gap-3 text-gray-400 text-xs pt-4 border-t border-gray-100">
-        <span className="flex items-center gap-1"><Clock size={12} />{post.readTimeInMinutes} min read</span>
-        <span className="w-1 h-1 bg-gray-300 rounded-full" />
-        <span>{formatDate(post.publishedAt)}</span>
-      </div>
+    <div className="flex items-center justify-between mb-4">
+      <Badge category={article.category} />
+      <ArrowUpRight size={18} className="text-gray-300 group-hover:text-red-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+    </div>
+    <h3 className="text-lg font-black text-gray-900 leading-snug mb-3 group-hover:text-red-600 transition-colors flex-1">{article.title}</h3>
+    <p className="text-gray-500 text-sm leading-relaxed mb-6 flex-1">{article.excerpt}</p>
+    <div className="flex items-center gap-3 text-gray-400 text-xs pt-4 border-t border-gray-100">
+      <span className="flex items-center gap-1"><Clock size={12} />{article.readTime}</span>
+      <span className="w-1 h-1 bg-gray-300 rounded-full" />
+      <span>{article.date}</span>
     </div>
   </a>
-);
-
-const ErrorState = () => (
-  <div className="col-span-full flex flex-col items-center py-24 text-center">
-    <div className="w-20 h-20 bg-red-50 rounded-2xl flex items-center justify-center mb-6">
-      <AlertCircle size={32} className="text-red-400" />
-    </div>
-    <h3 className="text-xl font-black text-gray-900 mb-2">Couldn't load articles</h3>
-    <p className="text-gray-500 mb-6">There was a problem fetching articles. Please try again.</p>
-    <button onClick={() => window.location.reload()} className="px-6 py-3 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition">
-      Try Again
-    </button>
-  </div>
 );
 
 const EmptyState = ({ query }) => (
@@ -162,47 +114,26 @@ const EmptyState = ({ query }) => (
     </div>
     <h3 className="text-xl font-black text-gray-900 mb-2">No articles found</h3>
     <p className="text-gray-500">
-      {query ? `No results for "${query}". Try a different search.` : 'No articles published yet. Check back soon!'}
+      {query ? `No results for "${query}". Try a different search.` : 'No articles in this category yet. Check back soon!'}
     </p>
   </div>
 );
 
 const Blog = () => {
   const navigate = useNavigate();
-  const [posts, setPosts]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState(false);
+  const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    const fetchPosts = async () => {
-      try {
-        setLoading(true);
-        setError(false);
-        const res = await fetch(`${API_BASE_URL}/api/blog/posts`);
-        const json = await res.json();
-        setPosts(json.posts || []);
-      } catch (err) {
-        console.error('Blog fetch error:', err);
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPosts();
-  }, []);
+  const featured = articles.find(a => a.featured);
+  const rest = articles.filter(a => !a.featured);
 
-  const featured = posts[0] || null;
-  const rest     = posts.slice(1);
-
-  const filtered = rest.filter(p => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      p.title?.toLowerCase().includes(q) ||
-      p.brief?.toLowerCase().includes(q) ||
-      p.tags?.some(t => t.name.toLowerCase().includes(q))
-    );
+  const filtered = rest.filter(a => {
+    const matchCat = activeCategory === 'All' || a.category === activeCategory;
+    const matchSearch = !searchQuery ||
+      a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.excerpt.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.category.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchCat && matchSearch;
   });
 
   return (
@@ -247,10 +178,10 @@ const Blog = () => {
         <div className="container mx-auto px-6 py-4">
           <div className="flex flex-wrap items-center gap-8 text-sm text-gray-400">
             {[
-              { label: 'Articles Published', value: loading ? '—' : posts.length },
+              { label: 'Articles Published', value: articles.length },
+              { label: 'Topics Covered',     value: CATEGORIES.length - 1 },
+              { label: 'Avg. Read Time',     value: '6 mins' },
               { label: 'New Article',        value: 'Every Tuesday' },
-              { label: 'Target Audience',    value: 'US · Canada · EU' },
-              { label: 'Avg. Read Time',     value: '5–8 mins' },
             ].map(stat => (
               <div key={stat.label} className="flex items-center gap-2">
                 <span className="font-black text-white text-base">{stat.value}</span>
@@ -262,25 +193,30 @@ const Blog = () => {
       </div>
 
       <div className="container mx-auto px-6 py-16">
-        {loading ? (
-          <div className="mb-16"><FeaturedSkeleton /></div>
-        ) : !error && featured && !searchQuery && (
-          <div className="mb-16"><FeaturedCard post={featured} /></div>
+        {featured && !searchQuery && activeCategory === 'All' && (
+          <div className="mb-16"><FeaturedCard article={featured} /></div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {loading ? (
-            [...Array(3)].map((_, i) => <SkeletonCard key={i} />)
-          ) : error ? (
-            <ErrorState />
-          ) : filtered.length > 0 ? (
-            filtered.map((post, i) => <ArticleCard key={i} post={post} />)
-          ) : (
-            <EmptyState query={searchQuery} />
-          )}
+        <div className="flex flex-wrap gap-3 mb-10">
+          {CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              onClick={() => { setActiveCategory(cat); setSearchQuery(''); }}
+              className={`px-5 py-2 rounded-full text-sm font-bold transition-all ${activeCategory === cat ? 'bg-red-600 text-white shadow-lg shadow-red-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
 
-        {!loading && !error && posts.length < 4 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.length > 0
+            ? filtered.map(article => <ArticleCard key={article.id} article={article} />)
+            : <EmptyState query={searchQuery} />
+          }
+        </div>
+
+        {articles.length < 6 && (
           <div className="mt-16 text-center py-12 bg-gray-50 rounded-2xl border border-gray-200">
             <div className="w-14 h-14 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Rss size={24} className="text-red-600" />
