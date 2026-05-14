@@ -125,12 +125,15 @@ def get_blog_posts():
             },
             timeout=10
         )
+        if not response.text or not response.text.strip():
+            return jsonify({'error': 'Empty response from Hashnode', 'http_status': response.status_code, 'posts': []}), 500
         data = response.json()
         edges = data.get('data', {}).get('publication', {}).get('posts', {}).get('edges', [])
         posts = [edge['node'] for edge in edges]
         return jsonify({'posts': posts}), 200
     except Exception as e:
-        return jsonify({'error': str(e), 'posts': []}), 500
+        raw = response.text[:300] if 'response' in locals() else 'no response object'
+        return jsonify({'error': str(e), 'http_status': response.status_code if 'response' in locals() else 0, 'raw_response': raw, 'posts': []}), 500
 
 
 
