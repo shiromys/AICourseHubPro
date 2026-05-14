@@ -185,25 +185,33 @@ const TextCoursePlayer = () => {
   return (
     <div className="flex h-screen bg-gray-50 font-sans overflow-hidden">
       
-      {/* MOBILE OVERLAY - dims background when sidebar open */}
+      {/* OVERLAY — shown on all screen sizes when sidebar open */}
       {sidebarOpen && (
         <div 
-          className="fixed inset-0 bg-black/50 z-10 md:hidden"
+          className="fixed inset-0 bg-black/50 z-20"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
-      {/* SIDEBAR */}
+      {/* SIDEBAR — always a fixed drawer, never in flex flow */}
       <div className={`
-        fixed md:relative inset-y-0 left-0 z-20
-        ${sidebarOpen ? 'w-72 md:w-80' : 'w-0'}
-        bg-white border-r border-gray-200 transition-all duration-300 flex flex-col flex-shrink-0
+        fixed inset-y-0 left-0 z-30
+        w-80
+        bg-white border-r border-gray-200
+        flex flex-col
+        transition-transform duration-300
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
-        <div className="p-4 border-b border-gray-200 bg-gray-50">
-           <button onClick={() => navigate('/dashboard')} className="mb-2 text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition">
-             <ChevronLeft size={14} /> Back to Dashboard
-           </button>
-           <h2 className="font-bold text-sm text-gray-900 leading-tight">{course.title}</h2>
+        <div className="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+          <div>
+            <button onClick={() => navigate('/dashboard')} className="mb-1 text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition">
+              <ChevronLeft size={14} /> Back to Dashboard
+            </button>
+            <h2 className="font-bold text-sm text-gray-900 leading-tight">{course.title}</h2>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="p-1 text-gray-400 hover:text-red-600 transition">
+            <ChevronLeft size={20} />
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -217,7 +225,7 @@ const TextCoursePlayer = () => {
                   const isActive = mIdx === activeModuleIndex && lIdx === activeLessonIndex;
                   let Icon = FileText;
                   if (lesson.type === 'video') Icon = PlayCircle;
-                  if (lesson.type === 'roleplay') Icon = MessageSquare; 
+                  if (lesson.type === 'roleplay') Icon = MessageSquare;
                   
                   return (
                     <button
@@ -229,8 +237,8 @@ const TextCoursePlayer = () => {
                         : 'border-transparent text-gray-600 hover:bg-gray-50'
                       }`}
                     >
-                        <Icon size={16} className="mt-0.5 shrink-0" />
-                        <span>{lesson.title}</span>
+                      <Icon size={16} className="mt-0.5 shrink-0" />
+                      <span>{lesson.title}</span>
                     </button>
                   );
                 })}
@@ -240,18 +248,22 @@ const TextCoursePlayer = () => {
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col h-full relative bg-white min-w-0">
-        {/* Top bar - always visible */}
+      {/* MAIN CONTENT — always full width, sidebar never affects this */}
+      <div className="flex-1 flex flex-col h-full bg-white w-full">
+        {/* Top bar */}
         <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 bg-white sticky top-0 z-10 shadow-sm">
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} className="p-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:text-red-600 transition flex-shrink-0">
+          <button 
+            onClick={() => setSidebarOpen(true)} 
+            className="p-2 bg-white border border-gray-200 rounded shadow-sm text-gray-600 hover:text-red-600 transition flex-shrink-0"
+          >
             <Menu size={20} />
           </button>
-          {!sidebarOpen && (
-            <button onClick={() => navigate('/dashboard')} className="text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition flex-shrink-0">
-              <ChevronLeft size={14} /> Dashboard
-            </button>
-          )}
+          <button 
+            onClick={() => navigate('/dashboard')} 
+            className="text-xs font-bold text-gray-500 hover:text-red-600 flex items-center gap-1 transition flex-shrink-0"
+          >
+            <ChevronLeft size={14} /> Dashboard
+          </button>
           <span className="text-sm font-bold text-gray-700 truncate">{currentLesson?.title || course.title}</span>
         </div>
 
