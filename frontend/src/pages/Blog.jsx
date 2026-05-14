@@ -212,7 +212,7 @@ const Blog = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.length > 0
             ? filtered.map(article => <ArticleCard key={article.id} article={article} />)
-            : <EmptyState query={searchQuery} />
+            : (searchQuery || activeCategory !== 'All') && <EmptyState query={searchQuery} />
           }
         </div>
 
