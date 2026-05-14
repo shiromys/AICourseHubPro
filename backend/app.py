@@ -98,9 +98,11 @@ def get_blog_posts():
     query = """
     query Publication {
       publication(host: "blog.aicoursehubpro.com") {
+        id
         posts(first: 20) {
           edges {
             node {
+              id
               title
               brief
               slug
@@ -108,7 +110,7 @@ def get_blog_posts():
               publishedAt
               readTimeInMinutes
               coverImage { url }
-              tags { name }
+              tags { id name }
             }
           }
         }
@@ -124,7 +126,28 @@ def get_blog_posts():
                 'Content-Type': 'application/json',
                 'Authorization': f'Bearer {pat}' if pat else ''
             },
-            timeout=10
+            timeout=15
+        )
+        if not response.text or not response.text.strip():
+            return jsonify({'error': 'Empty response from Hashnode', 'http_status': response.status_code, 'posts': []}), 500
+        data = response.json()
+        edges = data.get('data', {}).get('publication', {}).get('posts', {}).get('edges', [])
+        posts = [edge['node'] for edge in edges]
+        return jsonify({'posts': posts}), 200
+    except Exception as e:
+        raw = response.text[:300] if 'response' in locals() else 'no response object'
+        return jsonify({'error': str(e), 'http_status': response.status_code if 'response' in locals() else 0, 'raw_response': raw, 'posts': []}), 500
+    try:
+        pat = os.getenv('HASHNODE_PAT', '').strip()
+        response = http_requests.post(
+            'https://gql.hashnode.com',
+            json={'query': query},
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {pat}' if pat else ''
+            },
+            timeout=10,
+            allow_redirects=False
         )
         if not response.text or not response.text.strip():
             return jsonify({'error': 'Empty response from Hashnode', 'http_status': response.status_code, 'posts': []}), 500
