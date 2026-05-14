@@ -4,30 +4,7 @@ import { Helmet } from 'react-helmet-async';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { ArrowUpRight, Clock, Tag, Search, Rss, AlertCircle } from 'lucide-react';
-
-const HASHNODE_HOST = 'blog.aicoursehubpro.com';
-const HASHNODE_GQL  = 'https://gql.hashnode.com';
-
-const POSTS_QUERY = `
-  query Publication {
-    publication(host: "${HASHNODE_HOST}") {
-      posts(first: 20) {
-        edges {
-          node {
-            title
-            brief
-            slug
-            url
-            publishedAt
-            readTimeInMinutes
-            coverImage { url }
-            tags { name }
-          }
-        }
-      }
-    }
-  }
-`;
+import API_BASE_URL from '../config';
 
 const formatDate = (iso) => {
   if (!iso) return '';
@@ -202,16 +179,11 @@ const Blog = () => {
       try {
         setLoading(true);
         setError(false);
-        const res = await fetch(HASHNODE_GQL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: POSTS_QUERY }),
-        });
+        const res = await fetch(`${API_BASE_URL}/api/blog/posts`);
         const json = await res.json();
-        const edges = json?.data?.publication?.posts?.edges || [];
-        setPosts(edges.map(e => e.node));
+        setPosts(json.posts || []);
       } catch (err) {
-        console.error('Hashnode API error:', err);
+        console.error('Blog fetch error:', err);
         setError(true);
       } finally {
         setLoading(false);

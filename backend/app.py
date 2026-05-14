@@ -15,6 +15,7 @@ import os
 import uuid
 import stripe
 import sys
+import requests as http_requests
 
 # Load environment variables
 load_dotenv() 
@@ -26,13 +27,8 @@ load_dotenv()
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
-CORS(app, resources={r"/api/*": {"origins": [
-    "https://www.aicoursehubpro.com",
-    "https://aicoursehubpro.com",
-    "https://api.aicoursehubpro.com",
-    "http://localhost:5173",
-    "http://localhost:4173"
-]}}, supports_credentials=True)
+
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -53,7 +49,7 @@ if db_url and db_url.startswith("postgres://"):
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=1)
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
 # --- API KEYS ---
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -85,40 +81,43 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 def health():
     return jsonify({"status": "awake"}), 200
 
-# ==========================================
-# PWA STATIC FILE ROUTES
-# Explicit routes needed so Flask sets correct headers
-# for service worker scope and manifest MIME type
-# ==========================================
-
-@app.route('/sw.js')
-def service_worker():
-    response = send_from_directory(app.static_folder, 'sw.js')
-    response.headers['Content-Type'] = 'application/javascript'
-    response.headers['Service-Worker-Allowed'] = '/'
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    return response
-
-@app.route('/workbox-<path:filename>')
-def workbox(filename):
-    response = send_from_directory(app.static_folder, f'workbox-{filename}')
-    response.headers['Content-Type'] = 'application/javascript'
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    return response
-
-@app.route('/manifest.webmanifest')
-def manifest():
-    response = send_from_directory(app.static_folder, 'manifest.webmanifest')
-    response.headers['Content-Type'] = 'application/manifest+json'
-    response.headers['Cache-Control'] = 'no-cache'
-    return response
-
-@app.route('/registerSW.js')
-def register_sw():
-    response = send_from_directory(app.static_folder, 'registerSW.js')
-    response.headers['Content-Type'] = 'application/javascript'
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    return response
+# ── Hashnode Blog Proxy ──────────────────────────────────────────
+# Proxies GraphQL requests to Hashnode server-side to avoid CORS.
+@app.route('/api/blog/posts', methods=['GET'])
+def get_blog_posts():
+    query = """
+    query Publication {
+      publication(host: "blog.aicoursehubpro.com") {
+        posts(first: 20) {
+          edges {
+            node {
+              title
+              brief
+              slug
+              url
+              publishedAt
+              readTimeInMinutes
+              coverImage { url }
+              tags { name }
+            }
+          }
+        }
+      }
+    }
+    """
+    try:
+        response = http_requests.post(
+            'https://gql.hashnode.com',
+            json={'query': query},
+            headers={'Content-Type': 'application/json'},
+            timeout=10
+        )
+        data = response.json()
+        edges = data.get('data', {}).get('publication', {}).get('posts', {}).get('edges', [])
+        posts = [edge['node'] for edge in edges]
+        return jsonify({'posts': posts}), 200
+    except Exception as e:
+        return jsonify({'error': str(e), 'posts': []}), 500
 
 
 
@@ -134,17 +133,6 @@ def enforce_https():
 # ==========================================
 # 2. HELPER FUNCTIONS
 # ==========================================
-
-def log_action(admin_email, action, details=""):
-    """Write an entry to the audit_logs table."""
-    try:
-        entry = AuditLog(admin_email=admin_email, action=action, details=details)
-        db.session.add(entry)
-        db.session.commit()
-    except Exception as e:
-        # Don't let logging failure break the main operation
-        db.session.rollback()
-        print(f"[AuditLog Error] {e}")
 
 def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com"):
     try:
@@ -193,6 +181,7 @@ def get_email_template(title, body_content, button_text=None, button_url=None):
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
+    print("--- DEBUG: Signup Request Started ---", flush=True)
     try:
         data = request.json
         email = data.get('email', '').strip().lower()
@@ -256,9 +245,6 @@ def login():
     # 2. Status Check
     if user.is_deleted:
         return jsonify({"msg": "Account deactivated"}), 403
-
-    if user.ban_expiry and user.ban_expiry > datetime.utcnow():
-        return jsonify({"msg": "Your account has been temporarily suspended. Please contact support."}), 403
 
     # --- 3. ANALYTICS UPDATE (NEW) ---
     try:
@@ -358,11 +344,9 @@ def ban_user(user_id):
     if days:
         user.ban_expiry = datetime.utcnow() + timedelta(days=int(days))
         msg = f"User banned for {days} days"
-        log_action(admin.email, "BAN_USER", f"Banned {user.email} for {days} days")
     else:
         user.ban_expiry = None
         msg = "User unbanned"
-        log_action(admin.email, "UNBAN_USER", f"Unbanned {user.email}")
         
     db.session.commit()
     return jsonify({"msg": msg})
@@ -415,10 +399,8 @@ def update_user_role(user_id):
     
     data = request.json
     if 'is_admin' in data:
-        new_role = "Admin" if data['is_admin'] else "Student"
         user.is_admin = data['is_admin']
         db.session.commit()
-        log_action(admin.email, "CHANGE_ROLE", f"Changed {user.email} role to {new_role}")
         return jsonify({"msg": "Role updated"})
     return jsonify({"msg": "No changes"}), 400
 
@@ -434,7 +416,6 @@ def soft_delete_user(user_id):
     
     user.is_deleted = True
     db.session.commit()
-    log_action(admin.email, "DELETE_USER", f"Soft-deleted user {user.email} (ID: {user_id})")
     return jsonify({"msg": "User deleted"})
 
 @app.route('/api/users/<int:user_id>/restore', methods=['POST'])
@@ -448,7 +429,6 @@ def restore_user(user_id):
     if user:
         user.is_deleted = False
         db.session.commit()
-        log_action(admin.email, "RESTORE_USER", f"Restored user {user.email} (ID: {user_id})")
     return jsonify({"msg": "User restored"})
 
 # ==========================================
@@ -522,7 +502,6 @@ def delete_course(course_id):
 
     course.is_deleted = True
     db.session.commit()
-    log_action(user.email, "DELETE_COURSE", f"Archived course '{course.title}' (ID: {course_id})")
     return jsonify({"msg": "Archived"})
 
 # ==========================================
@@ -962,8 +941,6 @@ def chat_support():
     If a user asks about our course offerings, list the courses we offer, namely - AI for Human Resources / Talent / People Ops via Prompts, Prompt-Based Tools for Education & Learning, Prompt-Based Analytics and Reports for Business, Prompting for Automation and Workflow Efficiency, Prompt Engineering for Non-Profits and Social Impact, Prompt-Based AI for Local Government and Public Services. Highlight the courses (bold) and list them one by one.
     If a user asks about topics completely unrelated to AI, the courses, or the platform, politely decline to answer and guide them back to our offerings.
     Users can contact our email address - info@aicoursehubpro.com for more information on any queries.
-    Users can also call us at - +1 (800) 971-8013 for more information. 
-    If the users want our office address, our office is located at 5080 Spectrum Drive, Suite 575E, Addison, TX 75001. Users can contact us in the office or via call from Monday till Friday, from 9:30 AM to 6:00 PM CST.
     If the users want, you can navigate them to the contact page of our application, that is present at the navbar.
     If the user asks about the certificate of completion, tell them that users get a verifiable certificate of course completion which can be downloaded in PDF format. But to receive the certificate, users must complete the course and appear for an assessment and pass it with minimum score of 70%.
     """
