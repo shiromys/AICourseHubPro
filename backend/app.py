@@ -26,8 +26,12 @@ load_dotenv()
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
-
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+# NOTE: Cannot use wildcard "*" with supports_credentials=True — browser blocks it.
+# Must explicitly list allowed frontend origins.
+CORS(app, resources={r"/api/*": {"origins": [
+    "https://aicoursehubpro.com",
+    "https://www.aicoursehubpro.com"
+]}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'

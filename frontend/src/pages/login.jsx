@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import API from '../api';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Navbar from '../components/Navbar';
-import API_BASE_URL from '../config';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -23,7 +22,7 @@ const Login = () => {
     setError('');
 
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/login`, { 
+      const res = await API.post('/login', { 
         email: formData.email, 
         password: formData.password 
       });
