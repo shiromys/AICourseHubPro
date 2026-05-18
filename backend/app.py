@@ -26,8 +26,12 @@ load_dotenv()
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
-
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+# after_request handler below applies headers explicitly per-response.
+# Flask-CORS handles preflight (OPTIONS) auto-responses.
+CORS(app, supports_credentials=True, origins=[
+    'https://aicoursehubpro.com',
+    'https://www.aicoursehubpro.com'
+])
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -47,13 +51,6 @@ if db_url and db_url.startswith("postgres://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-# Prevent stale DB connections from hanging workers (causes 502 timeouts)
-app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_pre_ping': True,      # Test connection health before use
-    'pool_recycle': 300,        # Recycle connections every 5 minutes
-    'pool_timeout': 10,         # Fail fast instead of hanging worker
-    'connect_args': {'connect_timeout': 10}
-}
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
@@ -112,12 +109,25 @@ def health():
 
 @app.before_request
 def enforce_https():
+    # OPTIONS preflight must pass through to Flask-CORS completely untouched
     if request.method == 'OPTIONS':
-        return  # Don't redirect preflight requests
-    
+        return None  # Let Flask-CORS handle it fully
+
     if request.headers.get('X-Forwarded-Proto') == 'http':
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
+
+@app.after_request
+def add_cors_headers(response):
+    # Belt-and-suspenders: ensure CORS headers are always present on every response
+    origin = request.headers.get('Origin', '')
+    allowed_origins = ['https://aicoursehubpro.com', 'https://www.aicoursehubpro.com']
+    if origin in allowed_origins:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
 
 # ==========================================
 # 2. HELPER FUNCTIONS
