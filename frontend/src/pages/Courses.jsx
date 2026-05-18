@@ -77,6 +77,9 @@ const Courses = () => {
         return;
     }
 
+    // Always update pendingCourseId to the current course being purchased.
+    // This ensures if the session expires mid-flow, the user returns to the right course.
+    localStorage.setItem('pendingCourseId', courseId);
     setBuying(courseId);
 
     try {

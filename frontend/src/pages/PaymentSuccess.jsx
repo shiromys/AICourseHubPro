@@ -42,6 +42,7 @@ const PaymentSuccess = () => {
         );
 
         setStatus('success');
+        localStorage.removeItem('pendingCourseId'); // Clean up after successful payment
         
         // Auto-redirect to dashboard after 3 seconds
         setTimeout(() => navigate('/dashboard'), 3000);
