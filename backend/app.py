@@ -28,10 +28,10 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 # --- CORS CONFIGURATION ---
 # after_request handler below applies headers explicitly per-response.
 # Flask-CORS handles preflight (OPTIONS) auto-responses.
-CORS(app, supports_credentials=True, origins=[
-    'https://aicoursehubpro.com',
-    'https://www.aicoursehubpro.com'
-])
+CORS(app, resources={r"/api/*": {"origins": [
+    "https://aicoursehubpro.com",
+    "https://www.aicoursehubpro.com"
+]}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
