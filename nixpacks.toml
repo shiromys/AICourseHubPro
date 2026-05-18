@@ -14,4 +14,4 @@ cmds = [
 ]
 
 [start]
-cmd = "cd backend && gunicorn app:app"
+cmd = "cd backend && gunicorn app:app -w 2 -t 120 --keep-alive 5 --log-level info"
