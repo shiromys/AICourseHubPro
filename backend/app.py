@@ -26,12 +26,8 @@ load_dotenv()
 app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 
 # --- CORS CONFIGURATION ---
-# NOTE: Cannot use wildcard "*" with supports_credentials=True — browser blocks it.
-# Must explicitly list allowed frontend origins.
-CORS(app, resources={r"/api/*": {"origins": [
-    "https://aicoursehubpro.com",
-    "https://www.aicoursehubpro.com"
-]}}, supports_credentials=True)
+
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -51,6 +47,13 @@ if db_url and db_url.startswith("postgres://"):
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Prevent stale DB connections from hanging workers (causes 502 timeouts)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,      # Test connection health before use
+    'pool_recycle': 300,        # Recycle connections every 5 minutes
+    'pool_timeout': 10,         # Fail fast instead of hanging worker
+    'connect_args': {'connect_timeout': 10}
+}
 app.config['JWT_SECRET_KEY'] = os.getenv("JWT_SECRET_KEY", "fallback-secret-key")
 app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(days=7)
 
