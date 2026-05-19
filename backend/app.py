@@ -71,15 +71,15 @@ DOMAIN = os.getenv("FRONTEND_URL", "http://localhost:5173")
 # --- STRIPE PRICE IDs ---
 # Stable Price IDs per course for GTM conversion tracking.
 STRIPE_COURSE_PRICE_IDS = {
-    "AI for Human Resources / Talent / People Ops via Prompts": "price_1TYsHRQ7ztPlLtPWUCdHKF1d",
-    "Prompt-Based Tools for Education & Learning":              "price_1TYsHlQ7ztPlLtPWSq4boUTB",
-    "Prompting for Automation and Workflow Efficiency":         "price_1TYsI5Q7ztPlLtPWUT9nuanP",
-    "Prompt-Based Analytics and Reports for Business":          "price_1TYsIMQ7ztPlLtPWs9gRnJla",
-    "Prompt Engineering for Non-Profits and Social Impact":     "price_1TYsIdQ7ztPlLtPWMKtn4a9o",
-    "Prompt-Based AI for Local Government and Public Services": "price_1TYsIuQ7ztPlLtPWDVVkFlya",
+    "AI for Human Resources / Talent / People Ops via Prompts": "price_1TYrRQLs3W3AEhCNuV7RiObK",
+    "Prompt-Based Tools for Education & Learning":              "price_1TYrSfLs3W3AEhCN2a836gZE",
+    "Prompting for Automation and Workflow Efficiency":         "price_1TYrUdLs3W3AEhCNA5UvTrOX",
+    "Prompt-Based Analytics and Reports for Business":          "price_1TYrUuLs3W3AEhCNN8I0FmJu",
+    "Prompt Engineering for Non-Profits and Social Impact":     "price_1TYrV9Ls3W3AEhCNZip5Qp33",
+    "Prompt-Based AI for Local Government and Public Services": "price_1TYrVPLs3W3AEhCNwxVxOzmU",
 }
-# Stable Product ID for Pro Bundle (TEST MODE) - dynamic price preserves discount logic
-STRIPE_BUNDLE_PRODUCT_ID = "prod_UXyIyAi6cdVmiL"
+# Stable Product ID for Pro Bundle - dynamic price preserves discount logic
+STRIPE_BUNDLE_PRODUCT_ID = "prod_UXxT1JUivTu9Qt"
 
 # --- FILE PATHS ---
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
