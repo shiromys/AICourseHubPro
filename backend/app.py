@@ -627,7 +627,7 @@ def verify_payment():
         if session.payment_status == 'paid':
             
             # --- BUNDLE LOGIC ---
-            if is_bundle or session.metadata.get("is_bundle") == "true":
+            if is_bundle or (session.metadata["is_bundle"] if "is_bundle" in session.metadata else "") == "true":
                 all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
                 owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
                 
@@ -850,9 +850,9 @@ def stripe_webhook():
         # Stripe SDK v5+ returns StripeObject, not dict — use attribute access not .get()
         session_id = session['id']
         metadata = session['metadata']
-        user_id = metadata.get('user_id')
-        is_bundle = metadata.get('is_bundle') == 'true'
-        course_id = int(metadata.get('course_id')) if metadata.get('course_id') else None
+        user_id = metadata['user_id'] if 'user_id' in metadata else None
+        is_bundle = (metadata['is_bundle'] if 'is_bundle' in metadata else '') == 'true'
+        course_id = int(metadata['course_id']) if 'course_id' in metadata and metadata['course_id'] else None
         
         if not user_id:
             print("Webhook Error: No user_id in metadata", flush=True)
