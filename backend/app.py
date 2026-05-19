@@ -68,6 +68,19 @@ resend.api_key = os.getenv("RESEND_API_KEY")
 # --- DOMAIN ---
 DOMAIN = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+# --- STRIPE PRICE IDs ---
+# Stable Price IDs per course for GTM conversion tracking.
+STRIPE_COURSE_PRICE_IDS = {
+    "AI for Human Resources / Talent / People Ops via Prompts": "price_1TYrRQLs3W3AEhCNuV7RiObK",
+    "Prompt-Based Tools for Education & Learning":              "price_1TYrSfLs3W3AEhCN2a836gZE",
+    "Prompting for Automation and Workflow Efficiency":         "price_1TYrUdLs3W3AEhCNA5UvTrOX",
+    "Prompt-Based Analytics and Reports for Business":          "price_1TYrUuLs3W3AEhCNN8I0FmJu",
+    "Prompt Engineering for Non-Profits and Social Impact":     "price_1TYrV9Ls3W3AEhCNZip5Qp33",
+    "Prompt-Based AI for Local Government and Public Services": "price_1TYrVPLs3W3AEhCNwxVxOzmU",
+}
+# Stable Product ID for Pro Bundle - dynamic price preserves discount logic
+STRIPE_BUNDLE_PRODUCT_ID = "prod_UXxT1JUivTu9Qt"
+
 # --- FILE PATHS ---
 app.config['UPLOAD_FOLDER'] = os.path.join(os.getcwd(), 'uploads')
 app.config['COURSES_FOLDER'] = os.path.join(app.static_folder, 'courses')
@@ -525,12 +538,20 @@ def create_checkout_session():
         checkout_session = stripe.checkout.Session.create(
             payment_method_types=['card'],
             line_items=[{
-                'price_data': {
-                    'currency': 'usd',
-                    'product_data': {'name': course.title},
-                    'unit_amount': int(course.price * 100), 
-                },
-                'quantity': 1,
+                # Use stable Stripe Price ID if available for this course (enables GTM tracking).
+                # Falls back to dynamic price_data if course title not in the map.
+                **(
+                    {'price': STRIPE_COURSE_PRICE_IDS[course.title], 'quantity': 1}
+                    if course.title in STRIPE_COURSE_PRICE_IDS
+                    else {
+                        'price_data': {
+                            'currency': 'usd',
+                            'product_data': {'name': course.title},
+                            'unit_amount': int(course.price * 100),
+                        },
+                        'quantity': 1,
+                    }
+                ),
             }],
             mode='payment',
             success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}",
@@ -571,11 +592,10 @@ def create_bundle_checkout():
             line_items=[{
                 'price_data': {
                     'currency': 'usd',
-                    'product_data': {
-                        'name': 'AICourseHubPro All-Access Pass',
-                        'description': f'Unlocks all remaining courses. (Includes ${int(discount)} credit for past purchases)' if discount > 0 else 'Unlocks all current and future courses.'
-                    },
-                    'unit_amount': int(final_price * 100), 
+                    # Use stable Product ID so GTM can track bundle conversions.
+                    # Dynamic unit_amount preserves the per-user discount logic.
+                    'product': STRIPE_BUNDLE_PRODUCT_ID,
+                    'unit_amount': int(final_price * 100),
                 },
                 'quantity': 1,
             }],
