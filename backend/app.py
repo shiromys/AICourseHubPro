@@ -619,7 +619,7 @@ def verify_payment():
     user_id = get_jwt_identity()
     data = request.json
     session_id = data.get('session_id')
-    course_id = data.get('course_id') # Might be None if it's a bundle
+    course_id = int(data.get('course_id')) if data.get('course_id') else None  # Cast to int
     is_bundle = data.get('bundle') == 'true'
 
     try:
