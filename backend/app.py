@@ -847,11 +847,12 @@ def stripe_webhook():
         session = event['data']['object']
         
         # Extract the data we passed in the checkout session
-        session_id = session.get('id')
-        metadata = session.get('metadata', {})
+        # Stripe SDK v5+ returns StripeObject, not dict — use attribute access not .get()
+        session_id = session['id']
+        metadata = session['metadata']
         user_id = metadata.get('user_id')
         is_bundle = metadata.get('is_bundle') == 'true'
-        course_id = metadata.get('course_id')
+        course_id = int(metadata.get('course_id')) if metadata.get('course_id') else None
         
         if not user_id:
             print("Webhook Error: No user_id in metadata", flush=True)
