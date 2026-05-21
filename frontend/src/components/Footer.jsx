@@ -82,9 +82,24 @@ const Footer = () => {
           <p className="text-gray-600 text-xs">
             © {new Date().getFullYear()} AICourseHubPro. All rights reserved.
           </p>
-          <div className="flex items-center gap-2">
-             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-             <span className="text-xs text-gray-500 font-medium">System Operational</span>
+          <div className="flex items-center gap-6">
+            {/* Product Hunt Badge */}
+            <a
+              href="https://www.producthunt.com/products/aicoursehubpro?embed=true&utm_source=badge-featured&utm_medium=badge&utm_campaign=badge-aicoursehubpro"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                alt="AICourseHubPro - Master AI for Business — No Coding Needed | Product Hunt"
+                width="180"
+                height="39"
+                src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1152739&theme=dark&t=1779383838789"
+              />
+            </a>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-gray-500 font-medium">System Operational</span>
+            </div>
           </div>
         </div>
 

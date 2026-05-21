@@ -32,17 +32,17 @@ const articles = [
     slug: 'how-to-use-ai-in-your-daily-workflow-without-feeling-overwhelmed',
     featured: false,
   },
+  {
+    id: 3,
+    title: "We're Launching on Product Hunt — And Here's Why We Built AICourseHubPro",
+    excerpt: 'Today is a big day for us. AICourseHubPro is officially live on Product Hunt. Here is the story behind why we built it and what makes it different.',
+    category: 'Industry News',
+    readTime: '5 min read',
+    date: 'May 21, 2026',
+    slug: 'we-re-launching-on-product-hunt-and-here-s-why-we-built-aicoursehubpro',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
-  // {
-  //   id: 2,
-  //   title: 'Your Article Title',
-  //   excerpt: 'Your article excerpt...',
-  //   category: 'Beginner Guide',
-  //   readTime: '5 min read',
-  //   date: 'May 13, 2026',
-  //   slug: 'your-article-slug',
-  //   featured: false,
-  // },
 ];
 
 const CATEGORIES = ['All', 'Beginner Guide', 'AI in HR', 'Career Growth', 'How-To', 'Industry News'];
