@@ -554,7 +554,7 @@ def create_checkout_session():
                 ),
             }],
             mode='payment',
-            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}",
+            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={STRIPE_COURSE_PRICE_IDS.get(course.title, '')}",
             cancel_url=f"{DOMAIN}/courses",
             client_reference_id=str(user_id),
             metadata={"user_id": user_id, "course_id": course.id}
@@ -600,7 +600,7 @@ def create_bundle_checkout():
                 'quantity': 1,
             }],
             mode='payment',
-            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&bundle=true",
+            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&bundle=true&amount={final_price}&price_id={STRIPE_BUNDLE_PRODUCT_ID}",
             cancel_url=f"{DOMAIN}/pricing",
             client_reference_id=str(user_id),
             # NEW: Tag this as a bundle purchase!
