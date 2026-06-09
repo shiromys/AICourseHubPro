@@ -13,7 +13,9 @@ const PaymentSuccess = () => {
   // Extract data from URL (sent by Backend during Stripe redirect)
   const sessionId = searchParams.get('session_id');
   const courseId = searchParams.get('course_id');
-  const isBundle = searchParams.get('bundle') === 'true'; // NEW: Check for bundle flag
+  const isBundle = searchParams.get('bundle') === 'true';
+  const amount = parseFloat(searchParams.get('amount')) || 0;
+  const priceId = searchParams.get('price_id') || '';
 
   useEffect(() => {
     const verifyEnrollment = async () => {
@@ -43,6 +45,16 @@ const PaymentSuccess = () => {
 
         setStatus('success');
         localStorage.removeItem('pendingCourseId'); // Clean up after successful payment
+
+        // Fire GTM purchase conversion event
+        if (typeof window.gtag === 'function') {
+          window.gtag('event', 'conversion', {
+            'send_to': 'AW-983761479/e18BCI77nbgcEMeEjNUD',
+            'value': amount,
+            'currency': 'USD',
+            'transaction_id': sessionId,
+          });
+        }
         
         // Auto-redirect to dashboard after 3 seconds
         setTimeout(() => navigate('/dashboard'), 3000);
