@@ -42,6 +42,16 @@ const articles = [
     slug: 'we-re-launching-on-product-hunt-and-here-s-why-we-built-aicoursehubpro',
     featured: false,
   },
+  {
+    id: 4,
+    title: 'How AI Is Changing the Way Businesses Use Data (And What You Need to Know)',
+    excerpt: 'AI is making business analytics accessible to every professional — not just data teams. Here is what is changing and the skill you need to keep up.',
+    category: 'Career Growth',
+    readTime: '7 min read',
+    date: 'Jun 3, 2026',
+    slug: 'how-ai-is-changing-business-data-analytics',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
