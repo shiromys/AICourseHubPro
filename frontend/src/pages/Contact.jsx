@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
@@ -7,6 +6,7 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 
 const Contact = () => {
+  document.title = 'Contact Us | AICourseHubPro';
   const [formData, setFormData] = useState({ firstName: '', email: '', subject: 'General Inquiry', message: '' });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -31,9 +31,7 @@ const Contact = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <Helmet><title>Contact Us | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">      <Navbar />
 
       <div className="container mx-auto px-6 py-24">
         <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 bg-white rounded-2xl shadow-xl overflow-hidden">

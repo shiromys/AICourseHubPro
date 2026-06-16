@@ -7,6 +7,7 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 
 const Courses = () => {
+  document.title = 'Courses | AICourseHubPro';
   const [courses, setCourses] = useState([]);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState([]); // NEW: Store what the user owns
   const [loading, setLoading] = useState(true);
@@ -108,9 +109,7 @@ const Courses = () => {
 
   return (
     // --- LIGHT THEME BASE: White Background, Black Text ---
-    <div className="min-h-screen bg-white font-sans text-gray-900 flex flex-col">
-      <Helmet><title>Courses | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-white font-sans text-gray-900 flex flex-col">      <Navbar />
 
       {/* Padding Top to clear fixed navbar */}
       <div className="flex-1 container mx-auto px-6 pt-32 pb-12">

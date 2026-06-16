@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -7,6 +6,7 @@ import Navbar from '../components/Navbar';
 import API_BASE_URL from '../config';
 
 const Login = () => {
+  document.title = 'Sign In | AICourseHubPro';
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -69,9 +69,7 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">
-      <Helmet><title>Sign In | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">      <Navbar />
       
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-md bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl animate-fade-in">

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
@@ -11,6 +10,7 @@ import {
 } from 'lucide-react';
 
 const Dashboard = () => {
+  document.title = 'Dashboard | AICourseHubPro';
   const navigate = useNavigate();
   
   // --- STATE ---
@@ -162,9 +162,7 @@ const Dashboard = () => {
   const isFeaturedNeedsRetake = isFeaturedFinished && !isFeaturedCertified;
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <Helmet><title>Dashboard | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">      <Navbar />
 
       {loading ? (
         <div className="min-h-[80vh] flex flex-col items-center justify-center text-gray-400">

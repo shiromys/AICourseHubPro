@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
@@ -7,6 +6,7 @@ import { Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import API_BASE_URL from '../config';
 
 const Register = () => {
+  document.title = 'Create Account | AICourseHubPro';
   const navigate = useNavigate();
   const [formData, setFormData] = useState({ name: '', email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
@@ -46,9 +46,7 @@ const Register = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
-      <Helmet><title>Create Account | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-900">      <Navbar />
       <div className="container mx-auto px-6 py-24 flex justify-center">
         <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-100">
           <h2 className="text-2xl font-black mb-6 text-center">Create Account</h2>

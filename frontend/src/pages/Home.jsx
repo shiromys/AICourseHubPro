@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 const Home = () => {
+  document.title = 'AICourseHubPro | Master AI for Your Career';
   const navigate = useNavigate();
 
   // --- 1. NEW: AUTO-REDIRECT LOGIC ---
@@ -92,9 +92,7 @@ const Home = () => {
   }, [charIndex, isDeleting, textIndex]);
 
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
-      <Helmet><title>AICourseHubPro | Master AI for Your Career</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">      <Navbar />
 
       {/* ================= 1. HERO SECTION (GREY TO BLACK GRADIENT) ================= */}
       <div className="relative bg-gradient-to-b from-gray-800 to-black text-white pt-36 pb-24 overflow-hidden">

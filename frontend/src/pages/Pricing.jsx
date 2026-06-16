@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
@@ -8,6 +7,7 @@ import { Check, HelpCircle, Loader2, Zap } from 'lucide-react';
 import API_BASE_URL from '../config';
 
 const Pricing = () => {
+  document.title = 'Pricing | AICourseHubPro';
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [ownedCount, setOwnedCount] = useState(0);
@@ -79,9 +79,7 @@ const Pricing = () => {
   };
 
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-900">
-      <Helmet><title>Pricing | AICourseHubPro</title></Helmet>
-      <Navbar />
+    <div className="min-h-screen bg-white font-sans text-gray-900">      <Navbar />
 
       {/* --- HERO SECTION --- */}
       <div className="bg-black pt-40 pb-24 text-center relative overflow-hidden">

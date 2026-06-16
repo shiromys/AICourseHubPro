@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { Helmet } from 'react-helmet-async';
 import axios from 'axios';
 import { Mail, ArrowLeft, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import API_BASE_URL from '../config';
 
 const ForgotPassword = () => {
+  document.title = 'Forgot Password | AICourseHubPro';
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState('idle'); // idle, loading, success, error
 
@@ -21,9 +21,7 @@ const ForgotPassword = () => {
   };
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center px-4">
-      <Helmet><title>Forgot Password | AICourseHubPro</title></Helmet>
-      <div className="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
+    <div className="min-h-screen bg-black flex items-center justify-center px-4">      <div className="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
         <div className="text-center mb-8">
           <h2 className="text-3xl font-black text-white mb-2">Forgot Password?</h2>
           <p className="text-gray-400 text-sm">Enter your email and we'll send you a recovery link.</p>
