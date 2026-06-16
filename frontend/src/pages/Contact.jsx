@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
 import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
@@ -31,6 +32,7 @@ const Contact = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+      <Helmet><title>Contact Us | AICourseHubPro</title></Helmet>
       <Navbar />
 
       <div className="container mx-auto px-6 py-24">

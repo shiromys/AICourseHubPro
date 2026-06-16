@@ -109,6 +109,7 @@ const Courses = () => {
   return (
     // --- LIGHT THEME BASE: White Background, Black Text ---
     <div className="min-h-screen bg-white font-sans text-gray-900 flex flex-col">
+      <Helmet><title>Courses | AICourseHubPro</title></Helmet>
       <Navbar />
 
       {/* Padding Top to clear fixed navbar */}

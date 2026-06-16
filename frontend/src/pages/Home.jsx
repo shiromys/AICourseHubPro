@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
@@ -92,6 +93,7 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
+      <Helmet><title>AICourseHubPro | Master AI for Your Career</title></Helmet>
       <Navbar />
 
       {/* ================= 1. HERO SECTION (GREY TO BLACK GRADIENT) ================= */}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -69,6 +70,7 @@ const Login = () => {
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">
+      <Helmet><title>Sign In | AICourseHubPro</title></Helmet>
       <Navbar />
       
       <div className="flex-1 flex items-center justify-center p-6">

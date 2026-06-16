@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { CheckCircle, Loader2, AlertCircle } from 'lucide-react';
@@ -70,6 +71,7 @@ const PaymentSuccess = () => {
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">
+      <Helmet><title>Payment Successful | AICourseHubPro</title></Helmet>
       <Navbar />
       <div className="flex-1 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl text-center shadow-2xl">

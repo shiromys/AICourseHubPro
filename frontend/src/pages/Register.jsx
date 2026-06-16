@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
@@ -46,6 +47,7 @@ const Register = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
+      <Helmet><title>Create Account | AICourseHubPro</title></Helmet>
       <Navbar />
       <div className="container mx-auto px-6 py-24 flex justify-center">
         <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-lg border border-gray-100">

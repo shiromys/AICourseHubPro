@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
@@ -79,6 +80,7 @@ const Pricing = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900">
+      <Helmet><title>Pricing | AICourseHubPro</title></Helmet>
       <Navbar />
 
       {/* --- HERO SECTION --- */}

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Helmet } from 'react-helmet-async';
 import axios from 'axios';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Loader2, CheckCircle, Eye, EyeOff } from 'lucide-react'; // <--- Added Eye, EyeOff
@@ -51,6 +52,7 @@ const ResetPassword = () => {
 
   return (
     <div className="min-h-screen bg-black flex items-center justify-center px-4">
+      <Helmet><title>Reset Password | AICourseHubPro</title></Helmet>
       <div className="max-w-md w-full bg-gray-900 border border-gray-800 rounded-2xl p-8 shadow-2xl">
         <h2 className="text-2xl font-bold text-white text-center mb-6">Reset Password</h2>
 
