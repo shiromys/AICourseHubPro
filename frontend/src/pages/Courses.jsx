@@ -195,14 +195,14 @@ const Courses = () => {
                     
                     <h3 
                       className="text-2xl font-bold text-black mb-3 group-hover:text-red-600 transition-colors line-clamp-2 cursor-pointer"
-                      onClick={() => navigate(`/course/${course.id}`)}
+                      onClick={() => navigate(`/courses/${course.id}`)}
                     >
                       {course.title}
                     </h3>
                     
                     <p 
                       className="text-gray-600 text-sm leading-relaxed mb-6 line-clamp-3 cursor-pointer hover:text-gray-800"
-                      onClick={() => navigate(`/course/${course.id}`)}
+                      onClick={() => navigate(`/courses/${course.id}`)}
                     >
                       {course.description || "Master the skills needed to excel in this field with our comprehensive curriculum."}
                     </p>
