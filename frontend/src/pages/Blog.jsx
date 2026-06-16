@@ -52,6 +52,16 @@ const articles = [
     slug: 'how-ai-is-changing-business-data-analytics',
     featured: false,
   },
+  {
+    id: 5,
+    title: 'How Non-Profits and Social Impact Organisations Can Use AI to Do More With Less',
+    excerpt: 'AI tools are helping non-profits save hours on grant writing, donor communications, and reporting. Here is how social impact teams can put them to work.',
+    category: 'How-To',
+    readTime: '6 min read',
+    date: 'Jun 5, 2026',
+    slug: 'how-non-profits-can-use-ai-to-do-more-with-less',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
