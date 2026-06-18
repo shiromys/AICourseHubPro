@@ -25,7 +25,7 @@ const CookieConsent = () => {
     document.head.appendChild(gaScript);
     
     window.dataLayer = window.dataLayer || [];
-    function gtag(){window.dataLayer.push(arguments);}
+    window.gtag = function(){window.dataLayer.push(arguments);}
     gtag('js', new Date());
     gtag('config', 'G-K56PJHNGKM');
   };

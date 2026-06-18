@@ -55,6 +55,19 @@ const PaymentSuccess = () => {
             'currency': 'USD',
             'transaction_id': sessionId,
           });
+
+          // GA4 standard purchase event (ADD THIS)
+          window.gtag('event', 'purchase', {
+            transaction_id: sessionId,
+            value: amount,
+            currency: 'USD',
+            items: [{
+              item_id: courseId || 'bundle',
+              item_name: isBundle ? 'Full Bundle' : 'Course ' + courseId,
+              price: amount,
+              quantity: 1
+            }]
+          });
         }
         
         // Auto-redirect to dashboard after 3 seconds
