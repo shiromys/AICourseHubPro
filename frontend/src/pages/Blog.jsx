@@ -62,6 +62,16 @@ const articles = [
     slug: 'how-non-profits-can-use-ai-to-do-more-with-less',
     featured: false,
   },
+  {
+    id: 6,
+    title: 'How AI Is Helping Local Governments Do More With Limited Resources',
+    excerpt: 'AI tools are helping local governments save time on citizen communication, reporting, and grant writing — without compromising accountability.',
+    category: 'How-To',
+    readTime: '7 min read',
+    date: 'Jun 9, 2026',
+    slug: 'how-ai-helps-local-governments-public-services',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
