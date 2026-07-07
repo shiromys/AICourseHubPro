@@ -72,6 +72,16 @@ const articles = [
     slug: 'how-ai-helps-local-governments-public-services',
     featured: false,
   },
+  {
+    id: 7,
+    title: 'How AI Prompting Is Transforming Workflow Automation for Modern Professionals',
+    excerpt: 'AI prompting is making workflow automation accessible to every professional — no coding needed. Here are 5 high-impact workflows you can automate today.',
+    category: 'How-To',
+    readTime: '7 min read',
+    date: 'Jul 7, 2026',
+    slug: 'ai-prompting-workflow-automation-efficiency',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
