@@ -82,6 +82,16 @@ const articles = [
     slug: 'ai-prompting-workflow-automation-efficiency',
     featured: false,
   },
+  {
+    id: 8,
+    title: 'How HR Professionals Can Use AI to Transform Every Stage of the Employee Lifecycle',
+    excerpt: 'From recruitment to offboarding, AI tools are helping HR professionals save time and elevate their work at every stage of the employee lifecycle.',
+    category: 'AI in HR',
+    readTime: '8 min read',
+    date: 'Jul 14, 2026',
+    slug: 'how-hr-professionals-can-use-ai-employee-lifecycle',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
