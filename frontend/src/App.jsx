@@ -29,7 +29,8 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
-import ScrollToTop from './components/ScrollToTop';  
+import ScrollToTop from './components/ScrollToTop';
+import RouteTracker from './components/RouteTracker';  
 
 // --- 1. Protection Wrapper ---
 const ProtectedRoute = ({ children }) => {
@@ -83,9 +84,11 @@ function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
+      <RouteTracker />
       
       {/* --- GDPR Cookie Consent Banner --- */}
-      {/* This acts as the gatekeeper for all Meta and Google Analytics tracking */}
+      {/* Note: GA4 and Meta Pixel now load unconditionally from index.html,
+          so this banner no longer gates tracking scripts. */}
       <CookieConsent />
       
       <Routes>
