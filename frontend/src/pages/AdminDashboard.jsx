@@ -138,6 +138,9 @@ const AdminDashboard = () => {
     }
   }, [activeTab, navigate]);
 
+  // --- API CALLS ---
+  const fetchCourses = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
+
   const handleResetTestData = async () => {
     if (!resetDate) { alert("Please select a cutoff date first."); return; }
     if (!window.confirm(`This will permanently delete all enrollments and non-admin users created before ${resetDate}. This cannot be undone. Are you sure?`)) return;
