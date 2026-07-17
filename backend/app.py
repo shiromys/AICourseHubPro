@@ -384,10 +384,13 @@ def get_admin_stats():
 
     chart_data = []
     end_date = datetime.utcnow()
-    for i in range(6):
-        day = (end_date - timedelta(days=6-i)).strftime('%b %d')
-        chart_data.append({ "name": day, "revenue": 0 })
-    chart_data.append({ "name": end_date.strftime('%b %d'), "revenue": int(total_revenue) })
+    for i in range(6, -1, -1):
+        day = end_date - timedelta(days=i)
+        day_revenue = db.session.query(func.sum(Course.price))\
+            .join(Enrollment, Course.id == Enrollment.course_id)\
+            .filter(func.date(Enrollment.enrolled_at) == day.date())\
+            .scalar() or 0
+        chart_data.append({ "name": day.strftime('%b %d'), "revenue": float(day_revenue) })
 
     recent_msgs = ContactMessage.query.filter_by(is_read=False)\
         .order_by(ContactMessage.created_at.desc()).limit(5).all()
@@ -403,6 +406,132 @@ def get_admin_stats():
         "uptime": "99.9%",
         "chart_data": chart_data,       
         "recent_messages": messages_preview 
+    })
+
+@app.route('/api/admin/analytics', methods=['GET'])
+@jwt_required()
+def get_admin_analytics():
+    current_user_id = get_jwt_identity()
+    user = db.session.get(User, current_user_id)
+    if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+
+    # --- CONVERSION FUNNEL ---
+    total_registered = User.query.filter_by(is_admin=False, is_deleted=False).count()
+    enrolled_user_ids = db.session.query(Enrollment.user_id).distinct().all()
+    total_paid = len(enrolled_user_ids)
+    # Count users enrolled in all 6 courses (bundle equivalent)
+    total_courses = Course.query.filter_by(is_deleted=False).count()
+    bundle_buyers = db.session.query(Enrollment.user_id)\
+        .group_by(Enrollment.user_id)\
+        .having(func.count(Enrollment.course_id) >= total_courses).count()
+
+    conversion_rate = round((total_paid / total_registered * 100), 1) if total_registered > 0 else 0
+    bundle_rate = round((bundle_buyers / total_paid * 100), 1) if total_paid > 0 else 0
+
+    funnel = [
+        { "stage": "Registered", "count": total_registered, "pct": 100 },
+        { "stage": "Purchased", "count": total_paid, "pct": round(total_paid / total_registered * 100, 1) if total_registered > 0 else 0 },
+        { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": round(bundle_buyers / total_registered * 100, 1) if total_registered > 0 else 0 },
+    ]
+
+    # --- USER GROWTH (last 30 days) ---
+    growth = []
+    for i in range(29, -1, -1):
+        day = datetime.utcnow() - timedelta(days=i)
+        count = User.query.filter(
+            User.is_admin == False,
+            User.is_deleted == False,
+            func.date(User.created_at) == day.date()
+        ).count()
+        growth.append({ "date": day.strftime('%b %d'), "users": count })
+
+    # --- REVENUE CHART (last 30 days, real data) ---
+    revenue_chart = []
+    for i in range(29, -1, -1):
+        day = datetime.utcnow() - timedelta(days=i)
+        day_revenue = db.session.query(func.sum(Course.price))\
+            .join(Enrollment, Course.id == Enrollment.course_id)\
+            .filter(func.date(Enrollment.enrolled_at) == day.date())\
+            .scalar() or 0
+        revenue_chart.append({ "date": day.strftime('%b %d'), "revenue": float(day_revenue) })
+
+    # --- COURSE PERFORMANCE ---
+    courses = Course.query.filter_by(is_deleted=False).all()
+    course_performance = []
+    for c in courses:
+        enrollments = Enrollment.query.filter_by(course_id=c.id).all()
+        total_enr = len(enrollments)
+        completed = len([e for e in enrollments if e.status == 'completed'])
+        completion_rate = round(completed / total_enr * 100, 1) if total_enr > 0 else 0
+        revenue = total_enr * c.price
+        course_performance.append({
+            "title": c.title,
+            "enrolled": total_enr,
+            "completed": completed,
+            "completion_rate": completion_rate,
+            "revenue": revenue
+        })
+    course_performance.sort(key=lambda x: x['enrolled'], reverse=True)
+
+    # --- KEY METRICS ---
+    never_purchased = total_registered - total_paid
+    purchased_never_started = db.session.query(Enrollment.user_id).filter(Enrollment.progress == 0).distinct().count()
+    started_never_completed = db.session.query(Enrollment.user_id).filter(
+        Enrollment.progress > 0, Enrollment.status != 'completed'
+    ).distinct().count()
+
+    total_revenue = db.session.query(func.sum(Course.price))\
+        .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0
+
+    return jsonify({
+        "funnel": funnel,
+        "conversion_rate": conversion_rate,
+        "bundle_rate": bundle_rate,
+        "growth": growth,
+        "revenue_chart": revenue_chart,
+        "course_performance": course_performance,
+        "key_metrics": {
+            "never_purchased": never_purchased,
+            "purchased_never_started": purchased_never_started,
+            "started_never_completed": started_never_completed,
+            "total_revenue": float(total_revenue),
+            "avg_revenue_per_user": round(float(total_revenue) / total_paid, 2) if total_paid > 0 else 0
+        }
+    })
+
+@app.route('/api/admin/reset-test-data', methods=['DELETE'])
+@jwt_required()
+def reset_test_data():
+    """Delete all enrollments and non-admin users created before a given cutoff date."""
+    current_user_id = get_jwt_identity()
+    admin = db.session.get(User, current_user_id)
+    if not admin or not admin.is_admin: return jsonify({"msg": "Admin only"}), 403
+
+    cutoff_str = request.json.get('cutoff_date')
+    if not cutoff_str:
+        return jsonify({"msg": "cutoff_date required"}), 400
+
+    try:
+        cutoff = datetime.strptime(cutoff_str, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({"msg": "Invalid date format. Use YYYY-MM-DD"}), 400
+
+    # Delete enrollments created before cutoff
+    deleted_enrollments = Enrollment.query.filter(Enrollment.enrolled_at < cutoff).delete()
+    # Delete non-admin users created before cutoff
+    deleted_users = User.query.filter(
+        User.created_at < cutoff,
+        User.is_admin == False,
+        User.id != int(current_user_id)
+    ).delete()
+
+    db.session.commit()
+    log_action(admin.email, "RESET_TEST_DATA", f"Deleted {deleted_enrollments} enrollments and {deleted_users} users before {cutoff_str}")
+
+    return jsonify({
+        "msg": "Test data cleared",
+        "deleted_enrollments": deleted_enrollments,
+        "deleted_users": deleted_users
     })
 
 @app.route('/api/users/<int:user_id>/role', methods=['PUT'])

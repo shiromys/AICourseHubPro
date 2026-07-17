@@ -10,7 +10,8 @@ import {
   LayoutDashboard, BookOpen, DollarSign, Users, Mail, Activity, Plus, 
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
-  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson
+  CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson,
+  TrendingUp, TrendingDown, AlertCircle
 } from 'lucide-react';
 
 // --- MOCK DATA ---
@@ -51,6 +52,9 @@ const AdminDashboard = () => {
   const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
+  const [analytics, setAnalytics] = useState(null);
+  const [resetDate, setResetDate] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // --- UI STATES ---
@@ -121,6 +125,10 @@ const AdminDashboard = () => {
               const r = await axios.get(`${API_BASE_URL}/api/settings`); 
               setSettings(r.data); 
             }
+            else if (activeTab === 'analytics') {
+              const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
+              setAnalytics(r.data);
+            }
         } catch(e) { console.error("Fetch Error:", e); }
         setLoading(false);
       };
@@ -130,8 +138,22 @@ const AdminDashboard = () => {
     }
   }, [activeTab, navigate]);
 
-  // --- API CALLS ---
-  const fetchCourses = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
+  const handleResetTestData = async () => {
+    if (!resetDate) { alert("Please select a cutoff date first."); return; }
+    if (!window.confirm(`This will permanently delete all enrollments and non-admin users created before ${resetDate}. This cannot be undone. Are you sure?`)) return;
+    try {
+      setResetLoading(true);
+      const t = localStorage.getItem('token');
+      const r = await axios.delete(`${API_BASE_URL}/api/admin/reset-test-data`, {
+        headers: { Authorization: `Bearer ${t}` },
+        data: { cutoff_date: resetDate }
+      });
+      alert(`Done! Deleted ${r.data.deleted_enrollments} test enrollments and ${r.data.deleted_users} test users.`);
+      const s = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${t}` } });
+      setAnalytics(s.data);
+    } catch(e) { console.error("Reset failed:", e); alert("Failed to reset test data. Please try again."); }
+    finally { setResetLoading(false); }
+  };
 
   // --- HANDLERS ---
   const toggleSetting = async (key) => {
@@ -305,6 +327,7 @@ const AdminDashboard = () => {
           <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
           <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="analytics" icon={TrendingUp} label="Analytics" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">System</p>
           <SidebarItem id="support" icon={Mail} label="Support Inbox" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="audit" icon={FileText} label="Audit Logs" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -509,6 +532,148 @@ const AdminDashboard = () => {
                     </div>
                 </div>
             </div>
+        )}
+
+        {/* --- ANALYTICS TAB --- */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            {!analytics ? (
+              <div className="text-center py-20 text-gray-400">Loading analytics...</div>
+            ) : (
+              <>
+                {/* Key Metrics Row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Total Revenue</p>
+                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.total_revenue.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Conversion Rate</p>
+                    <p className="text-2xl font-black text-green-600">{analytics.conversion_rate}%</p>
+                    <p className="text-xs text-gray-400 mt-1">Registered → Paid</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Avg Revenue / User</p>
+                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.avg_revenue_per_user}</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Bundle Rate</p>
+                    <p className="text-2xl font-black text-purple-600">{analytics.bundle_rate}%</p>
+                    <p className="text-xs text-gray-400 mt-1">Of paid users</p>
+                  </div>
+                </div>
+
+                {/* Funnel + Action Items */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><TrendingUp size={18} className="text-red-600"/> Conversion Funnel</h3>
+                    <div className="space-y-3">
+                      {analytics.funnel.map((f, i) => (
+                        <div key={i}>
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="font-medium text-gray-700">{f.stage}</span>
+                            <span className="font-bold text-gray-900">{f.count} <span className="text-gray-400 font-normal">({f.pct}%)</span></span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-2.5">
+                            <div className="bg-red-600 h-2.5 rounded-full transition-all" style={{ width: `${f.pct}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2"><AlertCircle size={18} className="text-orange-500"/> Action Items</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-orange-50 border border-orange-100 rounded-lg">
+                        <div><p className="font-bold text-orange-800 text-sm">Registered, Never Purchased</p><p className="text-xs text-orange-600">Target with email campaign</p></div>
+                        <span className="text-2xl font-black text-orange-600">{analytics.key_metrics.never_purchased}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-100 rounded-lg">
+                        <div><p className="font-bold text-blue-800 text-sm">Purchased, Never Started</p><p className="text-xs text-blue-600">Send onboarding nudge</p></div>
+                        <span className="text-2xl font-black text-blue-600">{analytics.key_metrics.purchased_never_started}</span>
+                      </div>
+                      <div className="flex items-center justify-between p-3 bg-yellow-50 border border-yellow-100 rounded-lg">
+                        <div><p className="font-bold text-yellow-800 text-sm">Started, Never Completed</p><p className="text-xs text-yellow-600">At risk of churn</p></div>
+                        <span className="text-2xl font-black text-yellow-600">{analytics.key_metrics.started_never_completed}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Revenue Chart 30 days */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                  <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 30 Days</h3>
+                  <div className="h-64 min-w-[600px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={analytics.revenue_chart}>
+                        <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/><stop offset="95%" stopColor="#dc2626" stopOpacity={0}/></linearGradient></defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
+                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
+                        <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={v => `$${v}`}/>
+                        <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`$${v}`, 'Revenue']}/>
+                        <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={2} fillOpacity={1} fill="url(#revGrad)"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* User Growth Chart */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                  <h3 className="font-bold text-gray-900 mb-4">User Registrations — Last 30 Days</h3>
+                  <div className="h-64 min-w-[600px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={analytics.growth}>
+                        <defs><linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
+                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
+                        <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false}/>
+                        <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [v, 'New Users']}/>
+                        <Area type="monotone" dataKey="users" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#growthGrad)"/>
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                {/* Course Performance Table */}
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="p-6 border-b border-gray-100"><h3 className="font-bold text-gray-900">Course Performance</h3></div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left min-w-[700px]">
+                      <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold tracking-wider">
+                        <tr><th className="px-6 py-3">Course</th><th className="px-6 py-3">Enrolled</th><th className="px-6 py-3">Completed</th><th className="px-6 py-3">Completion Rate</th><th className="px-6 py-3">Revenue</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 text-sm">
+                        {analytics.course_performance.map((c, i) => (
+                          <tr key={i} className="hover:bg-gray-50 transition">
+                            <td className="px-6 py-4 font-medium text-gray-900">{c.title}</td>
+                            <td className="px-6 py-4 text-gray-700">{c.enrolled}</td>
+                            <td className="px-6 py-4 text-gray-700">{c.completed}</td>
+                            <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-24 bg-gray-100 rounded-full h-2"><div className="bg-green-500 h-2 rounded-full" style={{ width: `${c.completion_rate}%` }}></div></div><span className="text-xs font-bold text-gray-600">{c.completion_rate}%</span></div></td>
+                            <td className="px-6 py-4 font-bold text-green-600">${c.revenue.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Reset Test Data */}
+                <div className="bg-white p-6 rounded-xl border border-red-100 shadow-sm">
+                  <h3 className="font-bold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Clear Test Data</h3>
+                  <p className="text-sm text-gray-500 mb-4">Remove test enrollments and users created before your official launch date. This is permanent and cannot be undone.</p>
+                  <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block">Cutoff Date (delete data before this date)</label>
+                      <input type="date" value={resetDate} onChange={e => setResetDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500"/>
+                    </div>
+                    <button onClick={handleResetTestData} disabled={resetLoading || !resetDate} className="mt-4 sm:mt-5 px-5 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
+                      {resetLoading ? 'Clearing...' : 'Clear Test Data'}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
       </div>
