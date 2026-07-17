@@ -14,7 +14,8 @@ import resend
 import os
 import uuid
 import stripe
-import sys
+import time
+import psutil
 
 # Load environment variables
 load_dotenv() 
@@ -102,6 +103,58 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 @app.route('/api/health')
 def health():
     return jsonify({"status": "awake"}), 200
+
+@app.route('/api/admin/system-health', methods=['GET'])
+@jwt_required()
+def get_system_health():
+    current_user_id = get_jwt_identity()
+    user = db.session.get(User, current_user_id)
+    if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+
+    # Database check + response time
+    db_start = time.time()
+    db_ok = False
+    try:
+        db.session.execute(db.text('SELECT 1'))
+        db_ok = True
+    except Exception:
+        db_ok = False
+    db_ms = round((time.time() - db_start) * 1000, 1)
+
+    # API response time (self-measured from this request start)
+    api_ms = round((time.time() - db_start) * 1000 + db_ms, 1)
+
+    # System metrics
+    try:
+        cpu = psutil.cpu_percent(interval=0.1)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        memory_pct = mem.percent
+        disk_pct = disk.percent
+    except Exception:
+        cpu = 0
+        memory_pct = 0
+        disk_pct = 0
+
+    # Total users and enrollments
+    total_users = User.query.filter_by(is_deleted=False).count()
+    total_enrollments = Enrollment.query.count()
+
+    # Stripe check - just verify key is set
+    stripe_ok = bool(os.getenv('STRIPE_SECRET_KEY'))
+
+    return jsonify({
+        "db_connected": db_ok,
+        "db_response_ms": db_ms,
+        "api_response_ms": api_ms,
+        "cpu_percent": cpu,
+        "memory_percent": memory_pct,
+        "disk_percent": disk_pct,
+        "stripe_active": stripe_ok,
+        "total_users": total_users,
+        "total_enrollments": total_enrollments,
+        "timestamp": datetime.utcnow().isoformat()
+    })
     try:
         pat = os.getenv('HASHNODE_PAT', '').strip()
         response = http_requests.post(

@@ -17,3 +17,4 @@ python-docx
 # Data libraries (Unpinned to allow server to pick compatible versions)
 pandas
 numpy
+psutil

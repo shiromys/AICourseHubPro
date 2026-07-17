@@ -55,6 +55,7 @@ const AdminDashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const [resetDate, setResetDate] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
+  const [systemHealth, setSystemHealth] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // --- UI STATES ---
@@ -129,6 +130,10 @@ const AdminDashboard = () => {
               const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
               setAnalytics(r.data);
             }
+            else if (activeTab === 'system') {
+              const r = await axios.get(`${API_BASE_URL}/api/admin/system-health`, { headers: { Authorization: `Bearer ${token}` } });
+              setSystemHealth(r.data);
+            }
         } catch(e) { console.error("Fetch Error:", e); }
         setLoading(false);
       };
@@ -137,6 +142,27 @@ const AdminDashboard = () => {
         navigate('/login');
     }
   }, [activeTab, navigate]);
+
+  // Auto-refresh system health every 10 seconds when on system tab
+  const [serverLoadHistory, setServerLoadHistory] = useState(
+    [...Array(20)].map((_, i) => ({ time: i, load: 0 }))
+  );
+  useEffect(() => {
+    if (activeTab !== 'system') return;
+    const token = localStorage.getItem('token');
+    const refresh = async () => {
+      try {
+        const r = await axios.get(`${API_BASE_URL}/api/admin/system-health`, { headers: { Authorization: `Bearer ${token}` } });
+        setSystemHealth(r.data);
+        setServerLoadHistory(prev => {
+          const next = [...prev.slice(1), { time: Date.now(), load: r.data.cpu_percent }];
+          return next;
+        });
+      } catch(e) { console.error("Health refresh error:", e); }
+    };
+    const interval = setInterval(refresh, 10000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
 
   // --- API CALLS ---
   const fetchCourses = async (t) => { const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } }); setCourses(r.data); };
@@ -291,9 +317,6 @@ const AdminDashboard = () => {
   };
 
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
-  
-  // REAL-TIME CHART DATA GENERATOR
-  const systemLoadData = [...Array(20)].map((_, i) => ({ time: i, load: 20 + Math.random() * 30 }));
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-sans text-gray-900 relative">
@@ -487,32 +510,87 @@ const AdminDashboard = () => {
         {/* SYSTEM HEALTH TAB (Restored) */}
         {activeTab === 'system' && (
             <div className="space-y-6">
+                {!systemHealth ? (
+                  <div className="text-center py-20 text-gray-400">Loading system health...</div>
+                ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                        <h3 className="font-bold mb-6 flex items-center gap-2 text-red-600"><Activity size={20} /> Live System Status</h3>
+                        <h3 className="font-bold mb-6 flex items-center gap-2 text-red-600"><Activity size={20} /> Live System Status <span className="ml-auto text-xs text-gray-400 font-normal">Auto-refreshes every 10s</span></h3>
                         <div className="space-y-4">
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Database Connection</span><span className="text-green-700 flex items-center gap-2 text-sm font-bold bg-green-100 px-3 py-1 rounded-full border border-green-200"><CheckCircle size={14}/> Connected</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">API Response Time</span><span className="text-green-700 text-sm font-bold font-mono">24ms</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Stripe Webhooks</span><span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Listening</span></div>
-                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200"><span className="text-gray-700 font-medium">Storage Usage</span><div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden"><div className="h-full bg-blue-500 w-[45%]"></div></div></div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">Database Connection</span>
+                                {systemHealth.db_connected
+                                  ? <span className="text-green-700 flex items-center gap-2 text-sm font-bold bg-green-100 px-3 py-1 rounded-full border border-green-200"><CheckCircle size={14}/> Connected</span>
+                                  : <span className="text-red-700 flex items-center gap-2 text-sm font-bold bg-red-100 px-3 py-1 rounded-full border border-red-200">Disconnected</span>
+                                }
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">DB Response Time</span>
+                                <span className={`text-sm font-bold font-mono ${systemHealth.db_response_ms < 50 ? 'text-green-600' : systemHealth.db_response_ms < 200 ? 'text-yellow-600' : 'text-red-600'}`}>{systemHealth.db_response_ms}ms</span>
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">Stripe Integration</span>
+                                {systemHealth.stripe_active
+                                  ? <span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Active</span>
+                                  : <span className="text-red-600 text-sm font-bold">Key Missing</span>
+                                }
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">CPU Usage</span>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.cpu_percent > 80 ? 'bg-red-500' : systemHealth.cpu_percent > 50 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${systemHealth.cpu_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.cpu_percent}%</span>
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">Memory Usage</span>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.memory_percent > 80 ? 'bg-red-500' : systemHealth.memory_percent > 60 ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.memory_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.memory_percent}%</span>
+                                </div>
+                            </div>
+                            <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                <span className="text-gray-700 font-medium">Disk Usage</span>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.disk_percent > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.disk_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.disk_percent}%</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                        <h3 className="font-bold mb-4 text-gray-900">Server Load (Real-time)</h3>
-                        <div className="h-64 flex-1">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <LineChart data={systemLoadData}>
-                                    <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={3} dot={false} isAnimationActive={true} />
-                                    <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-                                    <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
-                                    <XAxis hide />
-                                    <YAxis hide domain={[0, 100]}/>
-                                </LineChart>
-                            </ResponsiveContainer>
+                    <div className="space-y-6">
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
+                            <h3 className="font-bold mb-4 text-gray-900">CPU Load (Real-time)</h3>
+                            <div className="h-48 flex-1">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={serverLoadHistory}>
+                                        <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={2} dot={false} isAnimationActive={false} />
+                                        <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
+                                        <YAxis hide domain={[0, 100]}/>
+                                        <XAxis hide />
+                                        <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`${v}%`, 'CPU']}/>
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="mt-2 flex justify-between text-xs text-gray-400 font-mono"><span>2 min ago</span><span>Now</span></div>
                         </div>
-                        <div className="mt-4 flex justify-between text-xs text-gray-500 font-mono"><span>00:00</span><span>Now</span></div>
+                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                            <h3 className="font-bold mb-4 text-gray-900">Quick Stats</h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
+                                    <p className="text-2xl font-black text-gray-900">{systemHealth.total_users}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Total Users</p>
+                                </div>
+                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
+                                    <p className="text-2xl font-black text-gray-900">{systemHealth.total_enrollments}</p>
+                                    <p className="text-xs text-gray-500 mt-1">Total Enrollments</p>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-4 text-right font-mono">Last updated: {new Date(systemHealth.timestamp).toLocaleTimeString()}</p>
+                        </div>
                     </div>
                 </div>
+                )}
             </div>
         )}
 
@@ -528,10 +606,6 @@ const AdminDashboard = () => {
                     <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
                         <div><h4 className="font-bold text-gray-900 text-lg">Allow New Registrations</h4><p className="text-sm text-gray-500 mt-1">Toggle to pause new user signups temporarily.</p></div>
                         <button onClick={() => toggleSetting('registrations')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.registrations ? 'bg-green-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.registrations ? 'translate-x-6' : 'translate-x-0'}`} /></button>
-                    </div>
-                    <div className="p-6 bg-red-50 rounded-xl border border-red-100 mt-8">
-                        <h4 className="font-bold text-red-600 mb-2 flex items-center gap-2"><AlertTriangle size={18}/> Danger Zone</h4>
-                        <div className="flex gap-4"><button className="px-4 py-2 border border-red-200 text-red-600 rounded hover:bg-red-100 text-sm font-bold bg-white">Clear Cache</button><button className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-bold">Reset Database</button></div>
                     </div>
                 </div>
             </div>
