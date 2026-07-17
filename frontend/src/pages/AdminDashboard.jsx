@@ -143,7 +143,18 @@ const AdminDashboard = () => {
     }
   }, [activeTab, navigate]);
 
-  // Auto-refresh system health every 10 seconds when on system tab
+  // Seed the chart when systemHealth first loads
+  useEffect(() => {
+    if (systemHealth && systemHealth.cpu_percent !== undefined) {
+      setServerLoadHistory(prev => {
+        // Only seed if all zeros (first load)
+        if (prev.every(p => p.load === 0)) {
+          return prev.map((p, i) => ({ ...p, load: i === 19 ? systemHealth.cpu_percent : 0 }));
+        }
+        return prev;
+      });
+    }
+  }, [systemHealth]);
   const [serverLoadHistory, setServerLoadHistory] = useState(
     [...Array(20)].map((_, i) => ({ time: i, load: 0 }))
   );
@@ -513,7 +524,9 @@ const AdminDashboard = () => {
                 {!systemHealth ? (
                   <div className="text-center py-20 text-gray-400">Loading system health...</div>
                 ) : (
+                <>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Live Status */}
                     <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
                         <h3 className="font-bold mb-6 flex items-center gap-2 text-red-600"><Activity size={20} /> Live System Status <span className="ml-auto text-xs text-gray-400 font-normal">Auto-refreshes every 10s</span></h3>
                         <div className="space-y-4">
@@ -538,58 +551,87 @@ const AdminDashboard = () => {
                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <span className="text-gray-700 font-medium">CPU Usage</span>
                                 <div className="flex items-center gap-3">
-                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.cpu_percent > 80 ? 'bg-red-500' : systemHealth.cpu_percent > 50 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${systemHealth.cpu_percent}%` }}></div></div>
-                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.cpu_percent}%</span>
+                                    <div className="w-32 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full transition-all ${systemHealth.cpu_percent > 80 ? 'bg-red-500' : systemHealth.cpu_percent > 50 ? 'bg-yellow-500' : 'bg-green-500'}`} style={{ width: `${systemHealth.cpu_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700 w-12 text-right">{systemHealth.cpu_percent}%</span>
                                 </div>
                             </div>
                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <span className="text-gray-700 font-medium">Memory Usage</span>
                                 <div className="flex items-center gap-3">
-                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.memory_percent > 80 ? 'bg-red-500' : systemHealth.memory_percent > 60 ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.memory_percent}%` }}></div></div>
-                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.memory_percent}%</span>
+                                    <div className="w-32 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full transition-all ${systemHealth.memory_percent > 80 ? 'bg-red-500' : systemHealth.memory_percent > 60 ? 'bg-yellow-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.memory_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700 w-12 text-right">{systemHealth.memory_percent}%</span>
                                 </div>
                             </div>
                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <span className="text-gray-700 font-medium">Disk Usage</span>
                                 <div className="flex items-center gap-3">
-                                    <div className="w-24 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full ${systemHealth.disk_percent > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.disk_percent}%` }}></div></div>
-                                    <span className="text-sm font-bold font-mono text-gray-700">{systemHealth.disk_percent}%</span>
+                                    <div className="w-32 bg-gray-200 rounded-full h-2"><div className={`h-2 rounded-full transition-all ${systemHealth.disk_percent > 80 ? 'bg-red-500' : 'bg-blue-500'}`} style={{ width: `${systemHealth.disk_percent}%` }}></div></div>
+                                    <span className="text-sm font-bold font-mono text-gray-700 w-12 text-right">{systemHealth.disk_percent}%</span>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    <div className="space-y-6">
-                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col">
-                            <h3 className="font-bold mb-4 text-gray-900">CPU Load (Real-time)</h3>
-                            <div className="h-48 flex-1">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={serverLoadHistory}>
-                                        <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={2} dot={false} isAnimationActive={false} />
-                                        <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-                                        <YAxis hide domain={[0, 100]}/>
-                                        <XAxis hide />
-                                        <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`${v}%`, 'CPU']}/>
-                                    </LineChart>
-                                </ResponsiveContainer>
+
+                    {/* Quick Stats */}
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <h3 className="font-bold mb-6 text-gray-900">Quick Stats</h3>
+                        <div className="grid grid-cols-2 gap-4 mb-6">
+                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 text-center">
+                                <p className="text-4xl font-black text-gray-900">{systemHealth.total_users}</p>
+                                <p className="text-sm text-gray-500 mt-2">Total Users</p>
                             </div>
-                            <div className="mt-2 flex justify-between text-xs text-gray-400 font-mono"><span>2 min ago</span><span>Now</span></div>
-                        </div>
-                        <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                            <h3 className="font-bold mb-4 text-gray-900">Quick Stats</h3>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
-                                    <p className="text-2xl font-black text-gray-900">{systemHealth.total_users}</p>
-                                    <p className="text-xs text-gray-500 mt-1">Total Users</p>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-center">
-                                    <p className="text-2xl font-black text-gray-900">{systemHealth.total_enrollments}</p>
-                                    <p className="text-xs text-gray-500 mt-1">Total Enrollments</p>
-                                </div>
+                            <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 text-center">
+                                <p className="text-4xl font-black text-gray-900">{systemHealth.total_enrollments}</p>
+                                <p className="text-sm text-gray-500 mt-2">Total Enrollments</p>
                             </div>
-                            <p className="text-xs text-gray-400 mt-4 text-right font-mono">Last updated: {new Date(systemHealth.timestamp).toLocaleTimeString()}</p>
                         </div>
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="bg-green-50 border border-green-100 p-4 rounded-lg text-center">
+                                <p className="text-xl font-black text-green-600">{systemHealth.cpu_percent}%</p>
+                                <p className="text-xs text-green-700 mt-1">CPU</p>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg text-center">
+                                <p className="text-xl font-black text-blue-600">{systemHealth.memory_percent}%</p>
+                                <p className="text-xs text-blue-700 mt-1">Memory</p>
+                            </div>
+                            <div className="bg-purple-50 border border-purple-100 p-4 rounded-lg text-center">
+                                <p className="text-xl font-black text-purple-600">{systemHealth.disk_percent}%</p>
+                                <p className="text-xs text-purple-700 mt-1">Disk</p>
+                            </div>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-4 text-right font-mono">Last updated: {new Date(systemHealth.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
                     </div>
                 </div>
+
+                {/* Full-width CPU chart */}
+                <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="font-bold text-gray-900">CPU Load — Real-time</h3>
+                        <span className="text-xs text-gray-400 font-mono">Updates every 10s</span>
+                    </div>
+                    <div style={{ height: '280px' }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={serverLoadHistory}>
+                                <defs>
+                                    <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor="#dc2626" stopOpacity={0.2}/>
+                                        <stop offset="95%" stopColor="#dc2626" stopOpacity={0}/>
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false}/>
+                                <XAxis hide/>
+                                <YAxis domain={[0, 100]} stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={v => `${v}%`}/>
+                                <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`${v}%`, 'CPU Load']}/>
+                                <Line type="monotone" dataKey="load" stroke="#dc2626" strokeWidth={3} dot={false} isAnimationActive={false}/>
+                            </LineChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400 font-mono mt-2">
+                        <span>2 min ago</span>
+                        <span>Now</span>
+                    </div>
+                </div>
+                </>
                 )}
             </div>
         )}
@@ -838,4 +880,3 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
-
