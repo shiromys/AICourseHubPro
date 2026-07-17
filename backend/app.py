@@ -570,21 +570,30 @@ def reset_test_data():
         return jsonify({"msg": "Invalid date format. Use YYYY-MM-DD"}), 400
 
     try:
-        # Delete enrollments first (before users, to avoid FK constraint violations)
-        deleted_enrollments = Enrollment.query.filter(
-            Enrollment.enrolled_at < cutoff
-        ).delete(synchronize_session=False)
-
-        # Get user IDs to delete first, then delete them
+        # Step 1: Find users to delete
         users_to_delete = User.query.filter(
             User.created_at < cutoff,
             User.is_admin == False,
             User.id != int(current_user_id)
         ).all()
+        user_ids = [u.id for u in users_to_delete]
+
+        # Step 2: Delete ALL enrollments before cutoff date
+        deleted_enrollments = Enrollment.query.filter(
+            Enrollment.enrolled_at < cutoff
+        ).delete(synchronize_session='fetch')
+
+        # Step 3: Delete any remaining enrollments for those users
+        if user_ids:
+            Enrollment.query.filter(
+                Enrollment.user_id.in_(user_ids)
+            ).delete(synchronize_session='fetch')
+
+        db.session.flush()
+
+        # Step 4: Now safe to delete users
         deleted_users = len(users_to_delete)
         for u in users_to_delete:
-            # Delete any remaining enrollments for this user
-            Enrollment.query.filter_by(user_id=u.id).delete(synchronize_session=False)
             db.session.delete(u)
 
         db.session.commit()
@@ -597,8 +606,8 @@ def reset_test_data():
         })
     except Exception as e:
         db.session.rollback()
-        print(f"Reset test data error: {e}")
-        return jsonify({"msg": f"Failed to clear data: {str(e)}"}), 500
+        print(f"[RESET ERROR] {str(e)}")
+        return jsonify({"msg": f"Failed: {str(e)}"}), 500
 
 @app.route('/api/users/<int:user_id>/role', methods=['PUT'])
 @jwt_required()
