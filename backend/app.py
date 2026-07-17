@@ -569,23 +569,36 @@ def reset_test_data():
     except ValueError:
         return jsonify({"msg": "Invalid date format. Use YYYY-MM-DD"}), 400
 
-    # Delete enrollments created before cutoff
-    deleted_enrollments = Enrollment.query.filter(Enrollment.enrolled_at < cutoff).delete()
-    # Delete non-admin users created before cutoff
-    deleted_users = User.query.filter(
-        User.created_at < cutoff,
-        User.is_admin == False,
-        User.id != int(current_user_id)
-    ).delete()
+    try:
+        # Delete enrollments first (before users, to avoid FK constraint violations)
+        deleted_enrollments = Enrollment.query.filter(
+            Enrollment.enrolled_at < cutoff
+        ).delete(synchronize_session=False)
 
-    db.session.commit()
-    log_action(admin.email, "RESET_TEST_DATA", f"Deleted {deleted_enrollments} enrollments and {deleted_users} users before {cutoff_str}")
+        # Get user IDs to delete first, then delete them
+        users_to_delete = User.query.filter(
+            User.created_at < cutoff,
+            User.is_admin == False,
+            User.id != int(current_user_id)
+        ).all()
+        deleted_users = len(users_to_delete)
+        for u in users_to_delete:
+            # Delete any remaining enrollments for this user
+            Enrollment.query.filter_by(user_id=u.id).delete(synchronize_session=False)
+            db.session.delete(u)
 
-    return jsonify({
-        "msg": "Test data cleared",
-        "deleted_enrollments": deleted_enrollments,
-        "deleted_users": deleted_users
-    })
+        db.session.commit()
+        log_action(admin.email, "RESET_TEST_DATA", f"Deleted {deleted_enrollments} enrollments and {deleted_users} users before {cutoff_str}")
+
+        return jsonify({
+            "msg": "Test data cleared",
+            "deleted_enrollments": deleted_enrollments,
+            "deleted_users": deleted_users
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"Reset test data error: {e}")
+        return jsonify({"msg": f"Failed to clear data: {str(e)}"}), 500
 
 @app.route('/api/users/<int:user_id>/role', methods=['PUT'])
 @jwt_required()
@@ -1389,4 +1402,3 @@ if __name__ == '__main__':
 
 
 # triggering fresh deployment
-#triggering fresh deployment again.
