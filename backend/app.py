@@ -16,6 +16,13 @@ import uuid
 import stripe
 import time
 import psutil
+from collections import defaultdict
+
+# --- LOGIN RATE LIMITER ---
+# Tracks failed login attempts per IP: {ip: [timestamp, ...]}
+_login_attempts = defaultdict(list)
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300  # 5 minute window
 
 # Load environment variables
 load_dotenv() 
@@ -46,8 +53,10 @@ app.config['MAIL_DEFAULT_SENDER'] = ("AICourseHubPro", "info@aicoursehubpro.com"
 mail = Mail(app)
 
 # --- DATABASE CONFIGURATION ---
-db_url = os.getenv("DATABASE_URL", 'postgresql://postgres:Akash1997@localhost:5434/aicoursehubpro_db')
-if db_url and db_url.startswith("postgres://"):
+db_url = os.getenv("DATABASE_URL")
+if not db_url:
+    raise RuntimeError("DATABASE_URL environment variable is not set.")
+if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql://", 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
@@ -307,27 +316,43 @@ def login():
     email = data['email'].strip().lower()
     password = data['password']
 
+    # --- RATE LIMITING ---
+    ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    now = time.time()
+    # Remove attempts older than the window
+    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < LOGIN_WINDOW_SECONDS]
+    if len(_login_attempts[ip]) >= LOGIN_MAX_ATTEMPTS:
+        remaining = int(LOGIN_WINDOW_SECONDS - (now - _login_attempts[ip][0]))
+        return jsonify({"msg": f"Too many failed attempts. Please try again in {remaining // 60} minute(s)."}), 429
+
     user = User.query.filter_by(email=email).first()
     
     # 1. Credential Check
     if not user or not check_password_hash(user.password, password):
-        return jsonify({"msg": "Incorrect credentials"}), 401
+        _login_attempts[ip].append(now)  # Record failed attempt
+        attempts_left = LOGIN_MAX_ATTEMPTS - len(_login_attempts[ip])
+        if attempts_left > 0:
+            return jsonify({"msg": f"Incorrect credentials. {attempts_left} attempt(s) remaining."}), 401
+        return jsonify({"msg": "Too many failed attempts. Please try again in 5 minutes."}), 429
+
+    # Successful login — clear failed attempts for this IP
+    _login_attempts[ip] = []
 
     # 2. Status Check
     if user.is_deleted:
         return jsonify({"msg": "Account deactivated"}), 403
 
-    # --- 3. ANALYTICS UPDATE (NEW) ---
+    if user.ban_expiry and user.ban_expiry > datetime.utcnow():
+        return jsonify({"msg": "Your account has been temporarily suspended. Please contact support."}), 403
+
+    # --- 3. ANALYTICS UPDATE ---
     try:
         user.last_login = datetime.utcnow()
-        # Using (user.login_count or 0) handles existing users who have None in this column
         user.login_count = (user.login_count or 0) + 1
         db.session.commit()
     except Exception as e:
-        # We log the error but don't stop the login process if analytics fail
         print(f"Analytics update failed: {e}")
         db.session.rollback()
-    # ---------------------------------
 
     # 4. Token Generation
     token = create_access_token(identity=str(user.id))
