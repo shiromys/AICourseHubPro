@@ -275,17 +275,49 @@ const Dashboard = () => {
 
             {/* COURSE GRID */}
             {displayList.length === 0 ? (
-              <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
-                <BookOpen size={48} className="mx-auto text-gray-300 mb-4" />
-                <h3 className="text-xl font-bold text-gray-900">
-                  {activeTab === 'active' ? "You haven't enrolled in any courses yet." : "No courses match your filter."}
-                </h3>
-                {activeTab === 'active' ? (
-                   <button onClick={() => setActiveTab('all')} className="mt-4 px-6 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition">Browse Courses</button>
-                ) : (
-                   <button onClick={() => {setSearchQuery(''); setSelectedCategory('All');}} className="mt-4 text-red-600 font-bold hover:underline">Clear filters</button>
-                )}
-              </div>
+              activeTab === 'active' ? (
+                <div>
+                  {/* Empty state message */}
+                  <div className="text-center py-12 bg-white rounded-xl border border-gray-200 mb-8">
+                    <BookOpen size={48} className="mx-auto text-gray-300 mb-4" />
+                    <h3 className="text-xl font-bold text-gray-900 mb-1">You haven't enrolled in any courses yet.</h3>
+                    <p className="text-gray-400 text-sm">Explore our courses below and start your AI journey today.</p>
+                  </div>
+                  {/* Recommended courses */}
+                  <h3 className="text-lg font-bold text-gray-900 mb-6">Recommended for You</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    {courses.slice(0, 6).map((course) => {
+                      const isBuying = buying === course.id;
+                      return (
+                        <div key={course.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group">
+                          <div className="h-2 bg-gray-200 w-full"></div>
+                          <div className="p-6 flex-1 flex flex-col">
+                            <div className="flex justify-between items-start mb-4">
+                              <span className="bg-red-50 text-red-600 text-xs font-bold uppercase px-3 py-1 rounded-full">{course.category || 'General'}</span>
+                              <span className="text-gray-900 font-black text-lg">${course.price}</span>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight group-hover:text-red-600 transition-colors">{course.title}</h3>
+                            <p className="text-gray-500 text-sm mb-6 flex-1 line-clamp-3 leading-relaxed">{course.description || "Master this topic with interactive lessons."}</p>
+                            <button
+                              onClick={() => handleCourseAction(course.id)}
+                              disabled={isBuying}
+                              className="w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 bg-red-600 hover:bg-red-700 text-white shadow-red-600/20"
+                            >
+                              {isBuying ? <Loader2 className="animate-spin" size={18}/> : <>Enroll Now <ShoppingCart size={16}/></>}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-20 bg-white rounded-xl border border-gray-200">
+                  <BookOpen size={48} className="mx-auto text-gray-300 mb-4" />
+                  <h3 className="text-xl font-bold text-gray-900">No courses match your filter.</h3>
+                  <button onClick={() => {setSearchQuery(''); setSelectedCategory('All');}} className="mt-4 text-red-600 font-bold hover:underline">Clear filters</button>
+                </div>
+              )
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 {displayList.map((course) => {
