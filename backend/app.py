@@ -22,7 +22,7 @@ from collections import defaultdict
 # Tracks failed login attempts per IP: {ip: [timestamp, ...]}
 _login_attempts = defaultdict(list)
 LOGIN_MAX_ATTEMPTS = 5
-LOGIN_WINDOW_SECONDS = 300  # 5 minute window
+LOGIN_WINDOW_SECONDS = 1800  # 30 minute lockout window
 
 # Load environment variables
 load_dotenv() 
@@ -319,11 +319,18 @@ def login():
     # --- RATE LIMITING ---
     ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     now = time.time()
-    # Remove attempts older than the window
-    _login_attempts[ip] = [t for t in _login_attempts[ip] if now - t < LOGIN_WINDOW_SECONDS]
-    if len(_login_attempts[ip]) >= LOGIN_MAX_ATTEMPTS:
-        remaining = int(LOGIN_WINDOW_SECONDS - (now - _login_attempts[ip][0]))
-        return jsonify({"msg": f"Too many failed attempts. Please try again in {remaining // 60} minute(s)."}), 429
+    attempts = _login_attempts[ip]
+
+    # If already at max attempts, check if lockout window has passed from FIRST attempt
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        lockout_started = attempts[0]
+        if now - lockout_started < LOGIN_WINDOW_SECONDS:
+            remaining_secs = int(LOGIN_WINDOW_SECONDS - (now - lockout_started))
+            remaining_mins = max(1, remaining_secs // 60)
+            return jsonify({"msg": f"Account temporarily locked. Please try again in {remaining_mins} minute(s)."}), 429
+        else:
+            # Lockout window has fully expired — reset
+            _login_attempts[ip] = []
 
     user = User.query.filter_by(email=email).first()
     
@@ -333,7 +340,7 @@ def login():
         attempts_left = LOGIN_MAX_ATTEMPTS - len(_login_attempts[ip])
         if attempts_left > 0:
             return jsonify({"msg": f"Incorrect credentials. {attempts_left} attempt(s) remaining."}), 401
-        return jsonify({"msg": "Too many failed attempts. Please try again in 5 minutes."}), 429
+        return jsonify({"msg": "Account temporarily locked. Please try again in 30 minutes."}), 429
 
     # Successful login — clear failed attempts for this IP
     _login_attempts[ip] = []
