@@ -301,9 +301,13 @@ const Dashboard = () => {
                             <button
                               onClick={() => handleCourseAction(course.id)}
                               disabled={isBuying}
-                              className="w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 bg-red-600 hover:bg-red-700 text-white shadow-red-600/20"
+                              className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 ${
+                                isAdmin
+                                  ? "bg-green-600 hover:bg-green-700 text-white shadow-green-600/20"
+                                  : "bg-red-600 hover:bg-red-700 text-white shadow-red-600/20"
+                              }`}
                             >
-                              {isBuying ? <Loader2 className="animate-spin" size={18}/> : <>Enroll Now <ShoppingCart size={16}/></>}
+                              {isAdmin ? <>Review Course <BookOpen size={16}/></> : (isBuying ? <Loader2 className="animate-spin" size={18}/> : <>Enroll Now <ShoppingCart size={16}/></>)}
                             </button>
                           </div>
                         </div>
