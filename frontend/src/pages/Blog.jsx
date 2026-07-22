@@ -92,6 +92,16 @@ const articles = [
     slug: 'how-hr-professionals-can-use-ai-employee-lifecycle',
     featured: false,
   },
+  {
+    id: 9,
+    title: 'How Educators and L&D Professionals Can Use AI to Design Better Learning Experiences',
+    excerpt: 'AI tools are helping educators and L&D professionals save hours on lesson planning, assessment design, and learner feedback. Here is how to get started.',
+    category: 'Beginner Guide',
+    readTime: '8 min read',
+    date: 'Jul 21, 2026',
+    slug: 'how-educators-ld-professionals-use-ai-learning-design',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
