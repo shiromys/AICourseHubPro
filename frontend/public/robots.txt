@@ -1,8 +1,32 @@
-User-agent: *
-Allow: /
-Disallow: /admin
-Disallow: /dashboard
-Disallow: /profile
-Disallow: /reset-password
+# robots.txt — AICourseHubPro
+# https://www.aicoursehubpro.com
 
+User-agent: *
+
+# Allow all public pages
+Allow: /
+Allow: /courses
+Allow: /pricing
+Allow: /blog
+Allow: /contact
+Allow: /signup
+Allow: /login
+Allow: /forgot-password
+Allow: /privacy
+Allow: /terms
+Allow: /refund-policy
+
+# Block private/authenticated pages
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /profile
+Disallow: /course/
+Disallow: /reset-password
+Disallow: /certificate/
+Disallow: /payment-success
+
+# Block API endpoints
+Disallow: /api/
+
+# Sitemap location
 Sitemap: https://www.aicoursehubpro.com/sitemap.xml
