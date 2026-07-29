@@ -102,6 +102,16 @@ const articles = [
     slug: 'how-educators-ld-professionals-use-ai-learning-design',
     featured: false,
   },
+  {
+    id: 10,
+    title: "The Business Professional's Guide to AI-Powered Reporting and Analysis",
+    excerpt: 'Sales reports, budget variances, board briefings — AI prompting can compress the time cost of every recurring business report. Here is how to do it.',
+    category: 'Career Growth',
+    readTime: '8 min read',
+    date: 'Jul 28, 2026',
+    slug: 'business-guide-ai-powered-reporting-analysis',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
