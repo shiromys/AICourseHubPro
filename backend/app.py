@@ -886,9 +886,9 @@ def verify_payment():
 
             existing_user = User.query.filter_by(email=guest_email).first()
 
-            if existing_user:
-                # Email matches a real account already. Do NOT auto-login (email alone
-                # isn't proof of identity) — just attach the enrollment and ask them to log in.
+            if existing_user and existing_user.account_setup_complete:
+                # Email matches a REAL, already-set-up account. Do NOT auto-login (email
+                # alone isn't proof of identity) — attach the enrollment and ask them to log in.
                 if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
                     db.session.add(Enrollment(
                         user_id=existing_user.id, course_id=course_id,
@@ -911,33 +911,40 @@ def verify_payment():
                     "status": "existing_account",
                 }), 200
 
-            # Brand-new guest: create a placeholder account (unusable random password)
-            guest_name = (session.customer_details.name if session.customer_details else None) or "Student"
-            placeholder_password = generate_password_hash(uuid.uuid4().hex)
-            new_user = User(
-                email=guest_email,
-                password=placeholder_password,
-                name=guest_name,
-                is_admin=False,
-                is_deleted=False,
-                role='student',
-                account_setup_complete=False
-            )
-            db.session.add(new_user)
-            db.session.commit()
-            db.session.refresh(new_user)
+            # Either a brand-new guest, OR the same guest buying another course from a new
+            # browser/device (existing_user found, but account_setup_complete is still False —
+            # they have no usable password yet, so treat this exactly like a new guest, reusing
+            # their same underlying account rather than creating a duplicate).
+            if existing_user:
+                guest_user = existing_user
+            else:
+                guest_name = (session.customer_details.name if session.customer_details else None) or "Student"
+                placeholder_password = generate_password_hash(uuid.uuid4().hex)
+                guest_user = User(
+                    email=guest_email,
+                    password=placeholder_password,
+                    name=guest_name,
+                    is_admin=False,
+                    is_deleted=False,
+                    role='student',
+                    account_setup_complete=False
+                )
+                db.session.add(guest_user)
+                db.session.commit()
+                db.session.refresh(guest_user)
 
-            db.session.add(Enrollment(
-                user_id=new_user.id, course_id=course_id,
-                status='in-progress', progress=0,
-                enrolled_at=datetime.utcnow(), stripe_session_id=session_id
-            ))
-            db.session.commit()
+            if not Enrollment.query.filter_by(user_id=guest_user.id, course_id=course_id).first():
+                db.session.add(Enrollment(
+                    user_id=guest_user.id, course_id=course_id,
+                    status='in-progress', progress=0,
+                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                ))
+                db.session.commit()
 
             # Long-lived token: doubles as the session token AND the "resume later" magic link.
             # Course/roleplay access works fine on this token; only the certificate is gated
             # behind account_setup_complete (checked separately via /api/account-status).
-            resume_token = create_access_token(identity=str(new_user.id), expires_delta=timedelta(days=30))
+            resume_token = create_access_token(identity=str(guest_user.id), expires_delta=timedelta(days=30))
             resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
 
             course = db.session.get(Course, course_id)
@@ -954,7 +961,7 @@ def verify_payment():
                 "msg": "Enrolled",
                 "status": "guest_enrolled",
                 "token": resume_token,
-                "name": new_user.name,
+                "name": guest_user.name,
                 "account_setup_complete": False
             }), 200
 
