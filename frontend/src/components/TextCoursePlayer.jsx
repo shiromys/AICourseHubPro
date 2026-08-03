@@ -24,6 +24,14 @@ const TextCoursePlayer = () => {
   const [score, setScore] = useState(0);
   const [passed, setPassed] = useState(false);
 
+  // When a quiz lesson is already 'completed' server-side, showResults/passed
+  // reset to blank on every page load/navigation - so without this flag,
+  // reopening it (e.g. via the magic link) always shows an unanswered quiz
+  // form, looking exactly like a second, un-taken assessment. Defaults to
+  // showing a "already completed" summary instead; explicit Retake reveals
+  // the real form.
+  const [retaking, setRetaking] = useState(false);
+
   // Tracks whether this enrollment was already marked 'completed' server-side.
   // Once true, lesson navigation (review mode) must never downgrade it back
   // to 'in-progress' - that would silently invalidate an earned certificate.
@@ -193,6 +201,7 @@ const TextCoursePlayer = () => {
     setShowResults(false);
     setScore(0);
     setPassed(false);
+    setRetaking(false);
     window.scrollTo(0, 0);
   };
 
@@ -328,7 +337,23 @@ const TextCoursePlayer = () => {
                   {/* --- 4. QUIZ RENDERER --- */}
                   {currentLesson.type === 'quiz' && currentLesson.questions && (
                     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden mt-6">
-                      {showResults ? (
+                      {alreadyCompleted && !showResults && !retaking ? (
+                        <div className="p-6 md:p-10 text-center flex flex-col items-center justify-center space-y-6">
+                          <div className="w-20 h-20 rounded-full flex items-center justify-center mb-2 bg-green-100 text-green-600">
+                            <CheckCircle size={40} />
+                          </div>
+                          <div>
+                            <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">You've Already Completed This Assessment</h2>
+                            <p className="text-gray-500 text-lg">Your certificate is ready whenever you'd like it.</p>
+                          </div>
+                          <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto">
+                            <button onClick={() => setRetaking(true)} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
+                            <button onClick={() => navigate(`/certificate/${course.id}`)} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg">
+                              <Award size={18} /> View Certificate
+                            </button>
+                          </div>
+                        </div>
+                      ) : showResults ? (
                         <div className="p-6 md:p-10 text-center flex flex-col items-center justify-center space-y-6">
                           <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-2 ${passed ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                             {passed ? <CheckCircle size={40} /> : <div className="text-3xl font-bold">X</div>}
@@ -338,7 +363,7 @@ const TextCoursePlayer = () => {
                             <p className="text-gray-500 text-lg">You scored <span className={`font-bold ${passed ? 'text-green-600' : 'text-red-600'}`}>{score}</span> / <span className="font-bold">{currentLesson.questions.length}</span></p>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto">
-                            <button onClick={resetQuiz} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
+                            <button onClick={() => { resetQuiz(); setRetaking(true); }} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
                             {passed && (
                               <button onClick={() => navigate(`/certificate/${course.id}`)} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg">
                                 <Award size={18} /> View Certificate
