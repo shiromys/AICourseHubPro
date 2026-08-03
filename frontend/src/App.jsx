@@ -22,6 +22,8 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';     
 import RefundPolicy from './pages/RefundPolicy';
 import CourseView from './pages/CourseView'; 
+import Resume from './pages/Resume';
+import AccountSetup from './pages/AccountSetup';
 import Maintenance from './pages/Maintenance';
 import Blog from './pages/Blog';
 import CookieConsent from './components/CookieConsent';
@@ -107,6 +109,15 @@ function App() {
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
         <Route path="/verify/:certId" element={<Verify />} />
+        <Route path="/resume" element={<Resume />} />
+        <Route
+          path="/setup-account"
+          element={
+            <ProtectedRoute>
+              <AccountSetup />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         
         {/* --- Course View (Public/Private logic handled inside) --- */}

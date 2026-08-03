@@ -38,7 +38,8 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 # Flask-CORS handles preflight (OPTIONS) auto-responses.
 CORS(app, resources={r"/api/*": {"origins": [
     "https://aicoursehubpro.com",
-    "https://www.aicoursehubpro.com"
+    "https://www.aicoursehubpro.com",
+    "https://vibrant-delight-production-66c4.up.railway.app"  # staging frontend
 ]}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
@@ -202,7 +203,7 @@ def enforce_https():
 def add_cors_headers(response):
     # Belt-and-suspenders: ensure CORS headers are always present on every response
     origin = request.headers.get('Origin', '')
-    allowed_origins = ['https://aicoursehubpro.com', 'https://www.aicoursehubpro.com']
+    allowed_origins = ['https://aicoursehubpro.com', 'https://www.aicoursehubpro.com', 'https://vibrant-delight-production-66c4.up.railway.app']
     if origin in allowed_origins:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
