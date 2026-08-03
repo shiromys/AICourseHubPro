@@ -134,14 +134,9 @@ function App() {
           } 
         />
         
-        <Route 
-          path="/payment-success" 
-          element={
-            <ProtectedRoute>
-              <PaymentSuccess />
-            </ProtectedRoute>
-          } 
-        />
+        {/* Not wrapped in ProtectedRoute: guests arrive here with no token yet -
+            verify-payment (called inside PaymentSuccess) is what gives them one. */}
+        <Route path="/payment-success" element={<PaymentSuccess />} />
 
         <Route 
           path="/certificate/:courseId" 
