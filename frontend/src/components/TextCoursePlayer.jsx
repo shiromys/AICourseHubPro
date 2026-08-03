@@ -24,6 +24,11 @@ const TextCoursePlayer = () => {
   const [score, setScore] = useState(0);
   const [passed, setPassed] = useState(false);
 
+  // Tracks whether this enrollment was already marked 'completed' server-side.
+  // Once true, lesson navigation (review mode) must never downgrade it back
+  // to 'in-progress' - that would silently invalidate an earned certificate.
+  const [alreadyCompleted, setAlreadyCompleted] = useState(false);
+
   useEffect(() => {
     fetchCourseAndProgress();
   }, [id]);
@@ -48,6 +53,9 @@ const TextCoursePlayer = () => {
           if (progressRes.data && progressRes.data.last_module_index != null) {
              setActiveModuleIndex(progressRes.data.last_module_index);
              setActiveLessonIndex(progressRes.data.last_lesson_index);
+          }
+          if (progressRes.data && progressRes.data.status === 'completed') {
+            setAlreadyCompleted(true);
           }
         } catch (err) {
           console.log("No progress found, starting fresh.");
@@ -98,7 +106,11 @@ const TextCoursePlayer = () => {
       setActiveModuleIndex(modIdx);
       setActiveLessonIndex(lesIdx);
       resetQuiz();
-      saveProgress(modIdx, lesIdx, 'in-progress'); 
+      // Once completed, this is review mode - don't overwrite the earned
+      // 'completed' status/certificate with an 'in-progress' save.
+      if (!alreadyCompleted) {
+        saveProgress(modIdx, lesIdx, 'in-progress');
+      }
       window.scrollTo(0, 0);
   };
 
@@ -118,7 +130,9 @@ const TextCoursePlayer = () => {
     setActiveLessonIndex(nextL);
     resetQuiz();
     window.scrollTo(0, 0);
-    saveProgress(nextM, nextL, 'in-progress');
+    if (!alreadyCompleted) {
+      saveProgress(nextM, nextL, 'in-progress');
+    }
   };
 
   const goToPrevLesson = () => {
@@ -137,7 +151,9 @@ const TextCoursePlayer = () => {
     setActiveLessonIndex(prevL);
     resetQuiz();
     window.scrollTo(0, 0);
-    saveProgress(prevM, prevL, 'in-progress');
+    if (!alreadyCompleted) {
+      saveProgress(prevM, prevL, 'in-progress');
+    }
   };
 
   const isFirstLesson = activeModuleIndex === 0 && activeLessonIndex === 0;
@@ -166,6 +182,7 @@ const TextCoursePlayer = () => {
     setShowResults(true);
     
     if (isPassed) {
+      setAlreadyCompleted(true);
       saveProgress(activeModuleIndex, activeLessonIndex, 'completed', percentage);
     }
     window.scrollTo(0, 0);

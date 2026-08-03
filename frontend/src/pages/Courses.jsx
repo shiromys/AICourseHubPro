@@ -66,7 +66,7 @@ const Courses = () => {
   const handleCourseAction = async (courseId) => {
     // NEW: If they are admin OR they already own the course, let them in!
     if (isAdmin || enrolledCourseIds.includes(courseId)) {
-      navigate(`/course/${courseId}`); 
+      navigate(`/courses/${courseId}`); 
       return;
     }
 

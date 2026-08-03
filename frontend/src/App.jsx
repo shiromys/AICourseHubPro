@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'; 
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from './config';
 import UserProfile from './pages/UserProfile';
@@ -41,6 +41,14 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   return children;
+};
+
+// --- 1b. Legacy /course/:id -> /courses/:id redirect ---
+// Navigate's `to` prop needs the actual resolved path, not a route pattern -
+// ":id" as a literal string doesn't get substituted with the real param.
+const CourseIdRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/courses/${id}`} replace />;
 };
 
 // --- 2. Admin Protection Wrapper ---
@@ -122,7 +130,7 @@ function App() {
         
         {/* --- Course View (Public/Private logic handled inside) --- */}
         <Route path="/courses/:id" element={<CourseView />} />
-        <Route path="/course/:id" element={<Navigate to="/courses/:id" replace />} />
+        <Route path="/course/:id" element={<CourseIdRedirect />} />
 
         {/* --- Protected Routes --- */}
         <Route 
