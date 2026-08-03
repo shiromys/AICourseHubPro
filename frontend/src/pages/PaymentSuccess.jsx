@@ -28,26 +28,22 @@ const PaymentSuccess = () => {
 
       try {
         const token = localStorage.getItem('token');
-        if (!token) {
-           // If user somehow lost session, force login (rare edge case)
-           navigate('/login'); 
-           return;
-        }
 
-        // Call the backend endpoint, explicitly passing the bundle flag
-        await axios.post(`${API_BASE_URL}/api/verify-payment`, 
-          { 
-            session_id: sessionId, 
+        // Call the backend endpoint. Send the token if we have one (logged-in
+        // purchase); guests have none, and the backend resolves them by the
+        // email Stripe collected during checkout.
+        const res = await axios.post(`${API_BASE_URL}/api/verify-payment`,
+          {
+            session_id: sessionId,
             course_id: courseId,
             bundle: isBundle ? 'true' : 'false' // Let backend know it's a bundle
           },
-          { headers: { Authorization: `Bearer ${token}` } }
+          token ? { headers: { Authorization: `Bearer ${token}` } } : {}
         );
 
-        setStatus('success');
-        localStorage.removeItem('pendingCourseId'); // Clean up after successful payment
+        localStorage.removeItem('pendingCourseId'); // Clean up legacy flag if present
 
-        // Fire GTM purchase conversion event
+        // Fire GTM purchase conversion event (applies to every successful payment)
         if (typeof window.gtag === 'function') {
           window.gtag('event', 'conversion', {
             'send_to': 'AW-983761479/e18BCI77nbgcEMeEjNUD',
@@ -56,7 +52,6 @@ const PaymentSuccess = () => {
             'transaction_id': sessionId,
           });
 
-          // GA4 standard purchase event (ADD THIS)
           window.gtag('event', 'purchase', {
             transaction_id: sessionId,
             value: amount,
@@ -69,8 +64,30 @@ const PaymentSuccess = () => {
             }]
           });
         }
-        
-        // Auto-redirect to dashboard after 3 seconds
+
+        const resultStatus = res.data.status;
+
+        if (resultStatus === 'existing_account') {
+          // Guest checked out with an email that already has a real account.
+          // Enrollment is attached, but we don't auto-login — send them to log in.
+          setStatus('existing_account');
+          return;
+        }
+
+        if (resultStatus === 'guest_enrolled') {
+          // Brand-new guest: store the token so they get instant course access,
+          // and flag the account as not-yet-set-up (gates the certificate later).
+          localStorage.setItem('token', res.data.token);
+          localStorage.setItem('user_name', res.data.name);
+          localStorage.setItem('user_role', 'student');
+          localStorage.setItem('account_setup_complete', 'false');
+          setStatus('success');
+          setTimeout(() => navigate(courseId ? `/courses/${courseId}` : '/dashboard'), 2500);
+          return;
+        }
+
+        // Logged-in user, normal flow (existing behavior, unchanged)
+        setStatus('success');
         setTimeout(() => navigate('/dashboard'), 3000);
 
       } catch (error) {
@@ -107,6 +124,22 @@ const PaymentSuccess = () => {
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
               >
                 Go to Dashboard
+              </button>
+            </>
+          )}
+
+          {status === 'existing_account' && (
+            <>
+              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
+              <h2 className="text-2xl font-bold mb-2 text-green-500">Payment Successful!</h2>
+              <p className="text-gray-400 mb-6">
+                Good news — this email already has an AICourseHubPro account, and your course is now unlocked there. Please log in to access it.
+              </p>
+              <button
+                onClick={() => navigate('/login')}
+                className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
+              >
+                Log In to Access Course
               </button>
             </>
           )}

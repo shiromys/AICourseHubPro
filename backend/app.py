@@ -2,7 +2,7 @@ from flask import Flask, jsonify, request, send_from_directory, redirect
 from openai import OpenAI
 from datetime import datetime, timedelta
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from dotenv import load_dotenv
 from flask_migrate import Migrate
 from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
@@ -281,7 +281,8 @@ def signup():
             name=name,
             is_admin=False,
             is_deleted=False,
-            role='student' # Explicitly set role
+            role='student', # Explicitly set role
+            account_setup_complete=True # Normal signup = full account immediately
         )
         
         db.session.add(new_user)
@@ -763,15 +764,18 @@ def delete_course(course_id):
 # ==========================================
 
 @app.route('/api/create-checkout-session', methods=['POST'])
-@jwt_required()
 def create_checkout_session():
-    user_id = get_jwt_identity()
+    # Auth is OPTIONAL here: logged-in users check out as themselves;
+    # anyone else checks out as a guest (Stripe collects their email on the hosted page).
+    verify_jwt_in_request(optional=True)
+    user_id = get_jwt_identity()  # None for guests
+
     data = request.json
     course = db.session.get(Course, data.get('course_id')) # FIXED
     if not course: return jsonify({'message': 'Course not found'}), 404
 
     try:
-        checkout_session = stripe.checkout.Session.create(
+        session_kwargs = dict(
             payment_method_types=['card'],
             line_items=[{
                 # Use stable Stripe Price ID if available for this course (enables GTM tracking).
@@ -790,11 +794,18 @@ def create_checkout_session():
                 ),
             }],
             mode='payment',
-            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={STRIPE_COURSE_PRICE_IDS.get(course.title, '')}",
+            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={STRIPE_COURSE_PRICE_IDS.get(course.title, '')}&guest={'false' if user_id else 'true'}",
             cancel_url=f"{DOMAIN}/courses",
-            client_reference_id=str(user_id),
-            metadata={"user_id": user_id, "course_id": course.id}
+            metadata={"course_id": course.id},
         )
+
+        if user_id:
+            session_kwargs['client_reference_id'] = str(user_id)
+            session_kwargs['metadata']['user_id'] = user_id
+        else:
+            session_kwargs['metadata']['guest'] = 'true'
+
+        checkout_session = stripe.checkout.Session.create(**session_kwargs)
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -850,9 +861,12 @@ def create_bundle_checkout():
 
 
 @app.route('/api/verify-payment', methods=['POST'])
-@jwt_required()
 def verify_payment():
-    user_id = get_jwt_identity()
+    # Auth is OPTIONAL: logged-in users verify as themselves (unchanged flow below).
+    # Guests are identified by the email Stripe collected during checkout.
+    verify_jwt_in_request(optional=True)
+    user_id = get_jwt_identity()  # None for guests
+
     data = request.json
     session_id = data.get('session_id')
     course_id = int(data.get('course_id')) if data.get('course_id') else None  # Cast to int
@@ -860,8 +874,91 @@ def verify_payment():
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
-        if session.payment_status == 'paid':
-            
+        if session.payment_status != 'paid':
+            return jsonify({"msg": "Payment failed"}), 400
+
+        # --- GUEST CHECKOUT: no logged-in user, resolve/create account by Stripe email ---
+        if not user_id:
+            guest_email = (session.customer_details.email or "").strip().lower() if session.customer_details else None
+            if not guest_email:
+                return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
+
+            existing_user = User.query.filter_by(email=guest_email).first()
+
+            if existing_user:
+                # Email matches a real account already. Do NOT auto-login (email alone
+                # isn't proof of identity) — just attach the enrollment and ask them to log in.
+                if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
+                    db.session.add(Enrollment(
+                        user_id=existing_user.id, course_id=course_id,
+                        status='in-progress', progress=0,
+                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                    ))
+                    db.session.commit()
+
+                course = db.session.get(Course, course_id)
+                email_content = get_email_template(
+                    "Course Unlocked! 🎓",
+                    f"You have successfully enrolled in {course.title if course else 'your course'}. "
+                    f"This email address already has an AICourseHubPro account — please log in to access it.",
+                    "Log In", f"{DOMAIN}/login"
+                )
+                send_email(guest_email, "Course Unlocked — Log In to Access", email_content)
+
+                return jsonify({
+                    "msg": "Course linked to your existing account. Please log in.",
+                    "status": "existing_account",
+                }), 200
+
+            # Brand-new guest: create a placeholder account (unusable random password)
+            guest_name = (session.customer_details.name if session.customer_details else None) or "Student"
+            placeholder_password = generate_password_hash(uuid.uuid4().hex)
+            new_user = User(
+                email=guest_email,
+                password=placeholder_password,
+                name=guest_name,
+                is_admin=False,
+                is_deleted=False,
+                role='student',
+                account_setup_complete=False
+            )
+            db.session.add(new_user)
+            db.session.commit()
+            db.session.refresh(new_user)
+
+            db.session.add(Enrollment(
+                user_id=new_user.id, course_id=course_id,
+                status='in-progress', progress=0,
+                enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+            ))
+            db.session.commit()
+
+            # Long-lived token: doubles as the session token AND the "resume later" magic link.
+            # Course/roleplay access works fine on this token; only the certificate is gated
+            # behind account_setup_complete (checked separately via /api/account-status).
+            resume_token = create_access_token(identity=str(new_user.id), expires_delta=timedelta(days=30))
+            resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
+
+            course = db.session.get(Course, course_id)
+            email_content = get_email_template(
+                "Your Course is Unlocked! 🎓",
+                f"You're enrolled in <strong>{course.title if course else 'your course'}</strong> and can start right away — "
+                f"no account needed yet. If you ever close this tab before finishing, use the button below to pick up "
+                f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+                "Resume My Course", resume_link
+            )
+            send_email(guest_email, "Your Course is Ready", email_content)
+
+            return jsonify({
+                "msg": "Enrolled",
+                "status": "guest_enrolled",
+                "token": resume_token,
+                "name": new_user.name,
+                "account_setup_complete": False
+            }), 200
+
+        # --- LOGGED-IN USER FLOW (unchanged) ---
+        if True:
             # --- BUNDLE LOGIC ---
             if is_bundle or (session.metadata["is_bundle"] if "is_bundle" in session.metadata else "") == "true":
                 all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
@@ -1329,6 +1426,54 @@ def reset_password():
     except Exception as e:
         print(f"Reset Password Error: {e}")
         return jsonify({"msg": "Internal server error"}), 500
+
+# ==========================================
+#  GUEST CHECKOUT: ACCOUNT SETUP ROUTES
+# ==========================================
+
+@app.route('/api/account-status', methods=['GET'])
+@jwt_required()
+def account_status():
+    """Used by the frontend to decide whether to show the certificate,
+    or redirect to account setup first (guests must set a password)."""
+    user_id = get_jwt_identity()
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+    return jsonify({
+        "account_setup_complete": bool(user.account_setup_complete),
+        "email": user.email,
+        "name": user.name
+    }), 200
+
+@app.route('/api/complete-account-setup', methods=['POST'])
+@jwt_required()
+def complete_account_setup():
+    """Guest-checkout users call this to set a real password. Required before
+    they can access their certificate; also promotes their session to a
+    normal, persistent login going forward."""
+    user_id = get_jwt_identity()
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+
+    data = request.json or {}
+    new_password = data.get('password')
+    if not new_password or len(new_password) < 6:
+        return jsonify({"msg": "Password must be at least 6 characters"}), 400
+
+    user.password = generate_password_hash(new_password)
+    user.account_setup_complete = True
+    db.session.commit()
+
+    # Issue a fresh, standard-expiry token now that this is a full account.
+    token = create_access_token(identity=str(user.id))
+    return jsonify({
+        "msg": "Account setup complete",
+        "token": token,
+        "name": user.name,
+        "user_role": "admin" if user.is_admin else "student"
+    }), 200
 
 # ==========================================
 #  AI ROLEPLAY ROUTES (NEW)

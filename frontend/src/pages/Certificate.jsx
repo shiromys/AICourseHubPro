@@ -26,6 +26,18 @@ const Certificate = () => {
 
         if (!token) { navigate('/login'); return; }
 
+        // Guest-checkout users must set a password before getting a certificate.
+        // Checked against the backend (not just localStorage) since a client-side
+        // flag alone could be edited around.
+        const statusRes = await axios.get(`${API_BASE_URL}/api/account-status`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        localStorage.setItem('account_setup_complete', statusRes.data.account_setup_complete ? 'true' : 'false');
+        if (!statusRes.data.account_setup_complete) {
+          navigate(`/setup-account?course_id=${courseId}`, { replace: true });
+          return;
+        }
+
         // 1. Get Course Info
         const courseRes = await axios.get(`${API_BASE_URL}/api/courses`, {
             headers: { Authorization: `Bearer ${token}` }
