@@ -890,6 +890,7 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
     if already_processed:
         user = db.session.get(User, already_processed.user_id)
         status = 'guest_enrolled' if not user.account_setup_complete else 'existing_account'
+        print(f"resolve_guest_checkout: session {session_id} already processed earlier (idempotent replay, no duplicate email sent)", flush=True)
         # If they've since completed account setup between the two calls, that's
         # still fine to report as-is - the browser path mints its own fresh token.
         return {"status": status, "user": user}
@@ -1244,11 +1245,14 @@ def stripe_webhook():
                 print("Webhook: No user_id in metadata (bundle or missing course_id) — skipping", flush=True)
                 return jsonify({'status': 'success'}), 200
 
+            print(f"Webhook: guest checkout detected for session {session_id}, course_id={course_id} — resolving...", flush=True)
             guest_email = session.customer_details.email if session.customer_details else None
             guest_name = session.customer_details.name if session.customer_details else None
             result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
             if not result:
                 print(f"Webhook: guest checkout for session {session_id} had no payer email — skipping", flush=True)
+            else:
+                print(f"Webhook: session {session_id} resolved as '{result['status']}' for user_id={result['user'].id} ({result['user'].email})", flush=True)
             return jsonify({'status': 'success'}), 200
 
         # --- BUNDLE UNLOCK LOGIC ---
