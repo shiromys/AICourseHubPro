@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import { Lock, Loader2, ShieldCheck } from 'lucide-react';
+import { Lock, Loader2, ShieldCheck, User } from 'lucide-react';
 import API_BASE_URL from '../config';
 
 // Shown to guest-checkout users when they try to access their certificate
@@ -15,10 +15,9 @@ const AccountSetup = () => {
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [name, setName] = useState(localStorage.getItem('user_name') || '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  const email = localStorage.getItem('user_name'); // display only; real email lives server-side
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,6 +31,10 @@ const AccountSetup = () => {
       setError('Passwords do not match.');
       return;
     }
+    if (!name.trim()) {
+      setError('Please enter your name.');
+      return;
+    }
 
     const token = localStorage.getItem('token');
     if (!token) {
@@ -42,7 +45,7 @@ const AccountSetup = () => {
     setLoading(true);
     try {
       const res = await axios.post(`${API_BASE_URL}/api/complete-account-setup`,
-        { password },
+        { password, name: name.trim() },
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
@@ -67,12 +70,27 @@ const AccountSetup = () => {
           <ShieldCheck className="h-12 w-12 text-red-600 mx-auto mb-4" />
           <h2 className="text-2xl font-black text-white mb-2">One Last Step</h2>
           <p className="text-gray-400 text-sm">
-            {email ? `Set a password for ${email} ` : 'Set a password '}
-            to unlock your certificate and get lifetime, cross-device access to your courses.
+            Set a password to unlock your certificate and get lifetime, cross-device access to your courses.
           </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase">Your Name</label>
+            <div className="relative mt-2">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+              <input
+                type="text"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full bg-black border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white focus:border-red-600 focus:outline-none"
+                placeholder="Your full name"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1.5">This is the name that will be printed on your certificate.</p>
+          </div>
+
           <div>
             <label className="text-xs font-bold text-gray-500 uppercase">New Password</label>
             <div className="relative mt-2">

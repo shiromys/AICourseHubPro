@@ -1470,6 +1470,10 @@ def complete_account_setup():
     if not new_password or len(new_password) < 6:
         return jsonify({"msg": "Password must be at least 6 characters"}), 400
 
+    new_name = (data.get('name') or '').strip()
+    if new_name:
+        user.name = new_name  # printed on the certificate, so let them correct/confirm it here
+
     user.password = generate_password_hash(new_password)
     user.account_setup_complete = True
     db.session.commit()
