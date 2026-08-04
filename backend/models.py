@@ -22,6 +22,10 @@ class User(db.Model):
     is_deleted = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Guest Checkout: True for normal signups. False for accounts auto-created
+    # at guest checkout until the user sets their own password.
+    account_setup_complete = db.Column(db.Boolean, default=True, nullable=False)
+
     # Relationships
     enrollments = db.relationship('Enrollment', backref='user', lazy=True)
 
