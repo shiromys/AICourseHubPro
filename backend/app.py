@@ -10,6 +10,7 @@ from database import db
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
+import threading
 import resend 
 import os
 import uuid
@@ -914,7 +915,7 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
             f"This email address already has an AICourseHubPro account — please log in to access it.",
             "Log In", f"{DOMAIN}/login"
         )
-        send_email(guest_email, "Course Unlocked — Log In to Access", email_content)
+        threading.Thread(target=send_email, args=(guest_email, "Course Unlocked — Log In to Access", email_content), daemon=True).start()
         return {"status": "existing_account", "user": existing_user}
 
     # Brand-new guest, OR the same still-incomplete guest buying another course.
@@ -948,13 +949,15 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
 
     course = db.session.get(Course, course_id)
     email_content = get_email_template(
-        "Your Course is Unlocked! 🎓",
-        f"You're enrolled in <strong>{course.title if course else 'your course'}</strong> and can start right away — "
-        f"no account needed yet. If you ever close this tab before finishing, use the button below to pick up "
+        "Welcome to AICourseHubPro! 🎉",
+        f"Hi {guest_user.name}, welcome aboard! Your payment went through and "
+        f"you're already enrolled in <strong>{course.title if course else 'your course'}</strong> — "
+        f"no account setup needed to get started, just click below and dive right in. "
+        f"If you ever close this tab before finishing, use the same button to pick up "
         f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
-        "Resume My Course", resume_link
+        "Start Learning Now", resume_link
     )
-    send_email(guest_email, "Your Course is Ready", email_content)
+    threading.Thread(target=send_email, args=(guest_email, "Welcome to AICourseHubPro — Your Course is Ready!", email_content), daemon=True).start()
 
     return {"status": "guest_enrolled", "user": guest_user}
 
