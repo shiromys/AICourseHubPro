@@ -36,11 +36,17 @@ app = Flask(__name__, static_folder="../frontend/dist", static_url_path="/")
 # --- CORS CONFIGURATION ---
 # after_request handler below applies headers explicitly per-response.
 # Flask-CORS handles preflight (OPTIONS) auto-responses.
-CORS(app, resources={r"/api/*": {"origins": [
-    "https://aicoursehubpro.com",
-    "https://www.aicoursehubpro.com",
-    "https://vibrant-delight-production-66c4.up.railway.app"  # staging frontend
-]}}, supports_credentials=True)
+# --- CORS CONFIGURATION ---
+# after_request handler below applies headers explicitly per-response.
+# Flask-CORS handles preflight (OPTIONS) auto-responses.
+# ALLOWED_ORIGINS env var (comma-separated) lets staging/preview add its own
+# frontend URL without ever needing another code change here. If unset,
+# defaults to production only - safe, unchanged behavior.
+_default_origins = ["https://aicoursehubpro.com", "https://www.aicoursehubpro.com"]
+_extra_origins = [o.strip() for o in os.environ.get("EXTRA_CORS_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = _default_origins + _extra_origins
+
+CORS(app, resources={r"/api/*": {"origins": ALLOWED_ORIGINS}}, supports_credentials=True)
 
 # --- MAIL CONFIGURATION ---
 app.config['MAIL_SERVER'] = 'smtp.resend.com'
@@ -203,7 +209,7 @@ def enforce_https():
 def add_cors_headers(response):
     # Belt-and-suspenders: ensure CORS headers are always present on every response
     origin = request.headers.get('Origin', '')
-    allowed_origins = ['https://aicoursehubpro.com', 'https://www.aicoursehubpro.com', 'https://vibrant-delight-production-66c4.up.railway.app']
+    allowed_origins = ALLOWED_ORIGINS
     if origin in allowed_origins:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
@@ -861,6 +867,97 @@ def create_bundle_checkout():
 
 
 
+def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
+    """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
+    safety net) so a guest's payment is never lost even if their browser tab
+    closes before verify-payment runs - Stripe fires the webhook regardless.
+
+    Idempotent on stripe_session_id: whichever path (browser or webhook) reaches
+    a given session FIRST does the real work (create/find account, create
+    enrollment, send exactly one email). The other path, arriving moments
+    later for the same normal successful payment, sees the enrollment already
+    tied to this session_id and skips straight to returning the current state
+    - no duplicate account, no duplicate enrollment, no duplicate email.
+
+    Returns a dict: {"status": "existing_account" | "guest_enrolled", "user": User}
+    """
+    guest_email = (guest_email or "").strip().lower()
+    if not guest_email:
+        return None
+
+    # Already processed by whichever path got here first (browser or webhook)?
+    already_processed = Enrollment.query.filter_by(stripe_session_id=session_id).first()
+    if already_processed:
+        user = db.session.get(User, already_processed.user_id)
+        status = 'guest_enrolled' if not user.account_setup_complete else 'existing_account'
+        # If they've since completed account setup between the two calls, that's
+        # still fine to report as-is - the browser path mints its own fresh token.
+        return {"status": status, "user": user}
+
+    existing_user = User.query.filter_by(email=guest_email).first()
+
+    if existing_user and existing_user.account_setup_complete:
+        # Real, already-set-up account. Don't auto-login - attach enrollment, ask them to log in.
+        if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
+            db.session.add(Enrollment(
+                user_id=existing_user.id, course_id=course_id,
+                status='in-progress', progress=0,
+                enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+            ))
+            db.session.commit()
+
+        course = db.session.get(Course, course_id)
+        email_content = get_email_template(
+            "Course Unlocked! 🎓",
+            f"You have successfully enrolled in {course.title if course else 'your course'}. "
+            f"This email address already has an AICourseHubPro account — please log in to access it.",
+            "Log In", f"{DOMAIN}/login"
+        )
+        send_email(guest_email, "Course Unlocked — Log In to Access", email_content)
+        return {"status": "existing_account", "user": existing_user}
+
+    # Brand-new guest, OR the same still-incomplete guest buying another course.
+    if existing_user:
+        guest_user = existing_user
+    else:
+        placeholder_password = generate_password_hash(uuid.uuid4().hex)
+        guest_user = User(
+            email=guest_email,
+            password=placeholder_password,
+            name=guest_name or "Student",
+            is_admin=False,
+            is_deleted=False,
+            role='student',
+            account_setup_complete=False
+        )
+        db.session.add(guest_user)
+        db.session.commit()
+        db.session.refresh(guest_user)
+
+    if not Enrollment.query.filter_by(user_id=guest_user.id, course_id=course_id).first():
+        db.session.add(Enrollment(
+            user_id=guest_user.id, course_id=course_id,
+            status='in-progress', progress=0,
+            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+        ))
+        db.session.commit()
+
+    resume_token = create_access_token(identity=str(guest_user.id), expires_delta=timedelta(days=30))
+    resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
+
+    course = db.session.get(Course, course_id)
+    email_content = get_email_template(
+        "Your Course is Unlocked! 🎓",
+        f"You're enrolled in <strong>{course.title if course else 'your course'}</strong> and can start right away — "
+        f"no account needed yet. If you ever close this tab before finishing, use the button below to pick up "
+        f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+        "Resume My Course", resume_link
+    )
+    send_email(guest_email, "Your Course is Ready", email_content)
+
+    return {"status": "guest_enrolled", "user": guest_user}
+
+
 @app.route('/api/verify-payment', methods=['POST'])
 def verify_payment():
     # Auth is OPTIONAL: logged-in users verify as themselves (unchanged flow below).
@@ -880,83 +977,26 @@ def verify_payment():
 
         # --- GUEST CHECKOUT: no logged-in user, resolve/create account by Stripe email ---
         if not user_id:
-            guest_email = (session.customer_details.email or "").strip().lower() if session.customer_details else None
+            guest_email = session.customer_details.email if session.customer_details else None
+            guest_name = session.customer_details.name if session.customer_details else None
             if not guest_email:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
-            existing_user = User.query.filter_by(email=guest_email).first()
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            if not result:
+                return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
-            if existing_user and existing_user.account_setup_complete:
-                # Email matches a REAL, already-set-up account. Do NOT auto-login (email
-                # alone isn't proof of identity) — attach the enrollment and ask them to log in.
-                if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
-                    db.session.add(Enrollment(
-                        user_id=existing_user.id, course_id=course_id,
-                        status='in-progress', progress=0,
-                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id
-                    ))
-                    db.session.commit()
-
-                course = db.session.get(Course, course_id)
-                email_content = get_email_template(
-                    "Course Unlocked! 🎓",
-                    f"You have successfully enrolled in {course.title if course else 'your course'}. "
-                    f"This email address already has an AICourseHubPro account — please log in to access it.",
-                    "Log In", f"{DOMAIN}/login"
-                )
-                send_email(guest_email, "Course Unlocked — Log In to Access", email_content)
-
+            if result["status"] == "existing_account":
                 return jsonify({
                     "msg": "Course linked to your existing account. Please log in.",
                     "status": "existing_account",
                 }), 200
 
-            # Either a brand-new guest, OR the same guest buying another course from a new
-            # browser/device (existing_user found, but account_setup_complete is still False —
-            # they have no usable password yet, so treat this exactly like a new guest, reusing
-            # their same underlying account rather than creating a duplicate).
-            if existing_user:
-                guest_user = existing_user
-            else:
-                guest_name = (session.customer_details.name if session.customer_details else None) or "Student"
-                placeholder_password = generate_password_hash(uuid.uuid4().hex)
-                guest_user = User(
-                    email=guest_email,
-                    password=placeholder_password,
-                    name=guest_name,
-                    is_admin=False,
-                    is_deleted=False,
-                    role='student',
-                    account_setup_complete=False
-                )
-                db.session.add(guest_user)
-                db.session.commit()
-                db.session.refresh(guest_user)
-
-            if not Enrollment.query.filter_by(user_id=guest_user.id, course_id=course_id).first():
-                db.session.add(Enrollment(
-                    user_id=guest_user.id, course_id=course_id,
-                    status='in-progress', progress=0,
-                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id
-                ))
-                db.session.commit()
-
-            # Long-lived token: doubles as the session token AND the "resume later" magic link.
-            # Course/roleplay access works fine on this token; only the certificate is gated
-            # behind account_setup_complete (checked separately via /api/account-status).
+            # guest_enrolled: mint a fresh token for THIS browser session regardless of
+            # whether the account/enrollment was just created here or already existed
+            # (e.g. the webhook got there first) - tokens are stateless and cheap to reissue.
+            guest_user = result["user"]
             resume_token = create_access_token(identity=str(guest_user.id), expires_delta=timedelta(days=30))
-            resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
-
-            course = db.session.get(Course, course_id)
-            email_content = get_email_template(
-                "Your Course is Unlocked! 🎓",
-                f"You're enrolled in <strong>{course.title if course else 'your course'}</strong> and can start right away — "
-                f"no account needed yet. If you ever close this tab before finishing, use the button below to pick up "
-                f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
-                "Resume My Course", resume_link
-            )
-            send_email(guest_email, "Your Course is Ready", email_content)
-
             return jsonify({
                 "msg": "Enrolled",
                 "status": "guest_enrolled",
@@ -1196,8 +1236,20 @@ def stripe_webhook():
         course_id = int(metadata['course_id']) if 'course_id' in metadata and metadata['course_id'] else None
         
         if not user_id:
-            print("Webhook Error: No user_id in metadata", flush=True)
-            return jsonify({'status': 'success'}), 200 # Return 200 so Stripe stops trying
+            # Guest checkout (bundle checkout stays login-required, so this only
+            # applies to single-course purchases). This is the safety net: if the
+            # browser's own /api/verify-payment call already handled it, the shared
+            # helper below is idempotent on session_id and just no-ops here.
+            if is_bundle or not course_id:
+                print("Webhook: No user_id in metadata (bundle or missing course_id) — skipping", flush=True)
+                return jsonify({'status': 'success'}), 200
+
+            guest_email = session.customer_details.email if session.customer_details else None
+            guest_name = session.customer_details.name if session.customer_details else None
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            if not result:
+                print(f"Webhook: guest checkout for session {session_id} had no payer email — skipping", flush=True)
+            return jsonify({'status': 'success'}), 200
 
         # --- BUNDLE UNLOCK LOGIC ---
         if is_bundle:
