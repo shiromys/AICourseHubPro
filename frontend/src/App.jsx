@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'; 
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from './config';
 import UserProfile from './pages/UserProfile';
@@ -22,6 +22,8 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';     
 import RefundPolicy from './pages/RefundPolicy';
 import CourseView from './pages/CourseView'; 
+import Resume from './pages/Resume';
+import AccountSetup from './pages/AccountSetup';
 import Maintenance from './pages/Maintenance';
 import Blog from './pages/Blog';
 import CookieConsent from './components/CookieConsent';
@@ -39,6 +41,14 @@ const ProtectedRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
   return children;
+};
+
+// --- 1b. Legacy /course/:id -> /courses/:id redirect ---
+// Navigate's `to` prop needs the actual resolved path, not a route pattern -
+// ":id" as a literal string doesn't get substituted with the real param.
+const CourseIdRedirect = () => {
+  const { id } = useParams();
+  return <Navigate to={`/courses/${id}`} replace />;
 };
 
 // --- 2. Admin Protection Wrapper ---
@@ -107,11 +117,20 @@ function App() {
         <Route path="/terms" element={<TermsOfUse />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
         <Route path="/verify/:certId" element={<Verify />} />
+        <Route path="/resume" element={<Resume />} />
+        <Route
+          path="/setup-account"
+          element={
+            <ProtectedRoute>
+              <AccountSetup />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/profile" element={<ProtectedRoute><UserProfile /></ProtectedRoute>} />
         
         {/* --- Course View (Public/Private logic handled inside) --- */}
         <Route path="/courses/:id" element={<CourseView />} />
-        <Route path="/course/:id" element={<Navigate to="/courses/:id" replace />} />
+        <Route path="/course/:id" element={<CourseIdRedirect />} />
 
         {/* --- Protected Routes --- */}
         <Route 
@@ -123,14 +142,9 @@ function App() {
           } 
         />
         
-        <Route 
-          path="/payment-success" 
-          element={
-            <ProtectedRoute>
-              <PaymentSuccess />
-            </ProtectedRoute>
-          } 
-        />
+        {/* Not wrapped in ProtectedRoute: guests arrive here with no token yet -
+            verify-payment (called inside PaymentSuccess) is what gives them one. */}
+        <Route path="/payment-success" element={<PaymentSuccess />} />
 
         <Route 
           path="/certificate/:courseId" 

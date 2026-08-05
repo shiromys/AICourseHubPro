@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
@@ -12,6 +12,26 @@ const Login = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // If another tab in this same browser already has a valid session
+  // (localStorage is shared across tabs), skip the login form entirely -
+  // e.g. clicking a "Log In" link from an email while already signed in
+  // elsewhere shouldn't re-prompt for credentials.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const pendingCourseId = localStorage.getItem('pendingCourseId');
+      if (pendingCourseId) {
+        localStorage.removeItem('pendingCourseId');
+        navigate(`/courses/${pendingCourseId}`, { replace: true });
+      } else {
+        navigate('/dashboard', { replace: true });
+      }
+      return;
+    }
+    setCheckingSession(false);
+  }, [navigate]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -67,6 +87,14 @@ const Login = () => {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100 flex flex-col">      <Navbar />

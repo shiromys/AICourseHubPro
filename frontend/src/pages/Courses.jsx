@@ -66,27 +66,20 @@ const Courses = () => {
   const handleCourseAction = async (courseId) => {
     // NEW: If they are admin OR they already own the course, let them in!
     if (isAdmin || enrolledCourseIds.includes(courseId)) {
-      navigate(`/course/${courseId}`); 
+      navigate(`/courses/${courseId}`); 
       return;
     }
 
+    // Guest checkout: no login required. If a token exists (returning user),
+    // send it so the purchase attaches to their real account; otherwise the
+    // backend creates a guest enrollment from the email Stripe collects.
     const token = localStorage.getItem('token');
-    
-    if (!token) {
-        localStorage.setItem('pendingCourseId', courseId);
-        navigate('/login');
-        return;
-    }
-
-    // Always update pendingCourseId to the current course being purchased.
-    // This ensures if the session expires mid-flow, the user returns to the right course.
-    localStorage.setItem('pendingCourseId', courseId);
     setBuying(courseId);
 
     try {
         const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
             { course_id: courseId },
-            { headers: { Authorization: `Bearer ${token}` } }
+            token ? { headers: { Authorization: `Bearer ${token}` } } : {}
         );
 
         if (res.data.url) {

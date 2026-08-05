@@ -22,20 +22,6 @@ const CourseView = () => {
     checkEnrollmentStatus();
   }, [id]);
 
-  // --- AUTO-TRIGGER PAYMENT AFTER LOGIN ---
-  useEffect(() => {
-    if (course && !isEnrolled && !loading) {
-      const pendingId = localStorage.getItem('pendingCourseId');
-      const token = localStorage.getItem('token');
-
-      // If logged in AND coming back for this specific course
-      if (token && pendingId === String(course.id)) {
-        localStorage.removeItem('pendingCourseId'); // Clear flag
-        handleBuy(); // Trigger payment
-      }
-    }
-  }, [course, isEnrolled, loading]);
-
   const fetchCourseData = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -69,25 +55,19 @@ const CourseView = () => {
 
   const handleBuy = async () => {
     if (!course) return;
-    
-    // 1. Check Token
+
+    // Guest checkout: no login required. If a token exists (returning user),
+    // send it so the purchase attaches to their real account; otherwise the
+    // backend creates a guest enrollment from the email Stripe collects.
     const token = localStorage.getItem('token');
 
-    if (!token) {
-      // User not logged in: Save intent and redirect
-      localStorage.setItem('pendingCourseId', course.id);
-      navigate('/login');
-      return;
-    }
-
-    // 2. User logged in: Process Payment
     setProcessing(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
+      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`,
         { course_id: course.id },
-        { headers: { Authorization: `Bearer ${token}` } }
+        token ? { headers: { Authorization: `Bearer ${token}` } } : {}
       );
-      
+
       if (res.data.url) {
         window.location.href = res.data.url;
       }
