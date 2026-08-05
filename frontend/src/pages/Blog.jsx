@@ -112,6 +112,16 @@ const articles = [
     slug: 'business-guide-ai-powered-reporting-analysis',
     featured: false,
   },
+  {
+    id: 11,
+    title: 'How Non-Profits Can Use AI to Raise More Money and Build Stronger Donor Relationships',
+    excerpt: 'AI tools are helping non-profits write stronger grant applications, fundraising appeals, and donor impact reports — in a fraction of the time.',
+    category: 'How-To',
+    readTime: '8 min read',
+    date: 'Aug 4, 2026',
+    slug: 'non-profits-ai-fundraising-donor-relationships',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
