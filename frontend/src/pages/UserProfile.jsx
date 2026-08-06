@@ -79,10 +79,13 @@ const UserProfile = () => {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`${API_BASE_URL}/api/profile`, 
+      const res = await axios.put(`${API_BASE_URL}/api/profile`, 
         { password: passwords.new },
         { headers: { Authorization: `Bearer ${token}` } }
       );
+      if (res.data.account_setup_complete !== undefined) {
+        localStorage.setItem('account_setup_complete', res.data.account_setup_complete ? 'true' : 'false');
+      }
       setUpdateStatus({ type: 'success', msg: 'Password updated successfully!' });
       setPasswords({ new: '', confirm: '' });
     } catch (err) {

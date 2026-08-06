@@ -562,9 +562,13 @@ def update_profile():
     if 'password' in data and data['password']:
         if len(data['password']) < 6: return jsonify({"msg": "Password too short"}), 400
         user.password = generate_password_hash(data['password'], method='pbkdf2:sha256')
-        
+        # Same fix as reset_password: however they set a real password - dedicated
+        # Account Setup page, Forgot Password, or here - it should count.
+        if not user.account_setup_complete:
+            user.account_setup_complete = True
+
     db.session.commit()
-    return jsonify({"msg": "Profile updated successfully", "name": user.name})
+    return jsonify({"msg": "Profile updated successfully", "name": user.name, "account_setup_complete": bool(user.account_setup_complete)})
 
 @app.route('/api/users/<int:user_id>/ban', methods=['POST'])
 @jwt_required()
@@ -1033,7 +1037,7 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
             # paying until AFTER Stripe charges the card, so this can't be prevented
             # upfront - but we should never move money automatically. Instead: flag it
             # immediately (in-app AND by email) so a human on the team can review and
-            # refund via Stripe Dashboard, and let the customer know it's been flagged.
+            # refund via Stripe Dashboard.
             course = db.session.get(Course, course_id)
             course_title = course.title if course else f"course_id={course_id}"
 
@@ -1060,18 +1064,34 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
                 daemon=True
             ).start()
 
+            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Flagged in admin panel + internal alert sent.", flush=True)
+
+            if existing_user.account_setup_complete:
+                # Real account with a real password - log in works fine for them.
+                customer_email_content = get_email_template(
+                    "You Already Own This Course",
+                    f"Our records show you already have access to <strong>{course_title}</strong>. "
+                    f"We've flagged this payment for our team to review, and we'll be in touch shortly "
+                    f"about your refund. In the meantime, please log in to access your course.",
+                    "Log In", f"{DOMAIN}/login"
+                )
+                threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
+                return {"status": "already_owned_flagged", "user": existing_user}
+
+            # Still-incomplete guest: they have no working password, so "log in" is a
+            # dead end. Give them a fresh token straight back into the course they
+            # already own - the duplicate charge is still flagged above regardless.
+            resume_token = create_access_token(identity=str(existing_user.id), expires_delta=timedelta(days=30))
+            resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
             customer_email_content = get_email_template(
                 "You Already Own This Course",
                 f"Our records show you already have access to <strong>{course_title}</strong>. "
-                f"We've flagged this payment for our team to review, and we'll be in touch shortly "
-                f"about your refund. In the meantime, please log in to access your course.",
-                "Log In", f"{DOMAIN}/login"
+                f"We've flagged this payment for our team to review, and we'll be in touch shortly about your refund. "
+                f"Here's a link straight back to your course in the meantime.",
+                "Go To Course", resume_link
             )
             threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
-
-            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Flagged in admin panel + internal alert sent.", flush=True)
-
-            return {"status": "already_owned_flagged", "user": existing_user}
+            return {"status": "already_owned_flagged_guest", "user": existing_user, "token": resume_token}
 
     if existing_user and existing_user.account_setup_complete:
         # Real, already-set-up account, genuinely new course. Don't auto-login -
@@ -1095,6 +1115,7 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
         return {"status": "existing_account", "user": existing_user}
 
     # Brand-new guest, OR the same still-incomplete guest buying another course.
+    is_first_purchase = existing_user is None
     if existing_user:
         guest_user = existing_user
     else:
@@ -1125,16 +1146,28 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
     resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
 
     course = db.session.get(Course, course_id)
-    email_content = get_email_template(
-        "Welcome to AICourseHubPro! 🎉",
-        f"Hi {guest_user.name}, welcome aboard! Your payment went through and "
-        f"you're already enrolled in <strong>{course.title if course else 'your course'}</strong> — "
-        f"no account setup needed to get started, just click below and dive right in. "
-        f"If you ever close this tab before finishing, use the same button to pick up "
-        f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
-        "Start Learning Now", resume_link
-    )
-    threading.Thread(target=send_email, args=(guest_email, "Welcome to AICourseHubPro — Your Course is Ready!", email_content), daemon=True).start()
+    if is_first_purchase:
+        email_subject_line = "Welcome to AICourseHubPro — Your Course is Ready!"
+        email_content = get_email_template(
+            "Welcome to AICourseHubPro! 🎉",
+            f"Hi {guest_user.name}, welcome aboard! Your payment went through and "
+            f"you're already enrolled in <strong>{course.title if course else 'your course'}</strong> — "
+            f"no account setup needed to get started, just click below and dive right in. "
+            f"If you ever close this tab before finishing, use the same button to pick up "
+            f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+            "Start Learning Now", resume_link
+        )
+    else:
+        email_subject_line = "New Course Unlocked!"
+        email_content = get_email_template(
+            "New Course Unlocked! 🎓",
+            f"Hi {guest_user.name}, your payment went through and you're already enrolled in "
+            f"<strong>{course.title if course else 'your course'}</strong> — no extra steps needed, just click "
+            f"below and dive right in. If you ever close this tab before finishing, use the same button to "
+            f"pick up exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+            "Start Learning Now", resume_link
+        )
+    threading.Thread(target=send_email, args=(guest_email, email_subject_line, email_content), daemon=True).start()
 
     return {"status": "guest_enrolled", "user": guest_user}
 
@@ -1171,6 +1204,15 @@ def verify_payment():
                 return jsonify({
                     "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
                     "status": "already_owned_flagged",
+                }), 200
+
+            if result["status"] == "already_owned_flagged_guest":
+                return jsonify({
+                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "status": "already_owned_flagged_guest",
+                    "token": result["token"],
+                    "name": result["user"].name,
+                    "account_setup_complete": False
                 }), 200
 
             if result["status"] == "existing_account":

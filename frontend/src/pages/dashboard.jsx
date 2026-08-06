@@ -21,6 +21,7 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState('active'); 
   const [user, setUser] = useState({ name: 'Learner' });
   const [isAdmin, setIsAdmin] = useState(false);
+  const [accountSetupComplete, setAccountSetupComplete] = useState(true);
 
   // --- FILTER STATES ---
   const [searchQuery, setSearchQuery] = useState("");
@@ -62,6 +63,14 @@ const Dashboard = () => {
       const coursesRes = await axios.get(`${API_BASE_URL}/api/courses`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      try {
+        const statusRes = await axios.get(`${API_BASE_URL}/api/account-status`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setAccountSetupComplete(!!statusRes.data.account_setup_complete);
+        localStorage.setItem('account_setup_complete', statusRes.data.account_setup_complete ? 'true' : 'false');
+      } catch (e) { /* non-fatal - banner just won't show if this fails */ }
       
       try {
         const enrollRes = await axios.get(`${API_BASE_URL}/api/my-enrollments`, {
@@ -197,6 +206,24 @@ const Dashboard = () => {
               </div>
             </div>
           </div>
+
+          {/* SECURE YOUR ACCOUNT BANNER (guest checkout, not yet set up) */}
+          {!accountSetupComplete && (
+            <div className="container mx-auto px-6 -mt-6 relative z-20">
+              <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+                <div>
+                  <p className="font-bold text-yellow-800">Secure your account</p>
+                  <p className="text-sm text-yellow-700">Set a password to get your certificates and keep permanent, cross-device access to your courses.</p>
+                </div>
+                <button
+                  onClick={() => navigate('/setup-account')}
+                  className="shrink-0 px-5 py-2.5 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded-lg transition whitespace-nowrap"
+                >
+                  Set Up Now
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* HERO (Featured Active Course) */}
           {featuredCourse && activeTab === 'active' && !searchQuery && selectedCategory === 'All' && (
