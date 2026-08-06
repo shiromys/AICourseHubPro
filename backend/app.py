@@ -5,7 +5,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from dotenv import load_dotenv
 from flask_migrate import Migrate
-from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
+from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting, FlaggedPayment
 from database import db
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -500,6 +500,56 @@ def admin_send_reset(user_id):
 
     return jsonify({"msg": f"Password reset email sent to {target_user.email}"}), 200
 
+@app.route('/api/flagged-payments', methods=['GET'])
+@jwt_required()
+def get_flagged_payments():
+    """Admin queue of 'paid for a course already owned' incidents needing manual
+    refund review - populated by resolve_guest_checkout, never auto-refunded."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    show_resolved = request.args.get('resolved') == 'true'
+    flags = FlaggedPayment.query.filter_by(resolved=show_resolved).order_by(FlaggedPayment.created_at.desc()).all()
+
+    output = []
+    for f in flags:
+        user = db.session.get(User, f.user_id)
+        course = db.session.get(Course, f.course_id)
+        output.append({
+            "id": f.id,
+            "user_name": user.name if user else "Unknown",
+            "user_email": user.email if user else "Unknown",
+            "course_title": course.title if course else f"course_id={f.course_id}",
+            "stripe_session_id": f.stripe_session_id,
+            "payment_intent_id": f.payment_intent_id,
+            "created_at": str(f.created_at) if f.created_at else None,
+            "resolved": f.resolved,
+            "resolved_at": str(f.resolved_at) if f.resolved_at else None
+        })
+    return jsonify(output), 200
+
+@app.route('/api/flagged-payments/<int:flag_id>/resolve', methods=['POST'])
+@jwt_required()
+def resolve_flagged_payment(flag_id):
+    """Admin marks a flagged duplicate-payment as handled, after refunding it
+    manually in Stripe Dashboard. Doesn't touch Stripe itself - just tracking."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    flag = db.session.get(FlaggedPayment, flag_id)
+    if not flag:
+        return jsonify({"msg": "Flagged payment not found"}), 404
+
+    flag.resolved = True
+    flag.resolved_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({"msg": "Marked as resolved"}), 200
+
 @app.route('/api/profile', methods=['PUT'])
 @jwt_required()
 def update_profile():
@@ -972,18 +1022,27 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
 
     existing_user = User.query.filter_by(email=guest_email).first()
 
-    if existing_user and existing_user.account_setup_complete:
-        # Real, already-set-up account. Don't auto-login - attach enrollment, ask them to log in.
+    if existing_user:
+        # Applies regardless of account_setup_complete - a still-incomplete guest
+        # re-paying for a course they already have needs this exact same check,
+        # not just fully-set-up accounts.
         already_owns_this_course = Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first()
 
         if already_owns_this_course:
             # They paid for a course they already own. Guest checkout can't know who's
             # paying until AFTER Stripe charges the card, so this can't be prevented
             # upfront - but we should never move money automatically. Instead: flag it
-            # immediately so a human on the team can review and refund via Stripe
-            # Dashboard, and let the customer know it's been flagged.
+            # immediately (in-app AND by email) so a human on the team can review and
+            # refund via Stripe Dashboard, and let the customer know it's been flagged.
             course = db.session.get(Course, course_id)
             course_title = course.title if course else f"course_id={course_id}"
+
+            db.session.add(FlaggedPayment(
+                user_id=existing_user.id, course_id=course_id,
+                stripe_session_id=session_id, payment_intent_id=payment_intent_id,
+                created_at=datetime.utcnow(), resolved=False
+            ))
+            db.session.commit()
 
             internal_alert_html = (
                 f"<h3>Duplicate purchase detected — needs manual refund review</h3>"
@@ -992,7 +1051,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
                 f"<p><strong>Stripe session ID:</strong> {session_id}</p>"
                 f"<p><strong>Stripe payment intent:</strong> {payment_intent_id or 'unavailable'}</p>"
                 f"<p>They checked out as a guest using an email that already owns this course. "
-                f"No refund has been issued automatically — please review in Stripe Dashboard and refund if appropriate.</p>"
+                f"No refund has been issued automatically — review in the admin panel's Flagged Payments tab, "
+                f"or in Stripe Dashboard directly, and refund if appropriate.</p>"
             )
             threading.Thread(
                 target=send_email,
@@ -1009,10 +1069,13 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
             )
             threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
 
-            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Internal alert sent to support@shirotechnologies.com for manual refund review.", flush=True)
+            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Flagged in admin panel + internal alert sent.", flush=True)
 
             return {"status": "already_owned_flagged", "user": existing_user}
 
+    if existing_user and existing_user.account_setup_complete:
+        # Real, already-set-up account, genuinely new course. Don't auto-login -
+        # attach enrollment, ask them to log in.
         if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
             db.session.add(Enrollment(
                 user_id=existing_user.id, course_id=course_id,
