@@ -209,7 +209,7 @@ const Dashboard = () => {
 
           {/* SECURE YOUR ACCOUNT BANNER (guest checkout, not yet set up) */}
           {!accountSetupComplete && (
-            <div className="container mx-auto px-6 -mt-6 relative z-20">
+            <div className="container mx-auto px-6 mt-6 mb-12 relative z-20">
               <div className="bg-yellow-50 border border-yellow-300 rounded-xl px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
                 <div>
                   <p className="font-bold text-yellow-800">Secure your account</p>
