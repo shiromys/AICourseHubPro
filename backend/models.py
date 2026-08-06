@@ -26,6 +26,12 @@ class User(db.Model):
     # at guest checkout until the user sets their own password.
     account_setup_complete = db.Column(db.Boolean, default=True, nullable=False)
 
+    # Permanent record of how this account originated, for admin/analytics
+    # visibility - survives even after a guest completes account setup.
+    # Values: 'signup' (normal registration), 'guest_checkout' (paid before
+    # creating an account). Open to more values later (e.g. 'referral').
+    signup_source = db.Column(db.String(30), default='signup', nullable=False)
+
     # Relationships
     enrollments = db.relationship('Enrollment', backref='user', lazy=True)
 

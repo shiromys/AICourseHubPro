@@ -290,7 +290,8 @@ def signup():
             is_admin=False,
             is_deleted=False,
             role='student', # Explicitly set role
-            account_setup_complete=True # Normal signup = full account immediately
+            account_setup_complete=True, # Normal signup = full account immediately
+            signup_source='signup'
         )
         
         db.session.add(new_user)
@@ -423,8 +424,81 @@ def get_users():
         "id": u.id, "name": u.name, "email": u.email,
         "role": "Admin" if u.is_admin else "Student",
         "status": "Banned" if u.ban_expiry and u.ban_expiry > datetime.utcnow() else "Active",
-        "ban_expiry": str(u.ban_expiry) if u.ban_expiry else None
+        "ban_expiry": str(u.ban_expiry) if u.ban_expiry else None,
+        "account_setup_complete": bool(u.account_setup_complete),
+        "signup_source": u.signup_source
     } for u in users])
+
+@app.route('/api/users/<int:user_id>/grant-course', methods=['POST'])
+@jwt_required()
+def admin_grant_course(user_id):
+    """Support tool: manually create an enrollment when a customer paid but
+    never got unlocked (e.g. both the browser call and the webhook somehow
+    failed for the same payment - rare, but this is the manual fallback)."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    data = request.json or {}
+    course_id = data.get('course_id')
+    course = db.session.get(Course, course_id)
+    if not course:
+        return jsonify({"msg": "Course not found"}), 404
+
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({"msg": "User not found"}), 404
+
+    if Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
+        return jsonify({"msg": f"{target_user.name} already has access to {course.title}"}), 200
+
+    db.session.add(Enrollment(
+        user_id=user_id, course_id=course_id,
+        status='in-progress', progress=0,
+        enrolled_at=datetime.utcnow()
+    ))
+    db.session.commit()
+
+    return jsonify({"msg": f"Access to {course.title} granted to {target_user.name}"}), 200
+
+@app.route('/api/users/<int:user_id>/send-reset', methods=['POST'])
+@jwt_required()
+def admin_send_reset(user_id):
+    """Support tool: trigger the same password-reset email as the self-service
+    Forgot Password form, on a customer's behalf - for 'I can't log in' support
+    requests, works for guest accounts and full accounts alike."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({"msg": "User not found"}), 404
+
+    token = create_access_token(identity=str(target_user.id), expires_delta=timedelta(minutes=15))
+    link = f"{DOMAIN}/reset-password?token={token}"
+    body_content = f"""
+    <p>Hi {target_user.name},</p>
+    <p>Our support team has triggered a password reset for your account. Click below to set a new password.</p>
+    <p>This link expires in 15 minutes.</p>
+    """
+    html_content = get_email_template(
+        title="Reset Your Password 🔓",
+        body_content=body_content,
+        button_text="Reset Password",
+        button_url=link
+    )
+    send_email(
+        to_email=target_user.email,
+        subject="Reset Your Password",
+        html_content=html_content,
+        sender_name="AICourseHubPro Security",
+        sender_email="no-reply@aicoursehubpro.com"
+    )
+
+    return jsonify({"msg": f"Password reset email sent to {target_user.email}"}), 200
 
 @app.route('/api/profile', methods=['PUT'])
 @jwt_required()
@@ -930,7 +1004,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
             is_admin=False,
             is_deleted=False,
             role='student',
-            account_setup_complete=False
+            account_setup_complete=False,
+            signup_source='guest_checkout'
         )
         db.session.add(guest_user)
         db.session.commit()
@@ -1486,6 +1561,14 @@ def reset_password():
 
         # 4. Update and commit
         user.password = generate_password_hash(new_password)
+        # However they got here - the dedicated Account Setup page, or the
+        # normal Forgot Password flow - setting a real password means the
+        # certificate should now be unlockable. Previously only the dedicated
+        # /api/complete-account-setup route flipped this flag, leaving guests
+        # who used Forgot Password instead stuck with a real password but
+        # still locked out.
+        if not user.account_setup_complete:
+            user.account_setup_complete = True
         db.session.commit()
         
         return jsonify({"msg": "Password updated"}), 200
