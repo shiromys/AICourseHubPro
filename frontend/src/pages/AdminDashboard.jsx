@@ -483,7 +483,7 @@ const AdminDashboard = () => {
         )}
 
         {/* --- TABLES --- */}
-        {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
+        {['courses', 'users', 'deleted_users', 'revenue', 'audit', 'flagged'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
                     <div className="w-full flex justify-between items-center md:block">
