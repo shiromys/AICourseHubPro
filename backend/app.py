@@ -942,7 +942,7 @@ def create_bundle_checkout():
 
 
 
-def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
+def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None):
     """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
     safety net) so a guest's payment is never lost even if their browser tab
     closes before verify-payment runs - Stripe fires the webhook regardless.
@@ -974,6 +974,45 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
 
     if existing_user and existing_user.account_setup_complete:
         # Real, already-set-up account. Don't auto-login - attach enrollment, ask them to log in.
+        already_owns_this_course = Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first()
+
+        if already_owns_this_course:
+            # They paid for a course they already own. Guest checkout can't know who's
+            # paying until AFTER Stripe charges the card, so this can't be prevented
+            # upfront - but we should never move money automatically. Instead: flag it
+            # immediately so a human on the team can review and refund via Stripe
+            # Dashboard, and let the customer know it's been flagged.
+            course = db.session.get(Course, course_id)
+            course_title = course.title if course else f"course_id={course_id}"
+
+            internal_alert_html = (
+                f"<h3>Duplicate purchase detected — needs manual refund review</h3>"
+                f"<p><strong>Customer:</strong> {existing_user.name} ({guest_email})</p>"
+                f"<p><strong>Course already owned:</strong> {course_title}</p>"
+                f"<p><strong>Stripe session ID:</strong> {session_id}</p>"
+                f"<p><strong>Stripe payment intent:</strong> {payment_intent_id or 'unavailable'}</p>"
+                f"<p>They checked out as a guest using an email that already owns this course. "
+                f"No refund has been issued automatically — please review in Stripe Dashboard and refund if appropriate.</p>"
+            )
+            threading.Thread(
+                target=send_email,
+                args=("support@shirotechnologies.com", f"Duplicate Purchase — Review Needed ({course_title})", internal_alert_html, "AICourseHubPro Alerts", "no-reply@aicoursehubpro.com"),
+                daemon=True
+            ).start()
+
+            customer_email_content = get_email_template(
+                "You Already Own This Course",
+                f"Our records show you already have access to <strong>{course_title}</strong>. "
+                f"We've flagged this payment for our team to review, and we'll be in touch shortly "
+                f"about your refund. In the meantime, please log in to access your course.",
+                "Log In", f"{DOMAIN}/login"
+            )
+            threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
+
+            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Internal alert sent to support@shirotechnologies.com for manual refund review.", flush=True)
+
+            return {"status": "already_owned_flagged", "user": existing_user}
+
         if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
             db.session.add(Enrollment(
                 user_id=existing_user.id, course_id=course_id,
@@ -1061,9 +1100,15 @@ def verify_payment():
             if not guest_email:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
             if not result:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
+
+            if result["status"] == "already_owned_flagged":
+                return jsonify({
+                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "status": "already_owned_flagged",
+                }), 200
 
             if result["status"] == "existing_account":
                 return jsonify({
@@ -1326,7 +1371,7 @@ def stripe_webhook():
             print(f"Webhook: guest checkout detected for session {session_id}, course_id={course_id} — resolving...", flush=True)
             guest_email = session.customer_details.email if session.customer_details else None
             guest_name = session.customer_details.name if session.customer_details else None
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
             if not result:
                 print(f"Webhook: guest checkout for session {session_id} had no payer email — skipping", flush=True)
             else:
