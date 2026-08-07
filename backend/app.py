@@ -5,7 +5,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from dotenv import load_dotenv
 from flask_migrate import Migrate
-from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting
+from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting, FlaggedPayment
 from database import db
 from sqlalchemy import func
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -290,7 +290,8 @@ def signup():
             is_admin=False,
             is_deleted=False,
             role='student', # Explicitly set role
-            account_setup_complete=True # Normal signup = full account immediately
+            account_setup_complete=True, # Normal signup = full account immediately
+            signup_source='signup'
         )
         
         db.session.add(new_user)
@@ -423,8 +424,131 @@ def get_users():
         "id": u.id, "name": u.name, "email": u.email,
         "role": "Admin" if u.is_admin else "Student",
         "status": "Banned" if u.ban_expiry and u.ban_expiry > datetime.utcnow() else "Active",
-        "ban_expiry": str(u.ban_expiry) if u.ban_expiry else None
+        "ban_expiry": str(u.ban_expiry) if u.ban_expiry else None,
+        "account_setup_complete": bool(u.account_setup_complete),
+        "signup_source": u.signup_source
     } for u in users])
+
+@app.route('/api/users/<int:user_id>/grant-course', methods=['POST'])
+@jwt_required()
+def admin_grant_course(user_id):
+    """Support tool: manually create an enrollment when a customer paid but
+    never got unlocked (e.g. both the browser call and the webhook somehow
+    failed for the same payment - rare, but this is the manual fallback)."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    data = request.json or {}
+    course_id = data.get('course_id')
+    course = db.session.get(Course, course_id)
+    if not course:
+        return jsonify({"msg": "Course not found"}), 404
+
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({"msg": "User not found"}), 404
+
+    if Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
+        return jsonify({"msg": f"{target_user.name} already has access to {course.title}"}), 200
+
+    db.session.add(Enrollment(
+        user_id=user_id, course_id=course_id,
+        status='in-progress', progress=0,
+        enrolled_at=datetime.utcnow()
+    ))
+    db.session.commit()
+
+    return jsonify({"msg": f"Access to {course.title} granted to {target_user.name}"}), 200
+
+@app.route('/api/users/<int:user_id>/send-reset', methods=['POST'])
+@jwt_required()
+def admin_send_reset(user_id):
+    """Support tool: trigger the same password-reset email as the self-service
+    Forgot Password form, on a customer's behalf - for 'I can't log in' support
+    requests, works for guest accounts and full accounts alike."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    target_user = db.session.get(User, user_id)
+    if not target_user:
+        return jsonify({"msg": "User not found"}), 404
+
+    token = create_access_token(identity=str(target_user.id), expires_delta=timedelta(minutes=15))
+    link = f"{DOMAIN}/reset-password?token={token}"
+    body_content = f"""
+    <p>Hi {target_user.name},</p>
+    <p>Our support team has triggered a password reset for your account. Click below to set a new password.</p>
+    <p>This link expires in 15 minutes.</p>
+    """
+    html_content = get_email_template(
+        title="Reset Your Password 🔓",
+        body_content=body_content,
+        button_text="Reset Password",
+        button_url=link
+    )
+    send_email(
+        to_email=target_user.email,
+        subject="Reset Your Password",
+        html_content=html_content,
+        sender_name="AICourseHubPro Security",
+        sender_email="no-reply@aicoursehubpro.com"
+    )
+
+    return jsonify({"msg": f"Password reset email sent to {target_user.email}"}), 200
+
+@app.route('/api/flagged-payments', methods=['GET'])
+@jwt_required()
+def get_flagged_payments():
+    """Admin queue of 'paid for a course already owned' incidents needing manual
+    refund review - populated by resolve_guest_checkout, never auto-refunded."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    show_resolved = request.args.get('resolved') == 'true'
+    flags = FlaggedPayment.query.filter_by(resolved=show_resolved).order_by(FlaggedPayment.created_at.desc()).all()
+
+    output = []
+    for f in flags:
+        user = db.session.get(User, f.user_id)
+        course = db.session.get(Course, f.course_id)
+        output.append({
+            "id": f.id,
+            "user_name": user.name if user else "Unknown",
+            "user_email": user.email if user else "Unknown",
+            "course_title": course.title if course else f"course_id={f.course_id}",
+            "stripe_session_id": f.stripe_session_id,
+            "payment_intent_id": f.payment_intent_id,
+            "created_at": str(f.created_at) if f.created_at else None,
+            "resolved": f.resolved,
+            "resolved_at": str(f.resolved_at) if f.resolved_at else None
+        })
+    return jsonify(output), 200
+
+@app.route('/api/flagged-payments/<int:flag_id>/resolve', methods=['POST'])
+@jwt_required()
+def resolve_flagged_payment(flag_id):
+    """Admin marks a flagged duplicate-payment as handled, after refunding it
+    manually in Stripe Dashboard. Doesn't touch Stripe itself - just tracking."""
+    admin_id = get_jwt_identity()
+    admin = db.session.get(User, admin_id)
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+
+    flag = db.session.get(FlaggedPayment, flag_id)
+    if not flag:
+        return jsonify({"msg": "Flagged payment not found"}), 404
+
+    flag.resolved = True
+    flag.resolved_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({"msg": "Marked as resolved"}), 200
 
 @app.route('/api/profile', methods=['PUT'])
 @jwt_required()
@@ -438,9 +562,13 @@ def update_profile():
     if 'password' in data and data['password']:
         if len(data['password']) < 6: return jsonify({"msg": "Password too short"}), 400
         user.password = generate_password_hash(data['password'], method='pbkdf2:sha256')
-        
+        # Same fix as reset_password: however they set a real password - dedicated
+        # Account Setup page, Forgot Password, or here - it should count.
+        if not user.account_setup_complete:
+            user.account_setup_complete = True
+
     db.session.commit()
-    return jsonify({"msg": "Profile updated successfully", "name": user.name})
+    return jsonify({"msg": "Profile updated successfully", "name": user.name, "account_setup_complete": bool(user.account_setup_complete)})
 
 @app.route('/api/users/<int:user_id>/ban', methods=['POST'])
 @jwt_required()
@@ -868,7 +996,7 @@ def create_bundle_checkout():
 
 
 
-def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
+def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None):
     """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
     safety net) so a guest's payment is never lost even if their browser tab
     closes before verify-payment runs - Stripe fires the webhook regardless.
@@ -898,8 +1026,76 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
 
     existing_user = User.query.filter_by(email=guest_email).first()
 
+    if existing_user:
+        # Applies regardless of account_setup_complete - a still-incomplete guest
+        # re-paying for a course they already have needs this exact same check,
+        # not just fully-set-up accounts.
+        already_owns_this_course = Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first()
+
+        if already_owns_this_course:
+            # They paid for a course they already own. Guest checkout can't know who's
+            # paying until AFTER Stripe charges the card, so this can't be prevented
+            # upfront - but we should never move money automatically. Instead: flag it
+            # immediately (in-app AND by email) so a human on the team can review and
+            # refund via Stripe Dashboard.
+            course = db.session.get(Course, course_id)
+            course_title = course.title if course else f"course_id={course_id}"
+
+            db.session.add(FlaggedPayment(
+                user_id=existing_user.id, course_id=course_id,
+                stripe_session_id=session_id, payment_intent_id=payment_intent_id,
+                created_at=datetime.utcnow(), resolved=False
+            ))
+            db.session.commit()
+
+            internal_alert_html = (
+                f"<h3>Duplicate purchase detected — needs manual refund review</h3>"
+                f"<p><strong>Customer:</strong> {existing_user.name} ({guest_email})</p>"
+                f"<p><strong>Course already owned:</strong> {course_title}</p>"
+                f"<p><strong>Stripe session ID:</strong> {session_id}</p>"
+                f"<p><strong>Stripe payment intent:</strong> {payment_intent_id or 'unavailable'}</p>"
+                f"<p>They checked out as a guest using an email that already owns this course. "
+                f"No refund has been issued automatically — review in the admin panel's Flagged Payments tab, "
+                f"or in Stripe Dashboard directly, and refund if appropriate.</p>"
+            )
+            threading.Thread(
+                target=send_email,
+                args=("support@shirotechnologies.com", f"Duplicate Purchase — Review Needed ({course_title})", internal_alert_html, "AICourseHubPro Alerts", "no-reply@aicoursehubpro.com"),
+                daemon=True
+            ).start()
+
+            print(f"Guest {guest_email} paid for course_id={course_id} they already own (payment_intent={payment_intent_id}). Flagged in admin panel + internal alert sent.", flush=True)
+
+            if existing_user.account_setup_complete:
+                # Real account with a real password - log in works fine for them.
+                customer_email_content = get_email_template(
+                    "You Already Own This Course",
+                    f"Our records show you already have access to <strong>{course_title}</strong>. "
+                    f"We've flagged this payment for our team to review, and we'll be in touch shortly "
+                    f"about your refund. In the meantime, please log in to access your course.",
+                    "Log In", f"{DOMAIN}/login"
+                )
+                threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
+                return {"status": "already_owned_flagged", "user": existing_user}
+
+            # Still-incomplete guest: they have no working password, so "log in" is a
+            # dead end. Give them a fresh token straight back into the course they
+            # already own - the duplicate charge is still flagged above regardless.
+            resume_token = create_access_token(identity=str(existing_user.id), expires_delta=timedelta(days=30))
+            resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
+            customer_email_content = get_email_template(
+                "You Already Own This Course",
+                f"Our records show you already have access to <strong>{course_title}</strong>. "
+                f"We've flagged this payment for our team to review, and we'll be in touch shortly about your refund. "
+                f"Here's a link straight back to your course in the meantime.",
+                "Go To Course", resume_link
+            )
+            threading.Thread(target=send_email, args=(guest_email, "We're Reviewing Your Payment", customer_email_content), daemon=True).start()
+            return {"status": "already_owned_flagged_guest", "user": existing_user, "token": resume_token}
+
     if existing_user and existing_user.account_setup_complete:
-        # Real, already-set-up account. Don't auto-login - attach enrollment, ask them to log in.
+        # Real, already-set-up account, genuinely new course. Don't auto-login -
+        # attach enrollment, ask them to log in.
         if not Enrollment.query.filter_by(user_id=existing_user.id, course_id=course_id).first():
             db.session.add(Enrollment(
                 user_id=existing_user.id, course_id=course_id,
@@ -919,6 +1115,7 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
         return {"status": "existing_account", "user": existing_user}
 
     # Brand-new guest, OR the same still-incomplete guest buying another course.
+    is_first_purchase = existing_user is None
     if existing_user:
         guest_user = existing_user
     else:
@@ -930,7 +1127,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
             is_admin=False,
             is_deleted=False,
             role='student',
-            account_setup_complete=False
+            account_setup_complete=False,
+            signup_source='guest_checkout'
         )
         db.session.add(guest_user)
         db.session.commit()
@@ -948,16 +1146,28 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name):
     resume_link = f"{DOMAIN}/resume?token={resume_token}&course_id={course_id}"
 
     course = db.session.get(Course, course_id)
-    email_content = get_email_template(
-        "Welcome to AICourseHubPro! 🎉",
-        f"Hi {guest_user.name}, welcome aboard! Your payment went through and "
-        f"you're already enrolled in <strong>{course.title if course else 'your course'}</strong> — "
-        f"no account setup needed to get started, just click below and dive right in. "
-        f"If you ever close this tab before finishing, use the same button to pick up "
-        f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
-        "Start Learning Now", resume_link
-    )
-    threading.Thread(target=send_email, args=(guest_email, "Welcome to AICourseHubPro — Your Course is Ready!", email_content), daemon=True).start()
+    if is_first_purchase:
+        email_subject_line = "Welcome to AICourseHubPro — Your Course is Ready!"
+        email_content = get_email_template(
+            "Welcome to AICourseHubPro! 🎉",
+            f"Hi {guest_user.name}, welcome aboard! Your payment went through and "
+            f"you're already enrolled in <strong>{course.title if course else 'your course'}</strong> — "
+            f"no account setup needed to get started, just click below and dive right in. "
+            f"If you ever close this tab before finishing, use the same button to pick up "
+            f"exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+            "Start Learning Now", resume_link
+        )
+    else:
+        email_subject_line = "New Course Unlocked!"
+        email_content = get_email_template(
+            "New Course Unlocked! 🎓",
+            f"Hi {guest_user.name}, your payment went through and you're already enrolled in "
+            f"<strong>{course.title if course else 'your course'}</strong> — no extra steps needed, just click "
+            f"below and dive right in. If you ever close this tab before finishing, use the same button to "
+            f"pick up exactly where you left off. To download your certificate later, you'll just need to set a password first.",
+            "Start Learning Now", resume_link
+        )
+    threading.Thread(target=send_email, args=(guest_email, email_subject_line, email_content), daemon=True).start()
 
     return {"status": "guest_enrolled", "user": guest_user}
 
@@ -986,9 +1196,24 @@ def verify_payment():
             if not guest_email:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
             if not result:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
+
+            if result["status"] == "already_owned_flagged":
+                return jsonify({
+                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "status": "already_owned_flagged",
+                }), 200
+
+            if result["status"] == "already_owned_flagged_guest":
+                return jsonify({
+                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "status": "already_owned_flagged_guest",
+                    "token": result["token"],
+                    "name": result["user"].name,
+                    "account_setup_complete": False
+                }), 200
 
             if result["status"] == "existing_account":
                 return jsonify({
@@ -1251,7 +1476,7 @@ def stripe_webhook():
             print(f"Webhook: guest checkout detected for session {session_id}, course_id={course_id} — resolving...", flush=True)
             guest_email = session.customer_details.email if session.customer_details else None
             guest_name = session.customer_details.name if session.customer_details else None
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
             if not result:
                 print(f"Webhook: guest checkout for session {session_id} had no payer email — skipping", flush=True)
             else:
@@ -1486,6 +1711,14 @@ def reset_password():
 
         # 4. Update and commit
         user.password = generate_password_hash(new_password)
+        # However they got here - the dedicated Account Setup page, or the
+        # normal Forgot Password flow - setting a real password means the
+        # certificate should now be unlockable. Previously only the dedicated
+        # /api/complete-account-setup route flipped this flag, leaving guests
+        # who used Forgot Password instead stuck with a real password but
+        # still locked out.
+        if not user.account_setup_complete:
+            user.account_setup_complete = True
         db.session.commit()
         
         return jsonify({"msg": "Password updated"}), 200

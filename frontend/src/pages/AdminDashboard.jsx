@@ -11,7 +11,7 @@ import {
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
   CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson,
-  TrendingUp, TrendingDown, AlertCircle
+  TrendingUp, TrendingDown, AlertCircle, KeyRound, Unlock
 } from 'lucide-react';
 
 // --- MOCK DATA ---
@@ -47,6 +47,7 @@ const AdminDashboard = () => {
   const [adminInitials, setAdminInitials] = useState("AD");
   const [courses, setCourses] = useState([]); 
   const [users, setUsers] = useState([]); 
+  const [flaggedPayments, setFlaggedPayments] = useState([]);
   const [stats, setStats] = useState({ revenue: 0, students: 0, courses: 0, uptime: "99.9%", chart_data: [], recent_messages: [] });
   const [transactions, setTransactions] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -70,6 +71,8 @@ const AdminDashboard = () => {
   const [isBanModalOpen, setIsBanModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [banDuration, setBanDuration] = useState(30);
+  const [isGrantAccessModalOpen, setIsGrantAccessModalOpen] = useState(false);
+  const [grantAccessCourseId, setGrantAccessCourseId] = useState('');
   const [isCloseTicketModalOpen, setIsCloseTicketModalOpen] = useState(false);
   const [messageToClose, setMessageToClose] = useState(null);
 
@@ -129,6 +132,10 @@ const AdminDashboard = () => {
             else if (activeTab === 'analytics') {
               const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
               setAnalytics(r.data);
+            }
+            else if (activeTab === 'flagged') {
+              const r = await axios.get(`${API_BASE_URL}/api/flagged-payments`, { headers: { Authorization: `Bearer ${token}` } });
+              setFlaggedPayments(r.data);
             }
             else if (activeTab === 'system') {
               const r = await axios.get(`${API_BASE_URL}/api/admin/system-health`, { headers: { Authorization: `Bearer ${token}` } });
@@ -246,6 +253,33 @@ const AdminDashboard = () => {
     } catch (e) { console.error("Delete failed:", e); alert("Failed to delete user. Please try again."); }
   };
   const handleRestoreUser = async (user) => { if(!window.confirm(`Restore ${user.name}? They will regain access to their account.`)) return; try { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); } catch(e) { console.error("Restore failed:", e); alert("Failed to restore user. Please try again."); } };
+  const handleResolveFlag = async (flag) => {
+    if (!window.confirm(`Mark this as resolved? Only do this after refunding ${flag.user_name} manually in Stripe Dashboard.`)) return;
+    try {
+      const t = localStorage.getItem('token');
+      await axios.post(`${API_BASE_URL}/api/flagged-payments/${flag.id}/resolve`, {}, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.get(`${API_BASE_URL}/api/flagged-payments`, { headers: { Authorization: `Bearer ${t}` } });
+      setFlaggedPayments(r.data);
+    } catch (e) { console.error("Resolve failed:", e); alert("Failed to mark as resolved. Please try again."); }
+  };
+  const openGrantAccessModal = (user) => { setSelectedUser(user); setGrantAccessCourseId(''); setIsGrantAccessModalOpen(true); };
+  const handleConfirmGrantAccess = async () => {
+    if (!grantAccessCourseId) { alert("Please select a course."); return; }
+    try {
+      const t = localStorage.getItem('token');
+      const r = await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/grant-course`, { course_id: grantAccessCourseId }, { headers: { Authorization: `Bearer ${t}` } });
+      alert(r.data.msg);
+      setIsGrantAccessModalOpen(false);
+    } catch (e) { console.error("Grant access failed:", e); alert("Failed to grant access. Please try again."); }
+  };
+  const handleSendReset = async (user) => {
+    if (!window.confirm(`Send a password reset email to ${user.name} (${user.email})?`)) return;
+    try {
+      const t = localStorage.getItem('token');
+      const r = await axios.post(`${API_BASE_URL}/api/users/${user.id}/send-reset`, {}, { headers: { Authorization: `Bearer ${t}` } });
+      alert(r.data.msg);
+    } catch (e) { console.error("Send reset failed:", e); alert("Failed to send reset email. Please try again."); }
+  };
   
   const handleSaveCourse = async () => {
     try {
@@ -362,6 +396,7 @@ const AdminDashboard = () => {
           <SidebarItem id="courses" icon={BookOpen} label="Courses" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="users" icon={Users} label="Active Users" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="flagged" icon={AlertCircle} label="Flagged Payments" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
           <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="analytics" icon={TrendingUp} label="Analytics" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -448,7 +483,7 @@ const AdminDashboard = () => {
         )}
 
         {/* --- TABLES --- */}
-        {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
+        {['courses', 'users', 'deleted_users', 'revenue', 'audit', 'flagged'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
                     <div className="w-full flex justify-between items-center md:block">
@@ -474,14 +509,17 @@ const AdminDashboard = () => {
                                 {(activeTab === 'users' || activeTab === 'deleted_users') && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></>}
                                 {activeTab === 'revenue' && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Status</th></>}
                                 {activeTab === 'audit' && <><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></>}
+                                {activeTab === 'flagged' && <><th className="px-6 py-4">Customer</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Flagged</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></>}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 text-sm">
                             {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
-                            {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
+                            {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
                             {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
                             {activeTab === 'revenue' && transactions.map((t,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{t.user}</td><td className="px-6 py-4 text-gray-700">{t.course}</td><td className="px-6 py-4 text-gray-500">{t.date}</td><td className="px-6 py-4 text-green-700 font-bold">Paid</td></tr>))}
                             {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
+                            {activeTab === 'flagged' && flaggedPayments.length === 0 && (<tr><td colSpan="5" className="px-6 py-10 text-center text-gray-400">No flagged payments — nothing needs review.</td></tr>)}
+                            {activeTab === 'flagged' && flaggedPayments.map(f => (<tr key={f.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{f.user_name}</div><div className="text-xs text-gray-500">{f.user_email}</div></td><td className="px-6 py-4 text-gray-700">{f.course_title}</td><td className="px-6 py-4 text-gray-500 text-xs">{f.created_at}</td><td className="px-6 py-4">{f.resolved ? <span className="text-green-600 font-bold">Resolved</span> : <span className="text-yellow-600 font-bold">Needs Review</span>}</td><td className="px-6 py-4 text-right">{!f.resolved && <button onClick={()=>handleResolveFlag(f)} className="px-3 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded text-xs font-bold hover:bg-green-100">Mark Resolved</button>}</td></tr>))}
                         </tbody>
                     </table>
                 </div>
@@ -809,6 +847,25 @@ const AdminDashboard = () => {
                 </div>
                 <button onClick={handleConfirmBan} className="bg-red-600 w-full py-2 rounded font-bold text-white hover:bg-red-700 transition">Confirm Ban</button>
                 <button onClick={() => setIsBanModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
+            </div>
+        </div>
+      )}
+
+      {/* GRANT COURSE ACCESS MODAL (Light) */}
+      {isGrantAccessModalOpen && selectedUser && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-xl max-w-sm w-full border border-gray-200 shadow-2xl">
+                <h3 className="text-xl font-bold mb-1 text-gray-900">Grant Course Access</h3>
+                <p className="text-sm text-gray-500 mb-4">For {selectedUser.name} ({selectedUser.email})</p>
+                <div className="mb-4">
+                    <label className="text-sm text-gray-600 font-bold">Course</label>
+                    <select value={grantAccessCourseId} onChange={(e) => setGrantAccessCourseId(e.target.value)} className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600">
+                      <option value="">Select a course...</option>
+                      {courses.map(c => (<option key={c.id} value={c.id}>{c.title}</option>))}
+                    </select>
+                </div>
+                <button onClick={handleConfirmGrantAccess} className="bg-green-600 w-full py-2 rounded font-bold text-white hover:bg-green-700 transition">Grant Access</button>
+                <button onClick={() => setIsGrantAccessModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
             </div>
         </div>
       )}

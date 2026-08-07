@@ -67,6 +67,25 @@ const PaymentSuccess = () => {
 
         const resultStatus = res.data.status;
 
+        if (resultStatus === 'already_owned_flagged_guest') {
+          // Still-incomplete guest who already owns this course - no working
+          // password to log in with, so give them the token straight back in.
+          // The duplicate charge is still flagged for the team regardless.
+          localStorage.setItem('token', res.data.token);
+          localStorage.setItem('user_name', res.data.name);
+          localStorage.setItem('user_role', 'student');
+          localStorage.setItem('account_setup_complete', 'false');
+          setStatus('already_owned_flagged_guest');
+          setTimeout(() => navigate(courseId ? `/courses/${courseId}` : '/dashboard'), 3000);
+          return;
+        }
+
+        if (resultStatus === 'already_owned_flagged') {
+          // They accidentally paid for a course they already own - flagged for the team to review, not auto-refunded.
+          setStatus('already_owned_flagged');
+          return;
+        }
+
         if (resultStatus === 'existing_account') {
           // Guest checked out with an email that already has a real account.
           // Enrollment is attached, but we don't auto-login — send them to log in.
@@ -124,6 +143,36 @@ const PaymentSuccess = () => {
                 className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
               >
                 Go to Dashboard
+              </button>
+            </>
+          )}
+
+          {status === 'already_owned_flagged_guest' && (
+            <>
+              <AlertCircle className="h-16 w-16 text-yellow-500 mx-auto mb-6" />
+              <h2 className="text-2xl font-bold mb-2 text-yellow-500">You Already Own This Course</h2>
+              <p className="text-gray-400 mb-6">
+                Our records show you already have access to this course. We've flagged this payment for
+                our team to review, and we'll follow up shortly about a refund. Taking you back to your
+                course now...
+              </p>
+            </>
+          )}
+
+          {status === 'already_owned_flagged' && (
+            <>
+              <AlertCircle className="h-16 w-16 text-yellow-500 mx-auto mb-6" />
+              <h2 className="text-2xl font-bold mb-2 text-yellow-500">You Already Own This Course</h2>
+              <p className="text-gray-400 mb-6">
+                Our records show this email already has access to this course. We've flagged this payment
+                for our team to review, and we'll follow up shortly about a refund. Please log in to access
+                your course in the meantime.
+              </p>
+              <button
+                onClick={() => navigate('/login')}
+                className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
+              >
+                Log In to Access Course
               </button>
             </>
           )}
