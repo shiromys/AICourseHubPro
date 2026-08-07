@@ -26,6 +26,12 @@ class User(db.Model):
     # at guest checkout until the user sets their own password.
     account_setup_complete = db.Column(db.Boolean, default=True, nullable=False)
 
+    # Permanent record of how this account originated, for admin/analytics
+    # visibility - survives even after a guest completes account setup.
+    # Values: 'signup' (normal registration), 'guest_checkout' (paid before
+    # creating an account). Open to more values later (e.g. 'referral').
+    signup_source = db.Column(db.String(30), default='signup', nullable=False)
+
     # Relationships
     enrollments = db.relationship('Enrollment', backref='user', lazy=True)
 
@@ -115,3 +121,19 @@ class SystemSetting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(50), unique=True, nullable=False)
     value = db.Column(db.String(200), nullable=False)
+
+# 7. FLAGGED PAYMENT MODEL
+# Tracks "paid for a course they already own" incidents surfaced during guest
+# checkout, since guest identity is only known AFTER Stripe charges the card.
+# No refund happens automatically - this gives the admin panel a queue to
+# review and mark resolved once handled manually in Stripe Dashboard.
+class FlaggedPayment(db.Model):
+    __tablename__ = 'flagged_payments'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    stripe_session_id = db.Column(db.String(255), nullable=True)
+    payment_intent_id = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    resolved = db.Column(db.Boolean, default=False, nullable=False)
+    resolved_at = db.Column(db.DateTime, nullable=True)
