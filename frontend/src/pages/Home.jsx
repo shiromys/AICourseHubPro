@@ -28,11 +28,36 @@ const Home = () => {
   const [isDeleting, setIsDeleting] = useState(false);
   const typingWords = ["Human Resources", "Public Services","Automation", "Education", "Business"];
   const [openFaq, setOpenFaq] = useState(null);
+  const [courses, setCourses] = useState([]);
+
+  // Fetch courses so we can navigate directly to the right course page
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://api.aicoursehubpro.com'}/api/courses`)
+      .then(r => r.json())
+      .then(data => setCourses(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
 
   // --- CAROUSEL STATE ---
   
 
   // Course Categories Data replaced with static grid in JSX
+  // Maps niche title keyword → course title keyword for lookup
+  const nicheKeywords = {
+    "AI in HR": "Human Resources",
+    "Prompt Engineering": "Education",
+    "Local Government": "Government",
+    "AI in Automation": "Automation",
+    "Non-Profits": "Non-Profit",
+    "Business & Analytics": "Business",
+  };
+
+  const getCourseLink = (nicheTitle) => {
+    const keyword = Object.entries(nicheKeywords).find(([k]) => nicheTitle.includes(k))?.[1];
+    if (!keyword) return '/courses';
+    const match = courses.find(c => c.title?.toLowerCase().includes(keyword.toLowerCase()));
+    return match ? `/courses/${match.id}` : '/courses';
+  };
 
   const toggleFaq = (index) => {
     setOpenFaq(openFaq === index ? null : index);
@@ -183,7 +208,7 @@ const Home = () => {
             ].map((niche, i) => (
               <div
                 key={i}
-                onClick={() => navigate('/courses')}
+                onClick={() => navigate(getCourseLink(niche.title))}
                 className="group cursor-pointer bg-black/30 border border-red-900/40 rounded-2xl overflow-hidden hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/30 transition-all duration-300"
               >
                 {/* Image */}
