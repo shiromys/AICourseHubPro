@@ -30,36 +30,9 @@ const Home = () => {
   const [openFaq, setOpenFaq] = useState(null);
 
   // --- CAROUSEL STATE ---
-  const [currentCatIndex, setCurrentCatIndex] = useState(0);
+  
 
-  // Course Categories Data
-  const categories = [
-    { title: "AI in HR", icon: "👥" },
-    { title: "Prompt Engineering", icon: "💬" },
-    { title: "AI in Automation", icon: "💻" },
-    { title: "Local Government & Public Services", icon: "📈" },
-    { title: "Business & Analytics", icon: "📊" },
-    { title: "Non-Profits and Social Impact", icon: "⚖️" },
-  ];
-
-  // Carousel Logic (Show 3 at a time)
-  const itemsToShow = 3;
-  const maxIndex = categories.length - itemsToShow; 
-  const isAtEnd = currentCatIndex >= maxIndex;
-
-  const handleNextClick = () => {
-    if (isAtEnd) {
-      navigate('/courses');
-    } else {
-      setCurrentCatIndex(prev => prev + 1);
-    }
-  };
-
-  const handlePrevClick = () => {
-    if (currentCatIndex > 0) {
-      setCurrentCatIndex(prev => prev - 1);
-    }
-  };
+  // Course Categories Data replaced with static grid in JSX
 
   const toggleFaq = (index) => {
     setOpenFaq(openFaq === index ? null : index);
@@ -160,48 +133,91 @@ const Home = () => {
         </div>
       </section>
 
-      {/* ================= 4. COURSE CATEGORIES (CAROUSEL) ================= */}
-      <section className="py-24 bg-gradient-to-br from-red-900 via-red-950 to-black text-white overflow-hidden">
+      {/* ================= 4. COURSE CATEGORIES (IMAGE GRID) ================= */}
+      <section className="py-24 bg-gradient-to-br from-red-900 via-red-950 to-black text-white">
         <div className="container mx-auto px-6">
-          <div className="mb-12">
+          <div className="text-center mb-16">
             <span className="text-red-400 font-bold uppercase tracking-wider text-sm">Explore by Niche</span>
             <h2 className="text-3xl md:text-4xl font-black mt-2 text-white">Find Your Learning Path</h2>
+            <p className="text-gray-400 mt-3 max-w-xl mx-auto">Six role-based tracks built for working professionals. Pick your field and start applying AI today.</p>
           </div>
 
-          <div className="relative">
-            <div className="overflow-hidden">
-              <div 
-                className="flex transition-transform duration-500 ease-in-out gap-6"
-                style={{ transform: `translateX(-${currentCatIndex * (100 / itemsToShow)}%)` }}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[
+              {
+                title: "AI in HR",
+                desc: "Learn how to use prompt-based AI tools to transform hiring, onboarding, performance reviews, and people operations — no technical background required.",
+                image: "/niche-hr.jpeg",
+                tag: "Human Resources"
+              },
+              {
+                title: "Prompt Engineering",
+                desc: "Master the art and science of crafting AI prompts that deliver real results. Build reusable prompt systems for education, communication, and professional workflows.",
+                image: "/niche-prompt.jpeg",
+                tag: "Education & Learning"
+              },
+              {
+                title: "Local Government & Public Services",
+                desc: "Discover how AI can streamline public service delivery, improve citizen engagement, and support better decision-making across government operations.",
+                image: "/niche-govt.jpeg",
+                tag: "Public Sector"
+              },
+              {
+                title: "AI in Automation",
+                desc: "Use prompt-based AI to automate repetitive workflows, eliminate manual tasks, and free your team to focus on high-value work across any department.",
+                image: "/niche-automation.jpeg",
+                tag: "Workflow & Operations"
+              },
+              {
+                title: "Non-Profits & Social Impact",
+                desc: "Apply AI to grant writing, donor outreach, volunteer coordination, and impact reporting — helping mission-driven organisations do more with less.",
+                image: "/niche-nonprofit.jpeg",
+                tag: "Social Impact"
+              },
+              {
+                title: "Business & Analytics",
+                desc: "Turn raw data into actionable insight using AI-powered analytics and reporting. Build dashboards, summaries, and decision-ready reports with prompts.",
+                image: "/niche-business.jpeg",
+                tag: "Business Intelligence"
+              },
+            ].map((niche, i) => (
+              <div
+                key={i}
+                onClick={() => navigate('/courses')}
+                className="group cursor-pointer bg-black/30 border border-red-900/40 rounded-2xl overflow-hidden hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/30 transition-all duration-300"
               >
-                {categories.map((cat, i) => (
-                  <div 
-                    key={i} 
-                    className="flex-shrink-0 w-full md:w-[calc(33.333%-16px)] p-6 bg-black/40 border border-red-900/50 rounded-xl hover:bg-black/60 hover:border-red-500 transition-all cursor-pointer group backdrop-blur-sm"
-                    onClick={() => navigate('/courses')}
-                  >
-                    <div className="text-4xl mb-4 group-hover:scale-110 transition-transform duration-300">{cat.icon}</div>
-                    <h3 className="text-xl font-bold mb-1 text-white">{cat.title}</h3>
-                  </div>
-                ))}
-              </div>
-            </div>
+                {/* Image */}
+                <div className="relative h-52 overflow-hidden">
+                  <img
+                    src={niche.image}
+                    alt={niche.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent" />
+                  <span className="absolute top-3 left-3 bg-red-600/90 text-white text-xs font-bold px-3 py-1 rounded-full backdrop-blur-sm">
+                    {niche.tag}
+                  </span>
+                </div>
 
-            <div className="flex justify-end gap-4 mt-8">
-               <button 
-                onClick={handlePrevClick}
-                disabled={currentCatIndex === 0}
-                className={`p-3 rounded-full border border-gray-600 transition-all ${currentCatIndex === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:bg-red-600 hover:border-red-600 text-white'}`}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <button 
-                onClick={handleNextClick}
-                className="flex items-center gap-2 px-6 py-3 rounded-full bg-white text-black font-bold hover:bg-red-600 hover:text-white transition-all shadow-lg"
-              >
-                {isAtEnd ? <span>Explore More &rarr;</span> : <span>Next &rarr;</span>}
-              </button>
-            </div>
+                {/* Content */}
+                <div className="p-6">
+                  <h3 className="text-xl font-black text-white mb-3 group-hover:text-red-400 transition-colors">{niche.title}</h3>
+                  <p className="text-gray-400 text-sm leading-relaxed mb-5">{niche.desc}</p>
+                  <div className="flex items-center text-red-400 text-sm font-bold gap-1 group-hover:gap-2 transition-all">
+                    View Course <span>&rarr;</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="text-center mt-12">
+            <button
+              onClick={() => navigate('/courses')}
+              className="px-8 py-4 bg-white text-black font-bold rounded-full hover:bg-red-600 hover:text-white transition-all shadow-lg"
+            >
+              Browse All Courses &rarr;
+            </button>
           </div>
         </div>
       </section>
