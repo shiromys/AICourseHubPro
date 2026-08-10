@@ -113,6 +113,14 @@ export default defineConfig({
     port: 8080,
     allowedHosts: true,
   },
+  build: {
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        assetFileNames: 'assets/[name]-[hash][extname]'
+      }
+    }
+  }
 })
 
 // Force rebuild 1

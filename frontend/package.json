@@ -5,11 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node node_modules/vite/bin/vite.js",
-    "start": "node node_modules/vite/bin/vite.js preview --port $PORT --host",
+    "start": "sirv dist --port $PORT --host --single",
     "build": "node node_modules/vite/bin/vite.js build",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "node node_modules/vite/bin/vite.js preview",
-    "serve": "node node_modules/vite/bin/vite.js preview --port $PORT --host"
+    "serve": "sirv dist --port $PORT --host --single"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -21,7 +21,8 @@
     "react-markdown": "^10.1.0",
     "react-qr-code": "^2.0.18",
     "react-router-dom": "^7.1.0",
-    "recharts": "^3.6.0"
+    "recharts": "^3.6.0",
+    "sirv-cli": "^3.0.1"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",
