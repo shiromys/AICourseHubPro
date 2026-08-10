@@ -147,37 +147,37 @@ const Home = () => {
               {
                 title: "AI in HR",
                 desc: "Learn how to use prompt-based AI tools to transform hiring, onboarding, performance reviews, and people operations — no technical background required.",
-                image: "/niche-hr.jpeg",
+                image: "/AI_for_Human_resources_01__6_.jpeg",
                 tag: "Human Resources"
               },
               {
                 title: "Prompt Engineering",
                 desc: "Master the art and science of crafting AI prompts that deliver real results. Build reusable prompt systems for education, communication, and professional workflows.",
-                image: "/niche-prompt.jpeg",
+                image: "/Tools_for_Education_and_Learning_01__2_.jpeg",
                 tag: "Education & Learning"
               },
               {
                 title: "Local Government & Public Services",
                 desc: "Discover how AI can streamline public service delivery, improve citizen engagement, and support better decision-making across government operations.",
-                image: "/niche-govt.jpeg",
+                image: "/AI_for_Local_Government_and_Public_Services__4_.jpeg",
                 tag: "Public Sector"
               },
               {
                 title: "AI in Automation",
                 desc: "Use prompt-based AI to automate repetitive workflows, eliminate manual tasks, and free your team to focus on high-value work across any department.",
-                image: "/niche-automation.jpeg",
+                image: "/Automation_and_Workflow_Efficiency_01__3_.jpeg",
                 tag: "Workflow & Operations"
               },
               {
                 title: "Non-Profits & Social Impact",
                 desc: "Apply AI to grant writing, donor outreach, volunteer coordination, and impact reporting — helping mission-driven organisations do more with less.",
-                image: "/niche-nonprofit.jpeg",
+                image: "/Engineering_for_Non-profits_and_Social_Impact__6_.jpeg",
                 tag: "Social Impact"
               },
               {
                 title: "Business & Analytics",
                 desc: "Turn raw data into actionable insight using AI-powered analytics and reporting. Build dashboards, summaries, and decision-ready reports with prompts.",
-                image: "/niche-business.jpeg",
+                image: "/Analytics_and_Reports_for_Business__5_.jpeg",
                 tag: "Business Intelligence"
               },
             ].map((niche, i) => (
