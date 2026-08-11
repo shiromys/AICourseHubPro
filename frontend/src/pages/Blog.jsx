@@ -122,6 +122,16 @@ const articles = [
     slug: 'non-profits-ai-fundraising-donor-relationships',
     featured: false,
   },
+  {
+    id: 12,
+    title: 'How Local Government Teams Can Use AI to Improve Citizen Services and Public Communication',
+    excerpt: 'AI tools are helping local government teams respond to citizens faster, write clearer policy documents, and analyse public consultations at scale.',
+    category: 'How-To',
+    readTime: '8 min read',
+    date: 'Aug 11, 2026',
+    slug: 'local-government-ai-citizen-services-public-communication',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
