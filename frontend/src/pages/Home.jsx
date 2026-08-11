@@ -169,12 +169,12 @@ const Home = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[
-              { title: "AI in HR", desc: "Learn how to use prompt-based AI tools to transform hiring, onboarding, performance reviews, and people operations — no technical background required.", image: "/niche-hr.jpeg", tag: "Human Resources" },
-              { title: "Prompt Engineering", desc: "Master the art and science of crafting AI prompts that deliver real results. Build reusable prompt systems for education, communication, and professional workflows.", image: "/niche-prompt.jpeg", tag: "Education & Learning" },
-              { title: "Local Government & Public Services", desc: "Discover how AI can streamline public service delivery, improve citizen engagement, and support better decision-making across government operations.", image: "/niche-govt.jpeg", tag: "Public Sector" },
-              { title: "AI in Automation", desc: "Use prompt-based AI to automate repetitive workflows, eliminate manual tasks, and free your team to focus on high-value work across any department.", image: "/niche-automation.jpeg", tag: "Workflow & Operations" },
-              { title: "Non-Profits & Social Impact", desc: "Apply AI to grant writing, donor outreach, volunteer coordination, and impact reporting — helping mission-driven organisations do more with less.", image: "/niche-nonprofit.jpeg", tag: "Social Impact" },
-              { title: "Business & Analytics", desc: "Turn raw data into actionable insight using AI-powered analytics and reporting. Build dashboards, summaries, and decision-ready reports with prompts.", image: "/niche-business.jpeg", tag: "Business Intelligence" },
+              { title: "AI in HR", desc: "Learn how to use prompt-based AI tools to transform hiring, onboarding, performance reviews, and people operations — no technical background required.", image: "https://i.postimg.cc/c1QxnDbq/niche-hr.jpg", tag: "Human Resources" },
+              { title: "Prompt Engineering", desc: "Master the art and science of crafting AI prompts that deliver real results. Build reusable prompt systems for education, communication, and professional workflows.", image: "https://i.postimg.cc/T2rdDkHz/niche-prompt.jpg", tag: "Education & Learning" },
+              { title: "Local Government & Public Services", desc: "Discover how AI can streamline public service delivery, improve citizen engagement, and support better decision-making across government operations.", image: "https://i.postimg.cc/kGF7P4bS/niche-govt.jpg", tag: "Public Sector" },
+              { title: "AI in Automation", desc: "Use prompt-based AI to automate repetitive workflows, eliminate manual tasks, and free your team to focus on high-value work across any department.", image: "https://i.postimg.cc/tJt9GTxt/niche-automation.jpg", tag: "Workflow & Operations" },
+              { title: "Non-Profits & Social Impact", desc: "Apply AI to grant writing, donor outreach, volunteer coordination, and impact reporting — helping mission-driven organisations do more with less.", image: "https://i.postimg.cc/MHbzJTQV/niche-nonprofit.jpg", tag: "Social Impact" },
+              { title: "Business & Analytics", desc: "Turn raw data into actionable insight using AI-powered analytics and reporting. Build dashboards, summaries, and decision-ready reports with prompts.", image: "https://i.postimg.cc/mkNTWDHY/niche-business.jpg", tag: "Business Intelligence" },
             ].map((niche, i) => (
               <div
                 key={i}
