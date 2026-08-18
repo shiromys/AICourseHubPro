@@ -132,6 +132,16 @@ const articles = [
     slug: 'local-government-ai-citizen-services-public-communication',
     featured: false,
   },
+  {
+    id: 13,
+    title: 'How AI Is Transforming Policy Research and Decision-Making in Local Government',
+    excerpt: 'AI tools are helping local government policy teams gather evidence faster, appraise options more thoroughly, and write better committee reports.',
+    category: 'Career Growth',
+    readTime: '8 min read',
+    date: 'Aug 18, 2026',
+    slug: 'ai-policy-research-decision-making-local-government',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
