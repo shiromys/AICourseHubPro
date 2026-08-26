@@ -40,7 +40,12 @@ const Register = () => {
       
       // If we get here, it worked (Status 201)
       setSuccess("Account created successfully! Redirecting to login...");
-      
+
+      // Fire GTM signup conversion event
+      if (window.dataLayer) {
+        window.dataLayer.push({ event: 'signup_complete' });
+      }
+
       // Clear password field
       setFormData({ ...formData, password: '' });
 
