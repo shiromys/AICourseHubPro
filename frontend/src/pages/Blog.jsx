@@ -142,6 +142,16 @@ const articles = [
     slug: 'ai-policy-research-decision-making-local-government',
     featured: false,
   },
+  {
+    id: 14,
+    title: 'How Non-Profits Can Use AI to Design Better Programmes and Measure Real Impact',
+    excerpt: 'AI tools are helping non-profits develop stronger theories of change, design better outcome frameworks, and communicate impact more compellingly.',
+    category: 'How-To',
+    readTime: '8 min read',
+    date: 'Sep 1, 2026',
+    slug: 'non-profits-ai-program-design-impact-measurement',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
