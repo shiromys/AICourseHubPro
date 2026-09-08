@@ -152,6 +152,16 @@ const articles = [
     slug: 'non-profits-ai-program-design-impact-measurement',
     featured: false,
   },
+  {
+    id: 15,
+    title: 'How to Build a Personal Prompt System That Saves Hours Every Week',
+    excerpt: 'The professionals saving the most time with AI are not just using it more — they are using it systematically. Here is how to build your own prompt system.',
+    category: 'How-To',
+    readTime: '8 min read',
+    date: 'Sep 8, 2026',
+    slug: 'how-to-build-a-personal-prompt-system-that-saves-hours-every-week',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
