@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request, send_from_directory, redirect
-from openai import OpenAI
+from openai import OpenAI, APIError, APIConnectionError, RateLimitError, AuthenticationError
+import traceback
 from datetime import datetime, timedelta
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
@@ -1598,7 +1599,7 @@ def chat_support():
     """
     
     try:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, timeout=30.0, max_retries=2)
         res = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -1608,8 +1609,17 @@ def chat_support():
             temperature=0.7
         )
         return jsonify({"reply": res.choices[0].message.content})
+    except AuthenticationError as e:
+        print(f"[Nova] OpenAI AUTH ERROR - check OPENAI_API_KEY on Railway: {e}")
+        return jsonify({"reply": "I'm having trouble connecting right now."}), 500
+    except RateLimitError as e:
+        print(f"[Nova] OpenAI RATE LIMIT / QUOTA ERROR - check billing: {e}")
+        return jsonify({"reply": "I'm having trouble connecting right now."}), 500
+    except (APIConnectionError, APIError) as e:
+        print(f"[Nova] OpenAI API ERROR: {e}")
+        return jsonify({"reply": "I'm having trouble connecting right now."}), 500
     except Exception as e:
-        print(f"Chatbot Error: {e}")
+        print(f"[Nova] Chatbot Error: {e}\n{traceback.format_exc()}")
         return jsonify({"reply": "I'm having trouble connecting right now."}), 500
 
 @app.route('/api/settings', methods=['GET', 'POST'])
@@ -1801,7 +1811,7 @@ def roleplay_chat():
         return jsonify({"role": "assistant", "content": "AI Service Unavailable (Check Server Key)"}), 500
 
     try:
-        client = OpenAI(api_key=api_key)
+        client = OpenAI(api_key=api_key, timeout=30.0, max_retries=2)
         response = client.chat.completions.create(
             model="gpt-4o", # Use GPT-4o or gpt-3.5-turbo for speed
             messages=conversation,
@@ -1809,8 +1819,17 @@ def roleplay_chat():
         )
         ai_reply = response.choices[0].message.content
         return jsonify({"role": "assistant", "content": ai_reply})
+    except AuthenticationError as e:
+        print(f"[Roleplay Chat] OpenAI AUTH ERROR - check OPENAI_API_KEY on Railway: {e}")
+        return jsonify({"role": "assistant", "content": "I'm having trouble connecting. Please try again."}), 500
+    except RateLimitError as e:
+        print(f"[Roleplay Chat] OpenAI RATE LIMIT / QUOTA ERROR - check billing: {e}")
+        return jsonify({"role": "assistant", "content": "I'm having trouble connecting. Please try again."}), 500
+    except (APIConnectionError, APIError) as e:
+        print(f"[Roleplay Chat] OpenAI API ERROR: {e}")
+        return jsonify({"role": "assistant", "content": "I'm having trouble connecting. Please try again."}), 500
     except Exception as e:
-        print(f"Roleplay Error: {e}")
+        print(f"[Roleplay Chat] Error: {e}\n{traceback.format_exc()}")
         return jsonify({"role": "assistant", "content": "I'm having trouble connecting. Please try again."}), 500
 
 
@@ -1841,7 +1860,7 @@ def roleplay_feedback():
     if not api_key:
         return jsonify({"error": "Server missing API Key"}), 500
 
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=api_key, timeout=30.0, max_retries=2)
 
     # 5. Enhanced System Prompt with the Name
     analysis_prompt = f"""
@@ -1879,9 +1898,18 @@ def roleplay_feedback():
         )
         feedback = response.choices[0].message.content
         return jsonify(feedback)
+    except AuthenticationError as e:
+        print(f"[Roleplay Feedback] OpenAI AUTH ERROR - check OPENAI_API_KEY on Railway: {e}")
+        return jsonify({"error": "AI grading temporarily unavailable"}), 500
+    except RateLimitError as e:
+        print(f"[Roleplay Feedback] OpenAI RATE LIMIT / QUOTA ERROR - check billing: {e}")
+        return jsonify({"error": "AI grading temporarily unavailable"}), 500
+    except (APIConnectionError, APIError) as e:
+        print(f"[Roleplay Feedback] OpenAI API ERROR: {e}")
+        return jsonify({"error": "AI grading temporarily unavailable"}), 500
     except Exception as e:
-        print(f"Feedback Error: {e}")
-        return jsonify({"error": str(e)}), 500
+        print(f"[Roleplay Feedback] Error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": "AI grading temporarily unavailable"}), 500
     
 
 if __name__ == '__main__':
