@@ -1309,18 +1309,45 @@ def update_progress():
     enr = Enrollment.query.filter_by(user_id=user_id, course_id=data.get('course_id')).first()
     if not enr: return jsonify({"msg": "Not found"}), 404
 
+    requested_status = data.get('status')
+    module_idx = data.get('module_idx')
+    lesson_idx = data.get('lesson_idx')
+
     if 'progress' in data: enr.progress = data['progress']
-    if 'status' in data: enr.status = data['status']
     if 'score' in data: enr.score = data['score']
-    if 'module_idx' in data: enr.last_module_index = data['module_idx']
-    if 'lesson_idx' in data: enr.last_lesson_index = data['lesson_idx']
+    if module_idx is not None: enr.last_module_index = module_idx
+    if lesson_idx is not None: enr.last_lesson_index = lesson_idx
+
+    if requested_status == 'completed':
+        # INTEGRITY CHECK: a course can contain several scored lessons
+        # (mid-course roleplay simulations, knowledge checks, etc.) in
+        # addition to a final assessment. Passing ANY one of them must not
+        # complete the whole course or mint a certificate - only reaching
+        # 'completed' on the course's actual final lesson may do that.
+        course = db.session.get(Course, data.get('course_id'))
+        modules = (course.course_data or {}).get('modules', []) if course else []
+        is_final_lesson = False
+        if modules and module_idx is not None and lesson_idx is not None:
+            last_module_idx = len(modules) - 1
+            last_module_lessons = modules[last_module_idx].get('lessons', [])
+            last_lesson_idx = len(last_module_lessons) - 1
+            is_final_lesson = (module_idx == last_module_idx and lesson_idx == last_lesson_idx)
+
+        if is_final_lesson:
+            enr.status = 'completed'
+        else:
+            # Real progress on an intermediate assessment - keep it moving,
+            # but do not complete the course or unlock a certificate yet.
+            enr.status = 'in-progress'
+    elif requested_status is not None:
+        enr.status = requested_status
 
     if enr.status == 'completed' and not enr.certificate_id:
         enr.certificate_id = f"AIC-{str(uuid.uuid4())[:8].upper()}"
         enr.completion_date = datetime.utcnow()
 
     db.session.commit()
-    return jsonify({"msg": "Updated", "certificate_id": enr.certificate_id}), 200
+    return jsonify({"msg": "Updated", "certificate_id": enr.certificate_id, "status": enr.status}), 200
 
 @app.route('/api/my-enrollments', methods=['GET'])
 @jwt_required()
