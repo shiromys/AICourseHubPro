@@ -162,6 +162,16 @@ const articles = [
     slug: 'how-to-build-a-personal-prompt-system-that-saves-hours-every-week',
     featured: false,
   },
+  {
+    id: 16,
+    title: 'How AI Is Making Personalised Learning Possible for Every Student',
+    excerpt: 'AI tools are helping educators deliver personalised learning at scale — from differentiated content and targeted feedback to scenario-based practice.',
+    category: 'Beginner Guide',
+    readTime: '8 min read',
+    date: 'Sep 15, 2026',
+    slug: 'ai-personalized-learning-every-student',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
