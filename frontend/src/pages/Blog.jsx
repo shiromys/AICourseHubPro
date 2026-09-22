@@ -172,6 +172,16 @@ const articles = [
     slug: 'ai-personalized-learning-every-student',
     featured: false,
   },
+  {
+    id: 17,
+    title: 'Why Your AICourseHubPro Certificate Is More Than Just a PDF',
+    excerpt: 'AICourseHubPro certificates are QR-verified, instantly checkable by employers, and backed by real assessment — not just course completion.',
+    category: 'Industry News',
+    readTime: '7 min read',
+    date: 'Sep 22, 2026',
+    slug: 'why-your-aicoursehubpro-certificate-is-more-than-just-a-pdf',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
