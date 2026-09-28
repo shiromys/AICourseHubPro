@@ -46,7 +46,7 @@ const PaymentSuccess = () => {
         // Fire GTM purchase conversion event (applies to every successful payment)
         if (typeof window.gtag === 'function') {
           window.gtag('event', 'conversion', {
-            'send_to': 'AW-983761479/e18BCI77nbgcEMeEjNUD',
+            'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
             'value': amount,
             'currency': 'USD',
             'transaction_id': sessionId,
