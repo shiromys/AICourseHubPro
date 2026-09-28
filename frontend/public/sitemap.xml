@@ -35,7 +35,7 @@
 
   <!-- Auth pages -->
   <url>
-    <loc>https://www.aicoursehubpro.com/signup</loc>
+    <loc>https://www.aicoursehubpro.com/register</loc>
     <lastmod>2026-07-22</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.6</priority>
