@@ -66,7 +66,9 @@ db_url = os.getenv("DATABASE_URL")
 if not db_url:
     raise RuntimeError("DATABASE_URL environment variable is not set.")
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+elif db_url.startswith("postgresql://"):
+    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -1182,13 +1184,34 @@ def verify_payment():
 
     data = request.json
     session_id = data.get('session_id')
-    course_id = int(data.get('course_id')) if data.get('course_id') else None  # Cast to int
-    is_bundle = data.get('bundle') == 'true'
+    if not session_id:
+        return jsonify({"msg": "Missing session_id"}), 400
 
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status != 'paid':
             return jsonify({"msg": "Payment failed"}), 400
+
+        # --- CHANGED: trust what Stripe recorded for this payment, not what the browser sends ---
+        # (The same values the webhook already uses. Note: Stripe metadata has no .get(), use `in`.)
+        meta = session.metadata
+        session_user_id = meta["user_id"] if "user_id" in meta else None
+        course_id = int(meta["course_id"]) if "course_id" in meta and meta["course_id"] else None
+        is_bundle = ("is_bundle" in meta and meta["is_bundle"] == "true")
+
+        if session_user_id:
+            # This payment was made by a logged-in account. Only that account may claim it.
+            if not user_id:
+                return jsonify({"msg": "Please log in to access your purchase."}), 401
+            if str(session_user_id) != str(user_id):
+                return jsonify({"msg": "This payment belongs to a different account"}), 403
+        else:
+            # Guest checkout: ignore any login that happens to be sitting in this browser,
+            # so the course goes to the person who actually paid (resolved by Stripe email).
+            user_id = None
+
+        if not is_bundle and not course_id:
+            return jsonify({"msg": "Could not determine purchased course from Stripe session"}), 400
 
         # --- GUEST CHECKOUT: no logged-in user, resolve/create account by Stripe email ---
         if not user_id:
@@ -1238,27 +1261,32 @@ def verify_payment():
         # --- LOGGED-IN USER FLOW (unchanged) ---
         if True:
             # --- BUNDLE LOGIC ---
-            if is_bundle or (session.metadata["is_bundle"] if "is_bundle" in session.metadata else "") == "true":
+            if is_bundle:
+                # CHANGED: a bundle payment can only be redeemed once. Without this, replaying an
+                # old bundle session_id later would unlock any courses added since.
+                if Enrollment.query.filter_by(stripe_session_id=session_id).first():
+                    return jsonify({"msg": "Bundle Enrolled", "status": "enrolled", "courses_added": 0}), 200
+
                 all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
                 owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
-                
+
                 enrolled_count = 0
                 for course in all_courses:
                     if course.id not in owned:
                         new_enr = Enrollment(
-                            user_id=user_id, course_id=course.id, 
-                            status='in-progress', progress=0, 
+                            user_id=user_id, course_id=course.id,
+                            status='in-progress', progress=0,
                             enrolled_at=datetime.utcnow(), stripe_session_id=session_id
                         )
                         db.session.add(new_enr)
                         enrolled_count += 1
-                
+
                 db.session.commit()
-                
+
                 user = db.session.get(User, user_id)
                 email_content = get_email_template("All-Access Pass Unlocked! 🚀", f"You have successfully unlocked all {enrolled_count} remaining courses.", "Go to Dashboard", f"{DOMAIN}/dashboard")
                 send_email(user.email, "Welcome to the All-Access Pass", email_content)
-                
+
                 return jsonify({"msg": "Bundle Enrolled", "status": "enrolled", "courses_added": enrolled_count}), 200
 
             # --- SINGLE COURSE LOGIC ---
@@ -1266,24 +1294,24 @@ def verify_payment():
                 existing = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first()
                 if not existing:
                     new_enrollment = Enrollment(
-                        user_id=user_id, course_id=course_id, 
-                        status='in-progress', progress=0, 
+                        user_id=user_id, course_id=course_id,
+                        status='in-progress', progress=0,
                         enrolled_at=datetime.utcnow(), stripe_session_id=session_id
                     )
                     db.session.add(new_enrollment)
                     db.session.commit()
-                    
+
                     user = db.session.get(User, user_id)
                     course = db.session.get(Course, course_id)
                     email_content = get_email_template("Course Unlocked! 🎓", f"You have successfully enrolled in {course.title}.", "Start Learning", f"{DOMAIN}/dashboard")
                     send_email(user.email, f"Welcome to {course.title}", email_content)
 
                 return jsonify({"msg": "Enrolled", "status": "enrolled"}), 200
-                
+
     except Exception as e:
         print(f"Payment Verification Error: {e}", flush=True)
         return jsonify({"msg": str(e)}), 500
-        
+
     return jsonify({"msg": "Payment failed"}), 400
 
 
