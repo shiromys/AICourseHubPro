@@ -947,6 +947,9 @@ def create_checkout_session():
         checkout_session = stripe.checkout.Session.create(**session_kwargs)
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
     except Exception as e:
+        import traceback
+        print(f"CHECKOUT ERROR: {type(e).__name__}: {e}", flush=True)
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
     
 
