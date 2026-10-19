@@ -935,12 +935,12 @@ def create_checkout_session():
             mode='payment',
             success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={STRIPE_COURSE_PRICE_IDS.get(course.title, '')}&guest={'false' if user_id else 'true'}",
             cancel_url=f"{DOMAIN}/courses",
-            metadata={"course_id": course.id},
+            metadata={"course_id": str(course.id)},
         )
 
         if user_id:
             session_kwargs['client_reference_id'] = str(user_id)
-            session_kwargs['metadata']['user_id'] = user_id
+            session_kwargs['metadata']['user_id'] = str(user_id)
         else:
             session_kwargs['metadata']['guest'] = 'true'
 
@@ -990,7 +990,7 @@ def create_bundle_checkout():
             cancel_url=f"{DOMAIN}/pricing",
             client_reference_id=str(user_id),
             # NEW: Tag this as a bundle purchase!
-            metadata={"user_id": user_id, "is_bundle": "true"}
+            metadata={"user_id": str(user_id), "is_bundle": "true"}
         )
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
     except Exception as e:
