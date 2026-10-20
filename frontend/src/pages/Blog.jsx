@@ -192,6 +192,16 @@ const articles = [
     slug: 'how-ai-is-transforming-recruitment-what-hr-teams-need-to-do-now',
     featured: false,
   },
+  {
+    id: 19,
+    title: 'The AI Skills Employers Will Be Looking For in 2027',
+    excerpt: 'AI proficiency is becoming a hiring filter, not a differentiator. Here are the five skills employers will expect from every professional by 2027.',
+    category: 'Career Growth',
+    readTime: '7 min read',
+    date: 'Oct 20, 2026',
+    slug: 'ai-skills-employers-looking-for-2027',
+    featured: false,
+  },
   // ── Add new articles below this line ──────
 ];
 
