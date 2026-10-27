@@ -27,6 +27,7 @@ import AccountSetup from './pages/AccountSetup';
 import Maintenance from './pages/Maintenance';
 import Blog from './pages/Blog';
 import CookieConsent from './components/CookieConsent';
+import AnnouncementBanner from './components/AnnouncementBanner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // --- IMPORT COMPONENTS ---
@@ -95,7 +96,10 @@ function App() {
     <BrowserRouter>
       <ScrollToTop />
       <RouteTracker />
-      
+
+      {/* --- New-courses announcement strip --- */}
+      <AnnouncementBanner />
+
       {/* --- GDPR Cookie Consent Banner --- */}
       {/* Note: GA4 and Meta Pixel now load unconditionally from index.html,
           so this banner no longer gates tracking scripts. */}
