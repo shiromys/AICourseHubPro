@@ -95,6 +95,12 @@ const TextCoursePlayer = () => {
       const totalModules = modules.length;
       let progressPercent = 0;
 
+      // Only the very last lesson of the course can complete it (the server enforces the
+      // same rule). Passing a mid-course quiz or simulation is saved as normal progress,
+      // otherwise the dashboard would show 100% / "Needs Retake" halfway through the course.
+      const isFinal = modIdx === modules.length - 1 && lesIdx === (modules[modules.length - 1]?.lessons?.length || 1) - 1;
+      if (status === 'completed' && !isFinal) status = 'in-progress';
+
       if (status === 'completed') {
         progressPercent = 100;
       } else {
@@ -102,7 +108,7 @@ const TextCoursePlayer = () => {
         if (progressPercent > 90) progressPercent = 90;
       }
 
-      await axios.post(`${API_BASE_URL}/api/update-progress`, {
+      const res = await axios.post(`${API_BASE_URL}/api/update-progress`, {
         course_id: course.id,
         progress: progressPercent,
         status: status,
@@ -112,8 +118,10 @@ const TextCoursePlayer = () => {
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      return res.data;
     } catch (error) {
       console.error("Save failed:", error);
+      return null;
     }
   };
 
@@ -180,6 +188,9 @@ const TextCoursePlayer = () => {
     setUserAnswers({ ...userAnswers, [qIndex]: optionKey });
   };
 
+  const isFinalLesson = modules.length > 0 && activeModuleIndex === modules.length - 1 &&
+    activeLessonIndex === (modules[modules.length - 1]?.lessons?.length || 1) - 1;
+
   const submitQuiz = () => {
     if (!currentLesson?.questions) return;
     let calculatedScore = 0;
@@ -197,7 +208,9 @@ const TextCoursePlayer = () => {
     setShowResults(true);
     
     if (isPassed) {
-      setAlreadyCompleted(true);
+      // Only the course's final lesson completes it. A mid-course quiz just records progress,
+      // so the learner can keep going and is never flipped into "review mode" early.
+      if (isFinalLesson) setAlreadyCompleted(true);
       saveProgress(activeModuleIndex, activeLessonIndex, 'completed', percentage);
     }
     window.scrollTo(0, 0);
@@ -371,9 +384,14 @@ const TextCoursePlayer = () => {
                           </div>
                           <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto">
                             <button onClick={() => { resetQuiz(); setRetaking(true); }} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
-                            {passed && (
+                            {passed && isFinalLesson && (
                               <button onClick={() => navigate(`/certificate/${course.id}`)} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg">
                                 <Award size={18} /> View Certificate
+                              </button>
+                            )}
+                            {passed && !isFinalLesson && (
+                              <button onClick={goToNextLesson} className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 shadow-lg">
+                                Continue &rarr;
                               </button>
                             )}
                           </div>
