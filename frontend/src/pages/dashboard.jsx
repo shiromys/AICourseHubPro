@@ -4,6 +4,7 @@ import axios from 'axios';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer'; 
 import API_BASE_URL from '../config';
+import useCheckout from '../hooks/useCheckout';
 import { 
   BookOpen, Award, Clock, PlayCircle, Trophy, 
   LayoutDashboard, Search, X, Loader2, ShoppingCart, CheckCircle
@@ -17,7 +18,7 @@ const Dashboard = () => {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [buying, setBuying] = useState(null); 
+  const { startCheckout, buyingId: buying, checkoutModal } = useCheckout();
   const [activeTab, setActiveTab] = useState('active'); 
   const [user, setUser] = useState({ name: 'Learner' });
   const [isAdmin, setIsAdmin] = useState(false);
@@ -104,26 +105,7 @@ const Dashboard = () => {
         return;
     }
 
-    const token = localStorage.getItem('token');
-    setBuying(courseId);
-
-    try {
-        const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
-            { course_id: courseId },
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
-
-        if (res.data.url) {
-            window.location.href = res.data.url;
-        } else {
-            alert("Payment gateway error.");
-            setBuying(null);
-        }
-    } catch (error) {
-        console.error("Payment failed", error);
-        alert("Failed to start payment.");
-        setBuying(null);
-    }
+    startCheckout(courses.find(c => c.id === courseId) || { id: courseId });
   };
 
   const handleStartLearning = (courseId) => {
@@ -425,6 +407,7 @@ const Dashboard = () => {
       )}
       
       <Footer />
+      {checkoutModal}
     </div>
   );
 };

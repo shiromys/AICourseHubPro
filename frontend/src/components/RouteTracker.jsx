@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
+import axios from 'axios';
+import API_BASE_URL from '../config';
 
 // Fires a GA4 page_view and a Meta Pixel PageView on every client-side
 // route change. This app is a single-page app, so React Router swaps
@@ -9,6 +11,15 @@ import { useLocation } from 'react-router-dom';
 const RouteTracker = () => {
   const location = useLocation();
   const isFirstRender = useRef(true);
+
+  // Footprint: tell our own backend which page a logged-in user is on (path only, never the
+  // query string - URLs like /resume?token=... carry login tokens). Fire-and-forget.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    axios.post(`${API_BASE_URL}/api/track`, { path: location.pathname, title: document.title },
+      { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+  }, [location.pathname]);
 
   useEffect(() => {
     // Skip the first mount: GA4 and Meta Pixel already log this initial

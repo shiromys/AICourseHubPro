@@ -93,6 +93,12 @@ class Enrollment(db.Model):
     
     completion_date = db.Column(db.DateTime, nullable=True)
     enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    # Certificate snapshot, frozen at the moment the certificate is issued so the
+    # admin copy (and /verify) keeps showing what was actually awarded even if the
+    # learner later renames their profile or the course is retitled/restructured.
+    certificate_name = db.Column(db.String(150), nullable=True)
+    certificate_course_title = db.Column(db.String(255), nullable=True)
     
 
 # 4. CONTACT MESSAGE MODEL
@@ -132,8 +138,57 @@ class FlaggedPayment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
-    stripe_session_id = db.Column(db.String(255), nullable=True)
+    # unique: one Stripe session can only ever be flagged once (browser verify-payment
+    # and the webhook can race on the same session). NULLs are allowed to repeat.
+    stripe_session_id = db.Column(db.String(255), nullable=True, unique=True)
     payment_intent_id = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     resolved = db.Column(db.Boolean, default=False, nullable=False)
     resolved_at = db.Column(db.DateTime, nullable=True)
+
+
+# 8. USER ACTIVITY MODEL (the "digital footprint")
+# Append-only event log per user: signups, logins, page views, checkout steps,
+# payments, lesson progress, certificates, account changes. Read by the admin
+# panel's Footprint view. Deliberately stores no passwords/tokens/card data.
+class UserActivity(db.Model):
+    __tablename__ = 'user_activity'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    event_type = db.Column(db.String(40), nullable=False)   # e.g. 'login', 'page_view', 'payment'
+    path = db.Column(db.String(255), nullable=True)         # page path for page_view events
+    course_id = db.Column(db.Integer, nullable=True)
+    detail = db.Column(db.Text, nullable=True)              # short human-readable description
+    ip_address = db.Column(db.String(64), nullable=True)
+    user_agent = db.Column(db.String(300), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+# 9. NEWSLETTER SUBSCRIBER MODEL
+# Double opt-in: status goes pending -> active when the emailed link is clicked,
+# and active -> unsubscribed via the one-click link in every email.
+class NewsletterSubscriber(db.Model):
+    __tablename__ = 'newsletter_subscribers'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    status = db.Column(db.String(20), default='pending', nullable=False)  # pending | active | unsubscribed
+    confirm_token = db.Column(db.String(64), unique=True, nullable=True)
+    unsubscribe_token = db.Column(db.String(64), unique=True, nullable=False)
+    source = db.Column(db.String(30), default='home')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    confirmed_at = db.Column(db.DateTime, nullable=True)
+    unsubscribed_at = db.Column(db.DateTime, nullable=True)
+    last_sent_at = db.Column(db.DateTime, nullable=True)
+
+# 10. NEWSLETTER ISSUE MODEL (one weekly digest)
+class NewsletterIssue(db.Model):
+    __tablename__ = 'newsletter_issues'
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(200), nullable=False)
+    preheader = db.Column(db.String(200), nullable=True)
+    body_html = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(20), default='draft', nullable=False)  # draft | sent
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sent_at = db.Column(db.DateTime, nullable=True)
+    recipient_count = db.Column(db.Integer, default=0)
+    created_by = db.Column(db.String(120), nullable=True)

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
+import NewsletterSignup from '../components/NewsletterSignup';
 
 const Home = () => {
   document.title = 'AICourseHubPro | Master AI for Your Career';
@@ -298,6 +299,9 @@ const Home = () => {
           </div>
         </div>
       </section>
+
+      {/* ================= 7b. WEEKLY DIGEST SIGNUP ================= */}
+      <NewsletterSignup source="home" />
 
       {/* ================= 8. FOOTER ================= */}
       {/* 1. KEEP THIS "CALL TO ACTION" SECTION (Changed footer tag to div) */}

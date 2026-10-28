@@ -43,8 +43,10 @@ const PaymentSuccess = () => {
 
         localStorage.removeItem('pendingCourseId'); // Clean up legacy flag if present
 
-        // Fire GTM purchase conversion event (applies to every successful payment)
-        if (typeof window.gtag === 'function') {
+        // Fire GTM purchase conversion event for real purchases only - a flagged
+        // duplicate payment is going to be refunded, so it must not count as a sale.
+        const isDuplicate = res.data.status === 'already_owned_flagged' || res.data.status === 'already_owned_flagged_guest';
+        if (!isDuplicate && typeof window.gtag === 'function') {
           window.gtag('event', 'conversion', {
             'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
             'value': amount,
@@ -169,10 +171,10 @@ const PaymentSuccess = () => {
                 your course in the meantime.
               </p>
               <button
-                onClick={() => navigate('/login')}
+                onClick={() => navigate(localStorage.getItem('token') ? '/dashboard' : '/login')}
                 className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
               >
-                Log In to Access Course
+                {localStorage.getItem('token') ? 'Go to Dashboard' : 'Log In to Access Course'}
               </button>
             </>
           )}

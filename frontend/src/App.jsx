@@ -26,6 +26,7 @@ import Resume from './pages/Resume';
 import AccountSetup from './pages/AccountSetup';
 import Maintenance from './pages/Maintenance';
 import Blog from './pages/Blog';
+import Newsletter from './pages/Newsletter';
 import CookieConsent from './components/CookieConsent';
 import AnnouncementBanner from './components/AnnouncementBanner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
@@ -115,6 +116,7 @@ function App() {
         <Route path="/courses" element={<Courses />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/blog" element={<Blog />} />
+        <Route path="/newsletter" element={<Newsletter />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />

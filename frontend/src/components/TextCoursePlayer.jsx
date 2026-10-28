@@ -59,8 +59,15 @@ const TextCoursePlayer = () => {
           });
 
           if (progressRes.data && progressRes.data.last_module_index != null) {
-             setActiveModuleIndex(progressRes.data.last_module_index);
-             setActiveLessonIndex(progressRes.data.last_lesson_index);
+             // The saved position may predate a course update (fewer/shorter modules).
+             // Clamp it so the learner never lands on a lesson that no longer exists.
+             const mods = foundCourse.modules || foundCourse.course_data?.modules || [];
+             const m = Math.min(Math.max(progressRes.data.last_module_index, 0), Math.max(mods.length - 1, 0));
+             const lessonCount = mods[m]?.lessons?.length || 1;
+             const sameModule = m === progressRes.data.last_module_index;
+             const l = Math.min(Math.max(sameModule ? (progressRes.data.last_lesson_index || 0) : 0, 0), lessonCount - 1);
+             setActiveModuleIndex(m);
+             setActiveLessonIndex(l);
           }
           if (progressRes.data && progressRes.data.status === 'completed') {
             setAlreadyCompleted(true);

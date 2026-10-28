@@ -11,8 +11,11 @@ import {
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
   CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson,
-  TrendingUp, TrendingDown, AlertCircle, KeyRound, Unlock
+  TrendingUp, TrendingDown, AlertCircle, KeyRound, Unlock, Award, Fingerprint
 } from 'lucide-react';
+import FootprintModal from '../components/admin/FootprintModal';
+import CertificatesPanel from '../components/admin/CertificatesPanel';
+import NewsletterPanel from '../components/admin/NewsletterPanel';
 
 // --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
@@ -70,6 +73,9 @@ const AdminDashboard = () => {
   const [editingCourse, setEditingCourse] = useState(null);
   const [isBanModalOpen, setIsBanModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
+  const [footprintUserId, setFootprintUserId] = useState(null);
+  const [uploadedCurriculum, setUploadedCurriculum] = useState(null); // {modules, lessons, filename} when edit-mode JSON was loaded
+  const [learnerMode, setLearnerMode] = useState('clamp');          // 'clamp' | 'reset' for in-progress learners
   const [banDuration, setBanDuration] = useState(30);
   const [isGrantAccessModalOpen, setIsGrantAccessModalOpen] = useState(false);
   const [grantAccessCourseId, setGrantAccessCourseId] = useState('');
@@ -292,8 +298,19 @@ const AdminDashboard = () => {
   const handleUpdateCourse = async () => {
     try {
       const t = localStorage.getItem('token');
-      await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`, editingCourse, { headers: { Authorization: `Bearer ${t}` } });
+      const res = await axios.put(`${API_BASE_URL}/api/courses/${editingCourse.id}`,
+        { ...editingCourse, ...(uploadedCurriculum ? { learner_progress: learnerMode } : {}) },
+        { headers: { Authorization: `Bearer ${t}` } });
       setIsEditModalOpen(false);
+      if (res.data.learners || res.data.warnings) {
+        const l = res.data.learners;
+        alert([
+          'Course updated.',
+          l ? `In-progress learners ${learnerMode === 'reset' ? 'reset to the start' : 'kept in place'}: ${l.in_progress} (${l.moved} moved). Completed learners untouched: ${l.completed}.` : '',
+          ...(res.data.warnings || []).map(w => 'Warning: ' + w),
+        ].filter(Boolean).join('\n\n'));
+      }
+      setUploadedCurriculum(null);
       const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${t}` } });
       setCourses(r.data);
     } catch (e) { console.error("Update course failed:", e); alert("Failed to update course. Please try again."); }
@@ -361,6 +378,29 @@ const AdminDashboard = () => {
     r.readAsText(f); 
   };
 
+  // Edit-mode upload: replaces ONLY the curriculum (modules) and description. Title, price and
+  // category stay as they are, so Stripe price lookups and the storefront are not disturbed.
+  const handleEditJsonUpload = (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = (ev) => {
+      try {
+        const j = JSON.parse(ev.target.result);
+        const mods = Array.isArray(j) ? j : j.modules;
+        if (!Array.isArray(mods) || mods.length === 0) { alert('This file has no "modules" list.'); return; }
+        if (!Array.isArray(j) && j.id && editingCourse && j.id !== editingCourse.id) {
+          if (!window.confirm(`This file is for course id ${j.id} ("${j.title}"), but you are editing "${editingCourse.title}". Load it anyway?`)) return;
+        }
+        const lessons = mods.reduce((n, m) => n + (m.lessons?.length || 0), 0);
+        setEditingCourse(prev => ({ ...prev, modules: mods, ...(!Array.isArray(j) && j.description ? { description: j.description } : {}) }));
+        setUploadedCurriculum({ modules: mods.length, lessons, filename: f.name });
+      } catch (err) { alert('Invalid JSON file.'); }
+    };
+    r.readAsText(f);
+  };
+
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
 
   return (
@@ -397,6 +437,8 @@ const AdminDashboard = () => {
           <SidebarItem id="users" icon={Users} label="Active Users" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="flagged" icon={AlertCircle} label="Flagged Payments" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="certificates" icon={Award} label="Certificates" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="newsletter" icon={Mail} label="Newsletter" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
           <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="analytics" icon={TrendingUp} label="Analytics" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -513,9 +555,9 @@ const AdminDashboard = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 text-sm">
-                            {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
-                            {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
-                            {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
+                            {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setUploadedCurriculum(null);setLearnerMode('clamp');setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
+                            {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
+                            {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
                             {activeTab === 'revenue' && transactions.map((t,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{t.user}</td><td className="px-6 py-4 text-gray-700">{t.course}</td><td className="px-6 py-4 text-gray-500">{t.date}</td><td className="px-6 py-4 text-green-700 font-bold">Paid</td></tr>))}
                             {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
                             {activeTab === 'flagged' && flaggedPayments.length === 0 && (<tr><td colSpan="5" className="px-6 py-10 text-center text-gray-400">No flagged payments — nothing needs review.</td></tr>)}
@@ -525,6 +567,12 @@ const AdminDashboard = () => {
                 </div>
             </div>
         )}
+
+        {/* CERTIFICATES TAB */}
+        {activeTab === 'certificates' && <CertificatesPanel />}
+
+        {/* NEWSLETTER TAB */}
+        {activeTab === 'newsletter' && <NewsletterPanel />}
 
         {/* SUPPORT TAB */}
         {activeTab === 'support' && (
@@ -908,15 +956,21 @@ const AdminDashboard = () => {
                             
                             {/* --- JSON UPLOAD BUTTON (NEW) --- */}
                             <div className="flex gap-2">
-                                {!isEditModalOpen && (
-                                    <label className="cursor-pointer text-xs bg-gray-800 hover:bg-black text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold transition">
-                                        <FileJson size={14}/> Upload JSON
-                                        <input type="file" className="hidden" accept=".json" onChange={handleJsonUpload} />
-                                    </label>
-                                )}
+                                <label className="cursor-pointer text-xs bg-gray-800 hover:bg-black text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold transition">
+                                    <FileJson size={14}/> {isEditModalOpen ? 'Replace curriculum from JSON' : 'Upload JSON'}
+                                    <input type="file" className="hidden" accept=".json" onChange={isEditModalOpen ? handleEditJsonUpload : handleJsonUpload} />
+                                </label>
                                 <button onClick={() => handleAddModule(isEditModalOpen)} className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 font-bold"><Plus size={14}/> Add Module</button>
                             </div>
                           </div>
+                          {isEditModalOpen && uploadedCurriculum && (
+                              <div className="mb-4 p-4 rounded-lg border border-yellow-300 bg-yellow-50 text-sm text-yellow-900">
+                                  <p className="font-bold mb-1">Curriculum loaded from {uploadedCurriculum.filename}: {uploadedCurriculum.modules} modules, {uploadedCurriculum.lessons} lessons.</p>
+                                  <p className="mb-3">Nothing changes until you press <b>Save</b>. Saving replaces the whole live curriculum. Learners who already finished keep their certificate. For learners still in the course:</p>
+                                  <label className="flex items-start gap-2 mb-1.5 cursor-pointer"><input type="radio" name="lm" className="mt-1" checked={learnerMode === 'clamp'} onChange={() => setLearnerMode('clamp')} /><span><b>Keep them where they are</b> (if that lesson no longer exists, move them to the nearest one)</span></label>
+                                  <label className="flex items-start gap-2 cursor-pointer"><input type="radio" name="lm" className="mt-1" checked={learnerMode === 'reset'} onChange={() => setLearnerMode('reset')} /><span><b>Restart them from lesson 1</b> (they see the new course from the beginning)</span></label>
+                              </div>
+                          )}
                           {(isEditModalOpen ? editingCourse.modules : newCourse.modules).map((mod, i) => (
                               <div key={i} className="mb-4 p-4 bg-gray-50 rounded border border-gray-200">
                                   <div className="flex gap-2 mb-2"><input className="bg-transparent font-bold flex-1 text-gray-900" value={mod.title} onChange={e => handleModuleTitleChange(i, e.target.value, isEditModalOpen)} placeholder="Module Title" /><button onClick={() => handleAddLesson(i, isEditModalOpen)} className="text-xs text-green-600 hover:text-green-700 font-bold">+ Lesson</button></div>
@@ -932,6 +986,8 @@ const AdminDashboard = () => {
               </div>
           </div>
       )}
+
+      {footprintUserId && <FootprintModal userId={footprintUserId} onClose={() => setFootprintUserId(null)} />}
     </div>
   );
 };

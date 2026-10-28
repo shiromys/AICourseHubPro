@@ -7,6 +7,7 @@ import API_BASE_URL from '../config';
 import { CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-react';
 import TextCoursePlayer from '../components/TextCoursePlayer'; 
 import { Helmet } from 'react-helmet-async'; // <-- 1. IMPORT HELMET HERE
+import useCheckout from '../hooks/useCheckout';
 
 const CourseView = () => {
   const { id } = useParams();
@@ -15,7 +16,8 @@ const CourseView = () => {
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isEnrolled, setIsEnrolled] = useState(false);
-  const [processing, setProcessing] = useState(false);
+  const { startCheckout, buyingId, checkoutModal } = useCheckout();
+  const processing = buyingId !== null;
 
   useEffect(() => {
     fetchCourseData();
@@ -53,30 +55,7 @@ const CourseView = () => {
     }
   };
 
-  const handleBuy = async () => {
-    if (!course) return;
-
-    // Guest checkout: no login required. If a token exists (returning user),
-    // send it so the purchase attaches to their real account; otherwise the
-    // backend creates a guest enrollment from the email Stripe collects.
-    const token = localStorage.getItem('token');
-
-    setProcessing(true);
-    try {
-      const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`,
-        { course_id: course.id },
-        token ? { headers: { Authorization: `Bearer ${token}` } } : {}
-      );
-
-      if (res.data.url) {
-        window.location.href = res.data.url;
-      }
-    } catch (error) {
-      alert("Payment initiation failed. Please try again.");
-    } finally {
-      setProcessing(false);
-    }
-  };
+  const handleBuy = () => startCheckout(course);
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
   if (!course) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Course not found.</div>;
@@ -161,6 +140,7 @@ const CourseView = () => {
         </div>
       </div>
       <Footer />
+      {checkoutModal}
     </div>
   );
 };

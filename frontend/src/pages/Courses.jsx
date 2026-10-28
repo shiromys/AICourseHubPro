@@ -5,6 +5,7 @@ import { Search, BookOpen, Clock, ChevronRight, Loader2, AlertCircle, ShoppingCa
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
+import useCheckout from '../hooks/useCheckout';
 
 const Courses = () => {
   document.title = 'Courses | AICourseHubPro';
@@ -16,7 +17,7 @@ const Courses = () => {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [buying, setBuying] = useState(null);
+  const { startCheckout, buyingId: buying, checkoutModal } = useCheckout();
 
   const navigate = useNavigate();
   const role = localStorage.getItem('user_role');
@@ -70,26 +71,9 @@ const Courses = () => {
       return;
     }
 
-    // Guest checkout: no login required. If a token exists (returning user),
-    // send it so the purchase attaches to their real account; otherwise the
-    // backend creates a guest enrollment from the email Stripe collects.
-    const token = localStorage.getItem('token');
-    setBuying(courseId);
-
-    try {
-        const res = await axios.post(`${API_BASE_URL}/api/create-checkout-session`, 
-            { course_id: courseId },
-            token ? { headers: { Authorization: `Bearer ${token}` } } : {}
-        );
-
-        if (res.data.url) {
-            window.location.href = res.data.url;
-        }
-    } catch (error) {
-        console.error("Payment Error:", error);
-        alert("Could not start payment. Please try again.");
-        setBuying(null);
-    }
+    // Logged-in users go straight to Stripe; guests are asked for their email first
+    // so the server can refuse the payment if that email already owns the course.
+    startCheckout(courses.find(c => c.id === courseId) || { id: courseId });
   };
 
   // Filter Logic
@@ -237,6 +221,7 @@ const Courses = () => {
       </div>
       
       <Footer />
+      {checkoutModal}
     </div>
   );
 };
