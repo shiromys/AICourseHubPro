@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ChevronLeft, CheckCircle, PlayCircle, FileText, Menu, BookOpen, Award, MessageSquare } from 'lucide-react';
@@ -40,6 +40,15 @@ const TextCoursePlayer = () => {
   useEffect(() => {
     fetchCourseAndProgress();
   }, [id]);
+
+  // The page itself never scrolls (the layout is h-screen + overflow-hidden); the lesson pane is
+  // its own scroll container, so window.scrollTo() did nothing and every new lesson opened at
+  // the bottom. Reset the pane whenever the lesson changes - Next, Previous, sidebar or resume.
+  const lessonPaneRef = useRef(null);
+  useEffect(() => {
+    if (lessonPaneRef.current) lessonPaneRef.current.scrollTop = 0;
+    window.scrollTo(0, 0);
+  }, [activeModuleIndex, activeLessonIndex]);
 
   const fetchCourseAndProgress = async () => {
     try {
@@ -313,7 +322,7 @@ const TextCoursePlayer = () => {
           <span className="text-sm font-bold text-gray-700 truncate">{currentLesson?.title || course.title}</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-12 flex justify-center">
+        <div ref={lessonPaneRef} className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-12 flex justify-center">
           <div className="max-w-4xl w-full">
             {currentLesson ? (
               <div className="animate-fade-in">
@@ -422,19 +431,25 @@ const TextCoursePlayer = () => {
                     </div>
                   )}
 
-                  {/* FOOTER NAV */}
-                  {currentLesson.type !== 'quiz' && currentLesson.type !== 'roleplay' && (
-                    <div className="mt-12 flex flex-col sm:flex-row justify-between gap-3 border-t border-gray-100 pt-8">
-                      <button onClick={goToPrevLesson} disabled={isFirstLesson} className="px-6 py-3 rounded-lg border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-50 transition">&larr; Previous Lesson</button>
-                      <button onClick={goToNextLesson} disabled={isLastLesson} className="px-6 py-3 rounded-lg bg-gray-900 text-white font-bold hover:bg-black disabled:opacity-50 transition flex items-center justify-center gap-2">Next Lesson &rarr;</button>
-                    </div>
-                  )}
               </div>
             ) : (
               <div className="text-center mt-20 text-gray-400"><p>Select a lesson to start.</p></div>
             )}
           </div>
         </div>
+
+        {/* LESSON NAV - pinned under the lesson so Previous/Next are always on screen,
+            instead of sitting at the very bottom of a long lesson. Quizzes and simulations
+            have their own buttons. */}
+        {currentLesson && currentLesson.type !== 'quiz' && currentLesson.type !== 'roleplay' && (
+          <div className="border-t border-gray-200 bg-white px-4 md:px-8 lg:px-12 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+            <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+              <button onClick={goToPrevLesson} disabled={isFirstLesson} className="px-4 sm:px-6 py-2.5 rounded-lg border border-gray-300 text-gray-600 font-medium hover:bg-gray-50 disabled:opacity-40 transition text-sm sm:text-base">&larr; <span className="hidden sm:inline">Previous Lesson</span><span className="sm:hidden">Previous</span></button>
+              <span className="hidden sm:block text-xs text-gray-400 truncate">{currentModule?.title}</span>
+              <button onClick={goToNextLesson} disabled={isLastLesson} className="px-4 sm:px-6 py-2.5 rounded-lg bg-gray-900 text-white font-bold hover:bg-black disabled:opacity-40 transition flex items-center justify-center gap-2 text-sm sm:text-base"><span className="hidden sm:inline">Next Lesson</span><span className="sm:hidden">Next</span> &rarr;</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
