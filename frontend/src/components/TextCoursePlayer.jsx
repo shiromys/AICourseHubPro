@@ -211,7 +211,7 @@ const TextCoursePlayer = () => {
 
     setScore(calculatedScore);
     const percentage = (calculatedScore / totalQuestions) * 100;
-    const isPassed = percentage >= 60;
+    const isPassed = percentage >= 70;
     
     setPassed(isPassed);
     setShowResults(true);

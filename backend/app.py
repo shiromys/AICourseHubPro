@@ -18,6 +18,7 @@ import threading
 import resend 
 import os
 import uuid
+import html as html_lib
 import stripe
 import time
 import psutil
@@ -1154,6 +1155,7 @@ def log_activity(user_id, event_type, detail=None, path=None, course_id=None):
         print(f"log_activity failed ({event_type}): {e}", flush=True)
 
 
+PASS_PERCENT = 70   # keep in sync with the quiz pass mark in TextCoursePlayer.jsx
 DUPLICATE_REVIEW_WINDOW = "5 business days"   # shown to customers whose payment was flagged
 def session_money(session):
     """(amount_cents, currency) from a Stripe session as kwargs for flag_duplicate_payment.
@@ -1713,8 +1715,15 @@ def verify_payment():
 @jwt_required()
 def enroll_free():
     user_id = get_jwt_identity()
-    course_id = request.json.get('course_id')
-    
+    course_id = (request.get_json(silent=True) or {}).get('course_id')
+    course = db.session.get(Course, course_id) if course_id else None
+    if not course or course.is_deleted:
+        return jsonify({"msg": "Course not found"}), 404
+    # Paid courses are only unlocked through a verified Stripe payment (or an admin grant).
+    # Without this check any logged-in user could POST here and unlock any course for free.
+    if (course.price or 0) > 0:
+        return jsonify({"msg": "This course requires payment."}), 402
+
     if not Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
         enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0)
         db.session.add(enr)
@@ -1733,8 +1742,21 @@ def update_progress():
     module_idx = data.get('module_idx')
     lesson_idx = data.get('lesson_idx')
 
-    if 'progress' in data: enr.progress = data['progress']
-    if 'score' in data: enr.score = data['score']
+    # Validate before touching the row: junk values used to reach the database and 500.
+    try:
+        if data.get('progress') is not None:
+            new_progress = int(max(0, min(100, float(data['progress']))))
+        else:
+            new_progress = None
+        new_score = float(data['score']) if data.get('score') is not None else None
+        if module_idx is not None: module_idx = int(module_idx)
+        if lesson_idx is not None: lesson_idx = int(lesson_idx)
+    except (TypeError, ValueError):
+        return jsonify({"msg": "progress, score and indexes must be numbers"}), 400
+    if new_score is not None and not (0 <= new_score <= 100):
+        return jsonify({"msg": "score must be between 0 and 100"}), 400
+    if new_progress is not None: enr.progress = new_progress
+    if new_score is not None: enr.score = new_score
     if module_idx is not None: enr.last_module_index = module_idx
     if lesson_idx is not None: enr.last_lesson_index = lesson_idx
 
@@ -1753,7 +1775,11 @@ def update_progress():
             last_lesson_idx = len(last_module_lessons) - 1
             is_final_lesson = (module_idx == last_module_idx and lesson_idx == last_lesson_idx)
 
-        if is_final_lesson:
+        # Same pass mark as the player. The client reports the score, so this isn't a full
+        # server-side grade, but a bare {"status": "completed"} call no longer works.
+        passed = new_score is not None and new_score >= PASS_PERCENT
+
+        if is_final_lesson and passed:
             enr.status = 'completed'
         else:
             # Real progress on an intermediate assessment - keep it moving,
@@ -2277,6 +2303,9 @@ def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
         unsub_url = f"{DOMAIN}/newsletter?unsubscribe=preview"
     pre = (f'<div style="display:none;max-height:0;overflow:hidden;opacity:0">{issue.preheader}</div>' if issue.preheader else '')
     body = (issue.body_html or '').replace('{{unsubscribe_url}}', unsub_url)
+    # CAN-SPAM requires a valid postal address in marketing email: set NEWSLETTER_POSTAL_ADDRESS on Railway.
+    postal = html_lib.escape((os.getenv('NEWSLETTER_POSTAL_ADDRESS') or '').strip())
+    postal_html = f"<br>{postal}" if postal else ""
     return f"""{pre}
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #000000; padding: 20px; text-align: center;">
@@ -2288,7 +2317,7 @@ def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
         </div>
         <div style="padding:18px 30px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">
             You're receiving this because you subscribed at aicoursehubpro.com.<br>
-            <a href="{unsub_url}" style="color:#6b7280;">Unsubscribe</a> &middot; Shiro Technologies
+            <a href="{unsub_url}" style="color:#6b7280;">Unsubscribe</a> &middot; Shiro Technologies{postal_html}
         </div>
     </div>"""
 

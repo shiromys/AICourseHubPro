@@ -54,6 +54,20 @@ const PrivacyPolicy = () => {
                 </p>
             </section>
 
+            <section>
+                <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><CheckCircle size={18} className="text-green-500"/> Activity on Your Account</h3>
+                <p className="text-gray-400">
+                  When you are signed in, we keep a record of your activity on AICourseHubPro (pages you visit, sign-ins, purchases, lesson progress, certificates, and the device and approximate network address used). We use it to run your account, provide support, keep the platform secure and detect fraud or abuse. This record is visible only to our administrators, is separate from the optional marketing trackers above, and is not sold or shared for advertising. You can ask for a copy or for deletion at any time by emailing info@aicoursehubpro.com.
+                </p>
+            </section>
+
+            <section>
+                <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><CheckCircle size={18} className="text-green-500"/> Weekly Digest Newsletter</h3>
+                <p className="text-gray-400">
+                  If you subscribe to our weekly digest, we store your email address and the date you confirmed. We only email you after you confirm your subscription, every email contains a one-click unsubscribe link, and you will not receive digests after you unsubscribe. We use our email provider solely to deliver these messages.
+                </p>
+            </section>
+
           </div>
         </div>
       </div>
