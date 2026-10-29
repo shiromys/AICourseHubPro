@@ -765,7 +765,7 @@ const AdminDashboard = () => {
                             <span className="font-bold text-gray-900">{f.count} <span className="text-gray-400 font-normal">({f.pct}%)</span></span>
                           </div>
                           <div className="w-full bg-gray-100 rounded-full h-2.5">
-                            <div className="bg-red-600 h-2.5 rounded-full transition-all" style={{ width: `${f.pct}%` }}></div>
+                            <div className="bg-red-600 h-2.5 rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(0, f.pct))}%` }}></div>
                           </div>
                         </div>
                       ))}

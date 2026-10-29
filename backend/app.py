@@ -773,22 +773,28 @@ def get_admin_analytics():
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
     # --- CONVERSION FUNNEL ---
-    total_registered = User.query.filter_by(is_admin=False, is_deleted=False).count()
-    enrolled_user_ids = db.session.query(Enrollment.user_id).distinct().all()
-    total_paid = len(enrolled_user_ids)
-    # Count users enrolled in all 6 courses (bundle equivalent)
+    # Every stage is counted over the SAME population (real learners: not admins, not
+    # deleted accounts). Previously "Purchased" also counted admin/deleted accounts that
+    # hold enrollments, which pushed it past 100% of "Registered" (and "never purchased" negative).
+    real_users = db.select(User.id).where(User.is_admin == False, User.is_deleted == False)
+    total_registered = db.session.execute(db.select(func.count()).select_from(real_users.subquery())).scalar()
+    live_enrollments = db.session.query(Enrollment.user_id, Enrollment.course_id)\
+        .join(Course, Course.id == Enrollment.course_id)\
+        .filter(Course.is_deleted == False, Enrollment.user_id.in_(real_users))
+    total_paid = live_enrollments.with_entities(Enrollment.user_id).distinct().count()
+    # Count users enrolled in every live course (bundle equivalent)
     total_courses = Course.query.filter_by(is_deleted=False).count()
-    bundle_buyers = db.session.query(Enrollment.user_id)\
+    bundle_buyers = live_enrollments.with_entities(Enrollment.user_id)\
         .group_by(Enrollment.user_id)\
-        .having(func.count(Enrollment.course_id) >= total_courses).count()
+        .having(func.count(Enrollment.course_id) >= total_courses).count() if total_courses else 0
 
     conversion_rate = round((total_paid / total_registered * 100), 1) if total_registered > 0 else 0
     bundle_rate = round((bundle_buyers / total_paid * 100), 1) if total_paid > 0 else 0
 
     funnel = [
         { "stage": "Registered", "count": total_registered, "pct": 100 },
-        { "stage": "Purchased", "count": total_paid, "pct": round(total_paid / total_registered * 100, 1) if total_registered > 0 else 0 },
-        { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": round(bundle_buyers / total_registered * 100, 1) if total_registered > 0 else 0 },
+        { "stage": "Purchased", "count": total_paid, "pct": min(100, round(total_paid / total_registered * 100, 1)) if total_registered > 0 else 0 },
+        { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": min(100, round(bundle_buyers / total_registered * 100, 1)) if total_registered > 0 else 0 },
     ]
 
     # --- USER GROWTH (last 30 days) ---
@@ -831,11 +837,15 @@ def get_admin_analytics():
     course_performance.sort(key=lambda x: x['enrolled'], reverse=True)
 
     # --- KEY METRICS ---
-    never_purchased = total_registered - total_paid
-    purchased_never_started = db.session.query(Enrollment.user_id).filter(Enrollment.progress == 0).distinct().count()
-    started_never_completed = db.session.query(Enrollment.user_id).filter(
+    never_purchased = max(0, total_registered - total_paid)
+    # A buyer is "never started" only if NONE of their courses has any progress
+    # (a bundle buyer who started course 1 has started).
+    started_ids = live_enrollments.filter(Enrollment.progress > 0).with_entities(Enrollment.user_id).distinct().scalar_subquery()
+    purchased_never_started = live_enrollments.with_entities(Enrollment.user_id)\
+        .filter(~Enrollment.user_id.in_(started_ids)).distinct().count()
+    started_never_completed = live_enrollments.filter(
         Enrollment.progress > 0, Enrollment.status != 'completed'
-    ).distinct().count()
+    ).with_entities(Enrollment.user_id).distinct().count()
 
     total_revenue = db.session.query(func.sum(Course.price))\
         .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0
