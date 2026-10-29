@@ -152,6 +152,59 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
 def health():
     return jsonify({"status": "awake"}), 200
 
+APP_STARTED_AT = time.time()
+
+
+def _fmt_uptime(seconds):
+    seconds = int(seconds)
+    d, r = divmod(seconds, 86400); h, r = divmod(r, 3600); m, _ = divmod(r, 60)
+    return (f"{d}d " if d else "") + (f"{h}h " if (d or h) else "") + f"{m}m"
+
+
+def _db_revision_status():
+    """(current_revision, head_revision) - so the admin can see at a glance whether the
+    deployed code is ahead of the database (a pending migration)."""
+    current = head = None
+    try:
+        row = db.session.execute(db.text("SELECT version_num FROM alembic_version LIMIT 1")).first()
+        current = row[0] if row else None
+    except Exception:
+        db.session.rollback()
+    try:
+        from alembic.script import ScriptDirectory
+        head = ScriptDirectory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'migrations')).get_current_head()
+    except Exception:
+        pass
+    return current, head
+
+
+def _config_checks():
+    """Real configuration checks shown in Admin > System Health. ok=False items are
+    problems; level 'warn' = works but needs attention."""
+    key = os.getenv('STRIPE_SECRET_KEY', '')
+    mode = ('live' if key.startswith(('sk_live', 'rk_live')) else 'test' if key.startswith(('sk_test', 'rk_test'))
+            else ('unrecognised' if key else 'missing'))
+    env = (os.getenv('RAILWAY_ENVIRONMENT_NAME') or os.getenv('RAILWAY_ENVIRONMENT') or '').strip()
+    prod = env.lower() in ('production', 'prod')
+    mismatch = (prod and mode == 'test') or (env and not prod and mode == 'live')
+    checks = [
+        {"id": "stripe_key", "label": "Stripe API key", "ok": mode in ('live', 'test') and not mismatch,
+         "detail": (f"{mode.upper()} mode" + (f" - environment is '{env}': is this the right key?" if mismatch else "")) if mode != 'missing' else "STRIPE_SECRET_KEY is not set",
+         "level": "error"},
+        {"id": "stripe_webhook", "label": "Stripe webhook secret", "ok": bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
+         "detail": "Set" if os.getenv('STRIPE_WEBHOOK_SECRET') else "STRIPE_WEBHOOK_SECRET is not set - payments only unlock via the browser, not the safety-net webhook", "level": "error"},
+        {"id": "email", "label": "Email sending (Resend)", "ok": bool(os.getenv('RESEND_API_KEY')),
+         "detail": "Set" if os.getenv('RESEND_API_KEY') else "RESEND_API_KEY is not set - no emails can be sent", "level": "error"},
+        {"id": "cron", "label": "Weekly digest scheduler", "ok": bool(os.getenv('CRON_SECRET')),
+         "detail": "CRON_SECRET is set" if os.getenv('CRON_SECRET') else "CRON_SECRET is not set - queued digests will not be released automatically", "level": "warn"},
+        {"id": "postal", "label": "Newsletter postal address", "ok": bool(os.getenv('NEWSLETTER_POSTAL_ADDRESS')),
+         "detail": "Set" if os.getenv('NEWSLETTER_POSTAL_ADDRESS') else "NEWSLETTER_POSTAL_ADDRESS is not set - US law (CAN-SPAM) requires a postal address in marketing emails", "level": "warn"},
+        {"id": "openai", "label": "Nova chat assistant (OpenAI)", "ok": bool(os.getenv('OPENAI_API_KEY')),
+         "detail": "Set" if os.getenv('OPENAI_API_KEY') else "OPENAI_API_KEY is not set - the chat widget will answer 'Chat unavailable'", "level": "warn"},
+    ]
+    return checks, mode, env
+
+
 @app.route('/api/admin/system-health', methods=['GET'])
 @jwt_required()
 def get_system_health():
@@ -166,41 +219,56 @@ def get_system_health():
         db.session.execute(db.text('SELECT 1'))
         db_ok = True
     except Exception:
+        db.session.rollback()
         db_ok = False
     db_ms = round((time.time() - db_start) * 1000, 1)
-
-    # API response time (self-measured from this request start)
-    api_ms = round((time.time() - db_start) * 1000 + db_ms, 1)
 
     # System metrics
     try:
         cpu = psutil.cpu_percent(interval=0.1)
-        mem = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        memory_pct = mem.percent
-        disk_pct = disk.percent
+        memory_pct = psutil.virtual_memory().percent
+        disk_pct = psutil.disk_usage('/').percent
     except Exception:
         cpu = 0
         memory_pct = 0
         disk_pct = 0
 
-    # Total users and enrollments
-    total_users = User.query.filter_by(is_deleted=False).count()
-    total_enrollments = Enrollment.query.count()
+    checks, stripe_mode, env = _config_checks()
+    current_rev, head_rev = _db_revision_status() if db_ok else (None, None)
 
-    # Stripe check - just verify key is set
-    stripe_ok = bool(os.getenv('STRIPE_SECRET_KEY'))
+    ops = {}
+    if db_ok:
+        try:
+            ops = {
+                "pending_flagged_payments": FlaggedPayment.query.filter_by(resolved=False).count(),
+                "unread_messages": ContactMessage.query.filter_by(is_read=False).count(),
+                "newsletter_subscribers": NewsletterSubscriber.query.filter_by(status='active').count(),
+                "queued_digests": NewsletterIssue.query.filter_by(status='queued').count(),
+                "unverified_enrollments": Enrollment.query.filter_by(payment_source='unverified').count(),
+            }
+            last = NewsletterIssue.query.filter_by(status='sent').order_by(NewsletterIssue.sent_at.desc()).first()
+            ops["last_digest_sent_at"] = last.sent_at.isoformat() if last and last.sent_at else None
+        except Exception:
+            db.session.rollback()
 
     return jsonify({
         "db_connected": db_ok,
         "db_response_ms": db_ms,
-        "api_response_ms": api_ms,
         "cpu_percent": cpu,
         "memory_percent": memory_pct,
         "disk_percent": disk_pct,
-        "stripe_active": stripe_ok,
-        "total_users": total_users,
-        "total_enrollments": total_enrollments,
+        "stripe_active": any(c["id"] == "stripe_key" and c["ok"] for c in checks),
+        "stripe_mode": stripe_mode,
+        "environment": env or None,
+        "checks": checks,
+        "db_revision": current_rev,
+        "db_head_revision": head_rev,
+        "db_up_to_date": (current_rev == head_rev) if (current_rev and head_rev) else None,
+        "release": (os.getenv('RAILWAY_GIT_COMMIT_SHA') or '')[:7] or None,
+        "process_uptime": _fmt_uptime(time.time() - APP_STARTED_AT),
+        "ops": ops,
+        "total_users": User.query.filter_by(is_deleted=False).count() if db_ok else 0,
+        "total_enrollments": Enrollment.query.count() if db_ok else 0,
         "timestamp": datetime.utcnow().isoformat()
     })
     try:
@@ -492,11 +560,25 @@ def admin_grant_course(user_id):
     if Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
         return jsonify({"msg": f"{target_user.name} already has access to {course.title}"}), 200
 
+    # Optional: the admin can record that real money was received outside the normal checkout
+    # (e.g. the customer paid but never got unlocked). Otherwise it is a free grant.
+    amount_cents = None
+    try:
+        if data.get('amount') not in (None, ''):
+            amount_cents = int(round(float(data['amount']) * 100))
+            if amount_cents < 0:
+                return jsonify({"msg": "Amount can't be negative"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"msg": "Amount must be a number"}), 400
     db.session.add(Enrollment(
         user_id=user_id, course_id=course_id,
         status='in-progress', progress=0,
-        enrolled_at=datetime.utcnow()
+        enrolled_at=datetime.utcnow(),
+        payment_source='admin_grant', amount_paid_cents=amount_cents or 0, currency='USD'
     ))
+    db.session.add(AuditLog(admin_email=admin.email, action="Course Access Granted",
+                            details=f"{course.title} -> {target_user.email}" + (f" (recorded payment ${amount_cents/100:.2f})" if amount_cents else " (free)"),
+                            timestamp=datetime.utcnow()))
     db.session.commit()
     log_activity(user_id, 'course_granted', detail=f"Admin {admin.email} granted access to {course.title}", course_id=course.id)
 
@@ -727,6 +809,21 @@ def ban_user(user_id):
     log_activity(user_id, 'ban_change', detail=f"{msg} (by {admin.email})")
     return jsonify({"msg": msg})
 
+def revenue_dollars(*conditions):
+    """Money actually recorded on enrollments (amount_paid_cents), in dollars.
+    Unverified / free / zero-amount rows contribute nothing."""
+    cents = db.session.query(func.coalesce(func.sum(Enrollment.amount_paid_cents), 0)).filter(*conditions).scalar() or 0
+    return float(cents) / 100.0
+
+
+def revenue_by_day(days):
+    """{date: dollars} for the last `days` days in ONE query."""
+    since = (datetime.utcnow() - timedelta(days=days - 1)).date()
+    rows = db.session.query(func.date(Enrollment.enrolled_at), func.coalesce(func.sum(Enrollment.amount_paid_cents), 0))\
+        .filter(func.date(Enrollment.enrolled_at) >= since).group_by(func.date(Enrollment.enrolled_at)).all()
+    return {r[0]: float(r[1]) / 100.0 for r in rows}
+
+
 @app.route('/api/admin/stats', methods=['GET'])
 @jwt_required()
 def get_admin_stats():
@@ -734,21 +831,16 @@ def get_admin_stats():
     user = db.session.get(User, current_user_id) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    total_revenue = db.session.query(func.sum(Course.price))\
-        .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0.0
-
+    total_revenue = revenue_dollars()
     total_students = User.query.filter_by(is_admin=False, is_deleted=False).count()
     total_courses = Course.query.filter_by(is_deleted=False).count()
 
+    by_day = revenue_by_day(7)
     chart_data = []
     end_date = datetime.utcnow()
     for i in range(6, -1, -1):
         day = end_date - timedelta(days=i)
-        day_revenue = db.session.query(func.sum(Course.price))\
-            .join(Enrollment, Course.id == Enrollment.course_id)\
-            .filter(func.date(Enrollment.enrolled_at) == day.date())\
-            .scalar() or 0
-        chart_data.append({ "name": day.strftime('%b %d'), "revenue": float(day_revenue) })
+        chart_data.append({ "name": day.strftime('%b %d'), "revenue": by_day.get(day.date(), 0.0) })
 
     recent_msgs = ContactMessage.query.filter_by(is_read=False)\
         .order_by(ContactMessage.created_at.desc()).limit(5).all()
@@ -761,7 +853,7 @@ def get_admin_stats():
         "revenue": total_revenue,
         "students": total_students,
         "courses": total_courses,
-        "uptime": "99.9%",
+        "uptime": _fmt_uptime(time.time() - APP_STARTED_AT),   # real: time since this server process started
         "chart_data": chart_data,       
         "recent_messages": messages_preview 
     })
@@ -772,6 +864,12 @@ def get_admin_analytics():
     current_user_id = get_jwt_identity()
     user = db.session.get(User, current_user_id)
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+
+    try:
+        days = int(request.args.get('days', 30))
+    except ValueError:
+        days = 30
+    days = days if days in (7, 30, 90, 365) else 30
 
     # --- CONVERSION FUNNEL ---
     # Every stage is counted over the SAME population (real learners: not admins, not
@@ -798,42 +896,35 @@ def get_admin_analytics():
         { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": min(100, round(bundle_buyers / total_registered * 100, 1)) if total_registered > 0 else 0 },
     ]
 
-    # --- USER GROWTH (last 30 days) ---
-    growth = []
-    for i in range(29, -1, -1):
+    # --- USER GROWTH (selected range) ---
+    since = (datetime.utcnow() - timedelta(days=days - 1)).date()
+    g_rows = db.session.query(func.date(User.created_at), func.count(User.id))\
+        .filter(User.is_admin == False, User.is_deleted == False, func.date(User.created_at) >= since)\
+        .group_by(func.date(User.created_at)).all()
+    g_map = {r[0]: r[1] for r in g_rows}
+    by_day = revenue_by_day(days)
+    growth, revenue_chart = [], []
+    for i in range(days - 1, -1, -1):
         day = datetime.utcnow() - timedelta(days=i)
-        count = User.query.filter(
-            User.is_admin == False,
-            User.is_deleted == False,
-            func.date(User.created_at) == day.date()
-        ).count()
-        growth.append({ "date": day.strftime('%b %d'), "users": count })
+        label = day.strftime('%b %d')
+        growth.append({ "date": label, "users": g_map.get(day.date(), 0) })
+        revenue_chart.append({ "date": label, "revenue": by_day.get(day.date(), 0.0) })
 
-    # --- REVENUE CHART (last 30 days, real data) ---
-    revenue_chart = []
-    for i in range(29, -1, -1):
-        day = datetime.utcnow() - timedelta(days=i)
-        day_revenue = db.session.query(func.sum(Course.price))\
-            .join(Enrollment, Course.id == Enrollment.course_id)\
-            .filter(func.date(Enrollment.enrolled_at) == day.date())\
-            .scalar() or 0
-        revenue_chart.append({ "date": day.strftime('%b %d'), "revenue": float(day_revenue) })
-
-    # --- COURSE PERFORMANCE ---
-    courses = Course.query.filter_by(is_deleted=False).all()
+    # --- COURSE PERFORMANCE (revenue = what was actually recorded, not list price x enrollments) ---
     course_performance = []
-    for c in courses:
+    for c in Course.query.filter_by(is_deleted=False).all():
         enrollments = Enrollment.query.filter_by(course_id=c.id).all()
         total_enr = len(enrollments)
+        started = len([e for e in enrollments if (e.progress or 0) > 0])
         completed = len([e for e in enrollments if e.status == 'completed'])
-        completion_rate = round(completed / total_enr * 100, 1) if total_enr > 0 else 0
-        revenue = total_enr * c.price
         course_performance.append({
             "title": c.title,
             "enrolled": total_enr,
+            "started": started,
             "completed": completed,
-            "completion_rate": completion_rate,
-            "revenue": revenue
+            "start_rate": round(started / total_enr * 100, 1) if total_enr else 0,
+            "completion_rate": round(completed / total_enr * 100, 1) if total_enr else 0,
+            "revenue": sum((e.amount_paid_cents or 0) for e in enrollments) / 100.0,
         })
     course_performance.sort(key=lambda x: x['enrolled'], reverse=True)
 
@@ -848,10 +939,12 @@ def get_admin_analytics():
         Enrollment.progress > 0, Enrollment.status != 'completed'
     ).with_entities(Enrollment.user_id).distinct().count()
 
-    total_revenue = db.session.query(func.sum(Course.price))\
-        .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0
+    total_revenue = revenue_dollars()
+    period_revenue = sum(r["revenue"] for r in revenue_chart)
+    period_signups = sum(g["users"] for g in growth)
 
     return jsonify({
+        "days": days,
         "funnel": funnel,
         "conversion_rate": conversion_rate,
         "bundle_rate": bundle_rate,
@@ -862,8 +955,12 @@ def get_admin_analytics():
             "never_purchased": never_purchased,
             "purchased_never_started": purchased_never_started,
             "started_never_completed": started_never_completed,
-            "total_revenue": float(total_revenue),
-            "avg_revenue_per_user": round(float(total_revenue) / total_paid, 2) if total_paid > 0 else 0
+            "total_revenue": total_revenue,
+            "period_revenue": period_revenue,
+            "period_signups": period_signups,
+            "avg_revenue_per_user": round(total_revenue / total_paid, 2) if total_paid > 0 else 0,
+            "certificates_issued": Enrollment.query.filter(Enrollment.certificate_id.isnot(None)).count(),
+            "newsletter_subscribers": NewsletterSubscriber.query.filter_by(status='active').count(),
         }
     })
 
@@ -1166,6 +1263,27 @@ def session_money(session):
         return {}
 
 
+def payment_fields(session, course=None, n=1, index=0, bundle=False):
+    """Enrollment kwargs recording what a Stripe checkout actually brought in.
+    A bundle charge is split across the n enrollments it creates (cents; the remainder
+    goes to the first one) so the parts always add up to what Stripe charged.
+    Falls back to the list price, marked as an estimate, if the session has no amount.
+    Never raises - recording must not break an unlock."""
+    try:
+        total = session['amount_total']
+        cur = (session['currency'] or 'usd').upper()
+    except Exception:
+        total, cur = None, 'USD'
+    estimated = False
+    if total is None:
+        estimated = True
+        total = 15900 if bundle else int(round(((course.price if course else 0) or 0) * 100))
+    n = max(1, n)
+    base, rem = divmod(int(total), n)
+    return dict(amount_paid_cents=base + (rem if index == 0 else 0), currency=cur,
+                payment_source='stripe_bundle' if bundle else 'stripe', amount_estimated=estimated)
+
+
 FLAG_OUTCOMES = {'refunded': 'Refunded', 'credit_given': 'Credit given', 'declined': 'Declined'}
 
 
@@ -1419,6 +1537,16 @@ def create_bundle_checkout():
 
 
 
+def _paid_fields(amount_cents, currency, course_id):
+    """payment_fields() for callers that only have the amount (guest checkout helper)."""
+    if amount_cents is None:
+        course = db.session.get(Course, course_id)
+        return dict(amount_paid_cents=int(round((course.price if course else 0) * 100)), currency='USD',
+                    payment_source='stripe', amount_estimated=True)
+    return dict(amount_paid_cents=int(amount_cents), currency=(currency or 'usd').upper(),
+                payment_source='stripe', amount_estimated=False)
+
+
 def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None,
                            amount_cents=None, currency=None):
     """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
@@ -1480,7 +1608,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
             db.session.add(Enrollment(
                 user_id=existing_user.id, course_id=course_id,
                 status='in-progress', progress=0,
-                enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+                **_paid_fields(amount_cents, currency, course_id)
             ))
             db.session.commit()
 
@@ -1519,7 +1648,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
         db.session.add(Enrollment(
             user_id=guest_user.id, course_id=course_id,
             status='in-progress', progress=0,
-            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+            enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+            **_paid_fields(amount_cents, currency, course_id)
         ))
         db.session.commit()
 
@@ -1653,15 +1783,15 @@ def verify_payment():
                 owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
 
                 enrolled_count = 0
-                for course in all_courses:
-                    if course.id not in owned:
-                        new_enr = Enrollment(
-                            user_id=user_id, course_id=course.id,
-                            status='in-progress', progress=0,
-                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
-                        )
-                        db.session.add(new_enr)
-                        enrolled_count += 1
+                to_add = [c for c in all_courses if c.id not in owned]
+                for course in to_add:
+                    db.session.add(Enrollment(
+                        user_id=user_id, course_id=course.id,
+                        status='in-progress', progress=0,
+                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+                        **payment_fields(session, course, n=len(to_add), index=enrolled_count, bundle=True)
+                    ))
+                    enrolled_count += 1
 
                 db.session.commit()
 
@@ -1689,7 +1819,8 @@ def verify_payment():
                     new_enrollment = Enrollment(
                         user_id=user_id, course_id=course_id,
                         status='in-progress', progress=0,
-                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+                        **payment_fields(session, db.session.get(Course, course_id))
                     )
                     db.session.add(new_enrollment)
                     db.session.commit()
@@ -1725,7 +1856,8 @@ def enroll_free():
         return jsonify({"msg": "This course requires payment."}), 402
 
     if not Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
-        enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0)
+        enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0,
+                         payment_source='free', amount_paid_cents=0, currency='USD')
         db.session.add(enr)
         db.session.commit()
     return jsonify({"msg": "Enrolled"}), 201
@@ -1977,18 +2109,22 @@ def stripe_webhook():
             owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
             
             enrolled_count = 0
-            for course in all_courses:
-                if course.id not in owned:
-                    # Double check to prevent race conditions with the frontend verify route
-                    existing = Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first()
-                    if not existing:
-                        new_enr = Enrollment(
-                            user_id=user_id, course_id=course.id, 
-                            status='in-progress', progress=0, 
-                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
-                        )
-                        db.session.add(new_enr)
-                        enrolled_count += 1
+            # Same guard as /api/verify-payment: a bundle session unlocks courses only once.
+            if Enrollment.query.filter_by(stripe_session_id=session_id).first():
+                to_add = []
+            else:
+                to_add = [c for c in all_courses if c.id not in owned]
+            for course in to_add:
+                # Double check to prevent race conditions with the frontend verify route
+                existing = Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first()
+                if not existing:
+                    db.session.add(Enrollment(
+                        user_id=user_id, course_id=course.id,
+                        status='in-progress', progress=0,
+                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+                        **payment_fields(session, course, n=len(to_add), index=enrolled_count, bundle=True)
+                    ))
+                    enrolled_count += 1
             
             db.session.commit()
             
@@ -2011,7 +2147,8 @@ def stripe_webhook():
                 new_enrollment = Enrollment(
                     user_id=user_id, course_id=course_id, 
                     status='in-progress', progress=0, 
-                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
+                    **payment_fields(session, db.session.get(Course, course_id))
                 )
                 db.session.add(new_enrollment)
                 db.session.commit()
@@ -2627,18 +2764,164 @@ def get_audit_logs():
     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
     return jsonify([{"action": l.action, "admin": l.admin_email, "details": l.details, "date": l.timestamp.strftime('%Y-%m-%d %H:%M')} for l in logs])
 
+SOURCE_LABELS = {
+    'stripe': 'Stripe - single course', 'stripe_bundle': 'Stripe - All-Access bundle',
+    'admin_grant': 'Admin grant', 'free': 'Free course', 'unverified': 'Unverified (no receipt)',
+}
+
+
+def _tx_query(args):
+    q = db.session.query(Enrollment, User, Course)\
+        .join(User, User.id == Enrollment.user_id).join(Course, Course.id == Enrollment.course_id)
+    src = args.get('source')
+    if src == 'paid':
+        q = q.filter(Enrollment.payment_source.in_(['stripe', 'stripe_bundle']) | (Enrollment.amount_paid_cents > 0))
+    elif src in SOURCE_LABELS:
+        q = q.filter(Enrollment.payment_source == src)
+    text = (args.get('q') or '').strip()
+    if text:
+        like = f"%{text}%"
+        q = q.filter(User.name.ilike(like) | User.email.ilike(like) | Course.title.ilike(like))
+    return q.order_by(Enrollment.enrolled_at.desc().nullslast(), Enrollment.id.desc())
+
+
+def _tx_dict(e, u, c):
+    src = e.payment_source or ('stripe' if e.stripe_session_id else 'unverified')
+    return {
+        "id": e.id, "user": u.name, "email": u.email, "course": c.title,
+        "date": e.enrolled_at.strftime('%Y-%m-%d') if e.enrolled_at else "N/A",
+        "source": src, "source_label": SOURCE_LABELS.get(src, src),
+        "amount": (e.amount_paid_cents / 100.0) if e.amount_paid_cents is not None else None,
+        "currency": e.currency, "estimated": bool(e.amount_estimated),
+        "stripe_session_id": e.stripe_session_id,
+    }
+
+
 @app.route('/api/admin/transactions', methods=['GET'])
 @jwt_required()
 def get_transactions():
-    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
-    enrollments = Enrollment.query.order_by(Enrollment.id.desc()).all()
-    data = []
-    for e in enrollments:
-        u = db.session.get(User, e.user_id) # FIXED
-        c = db.session.get(Course, e.course_id) # FIXED
-        if u and c:
-            data.append({"id": e.id, "user": u.name, "email": u.email, "course": c.title, "date": e.enrolled_at.strftime('%Y-%m-%d') if e.enrolled_at else "N/A", "status": "Paid"})
-    return jsonify(data)
+    admin, err = _require_admin()
+    if err: return err
+    try:
+        page = max(1, int(request.args.get('page', 1))); per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        page, per_page = 1, 50
+    q = _tx_query(request.args)
+    total = q.count()
+    rows = q.offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({"items": [_tx_dict(*r) for r in rows], "total": total, "page": page, "per_page": per_page})
+
+
+@app.route('/api/admin/transactions.csv', methods=['GET'])
+@jwt_required()
+def transactions_csv():
+    admin, err = _require_admin()
+    if err: return err
+    import csv, io
+    from flask import Response
+    def safe(v):  # block spreadsheet formula injection from user-controlled text
+        v = '' if v is None else str(v)
+        return "'" + v if v[:1] in ('=', '+', '-', '@') else v
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Enrollment ID", "Date", "Customer", "Email", "Course", "Source", "Amount", "Currency", "Amount is an estimate", "Stripe session"])
+    for e, u, c in _tx_query(request.args).all():
+        d = _tx_dict(e, u, c)
+        w.writerow([d["id"], d["date"], safe(d["user"]), safe(d["email"]), safe(d["course"]), d["source_label"],
+                    "" if d["amount"] is None else f"{d['amount']:.2f}", d["currency"] or "", "yes" if d["estimated"] else "", d["stripe_session_id"] or ""])
+    return Response(buf.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment; filename=transactions.csv"})
+
+
+@app.route('/api/admin/revenue/summary', methods=['GET'])
+@jwt_required()
+def revenue_summary():
+    """Everything the Revenue & Sales cards need, computed from recorded amounts."""
+    admin, err = _require_admin()
+    if err: return err
+    now = datetime.utcnow()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
+    E = Enrollment
+    gross = revenue_dollars()
+    single_rev = revenue_dollars(E.payment_source == 'stripe')
+    bundle_rev = revenue_dollars(E.payment_source == 'stripe_bundle')
+    grant_rev = revenue_dollars(E.payment_source == 'admin_grant')
+    est_rev = revenue_dollars(E.amount_estimated == True)
+    bundle_sales = db.session.query(func.count(func.distinct(E.stripe_session_id))).filter(E.payment_source == 'stripe_bundle').scalar() or 0
+    single_sales = E.query.filter(E.payment_source == 'stripe').count()
+
+    # Duplicate charges: money that came in through Stripe but is not on any enrollment.
+    def flag_sum(*cond):
+        c = db.session.query(func.coalesce(func.sum(FlaggedPayment.amount_cents), 0)).filter(*cond).scalar() or 0
+        return float(c) / 100.0
+    dup_pending = flag_sum(FlaggedPayment.resolved == False)
+    dup_pending_n = FlaggedPayment.query.filter_by(resolved=False).count()
+    dup_refunded = flag_sum(FlaggedPayment.outcome == 'refunded')
+    dup_kept = flag_sum(FlaggedPayment.outcome.in_(['credit_given', 'declined']))
+
+    # last 12 months
+    months = []
+    for i in range(11, -1, -1):
+        y, m = now.year, now.month - i
+        while m <= 0: m += 12; y -= 1
+        start = datetime(y, m, 1); end = datetime(y + (m == 12), (m % 12) + 1, 1)
+        months.append({"month": start.strftime('%b %Y'), "revenue": revenue_dollars(E.enrolled_at >= start, E.enrolled_at < end)})
+
+    by_course = []
+    for c in Course.query.filter_by(is_deleted=False).all():
+        by_course.append({"title": c.title, "revenue": revenue_dollars(E.course_id == c.id),
+                          "sales": E.query.filter(E.course_id == c.id, E.amount_paid_cents > 0).count()})
+    by_course.sort(key=lambda x: x["revenue"], reverse=True)
+
+    return jsonify({
+        "gross_sales": gross,
+        "net_revenue": gross + dup_kept,   # course sales + duplicate charges that were kept
+        "this_month": revenue_dollars(E.enrolled_at >= month_start),
+        "last_month": revenue_dollars(E.enrolled_at >= prev_month_start, E.enrolled_at < month_start),
+        "last_30_days": revenue_dollars(E.enrolled_at >= now - timedelta(days=30)),
+        "single": {"revenue": single_rev, "sales": single_sales},
+        "bundle": {"revenue": bundle_rev, "sales": bundle_sales},
+        "admin_recorded": grant_rev,
+        "estimated_revenue": est_rev,
+        "grants": E.query.filter(E.payment_source == 'admin_grant').count(),
+        "free": E.query.filter(E.payment_source == 'free').count(),
+        "unverified": E.query.filter(E.payment_source == 'unverified').count(),
+        "duplicates": {"pending": dup_pending, "pending_count": dup_pending_n, "refunded": dup_refunded, "kept": dup_kept},
+        "months": months,
+        "by_course": by_course,
+    })
+
+
+@app.route('/api/admin/enrollments/<int:enrollment_id>/payment', methods=['POST'])
+@jwt_required()
+def set_enrollment_payment(enrollment_id):
+    """Correct how an enrollment was paid (e.g. an older row with no receipt, or an estimate).
+    Body: {"source": "stripe" | "admin_grant" | "free", "amount": 29.00}"""
+    admin, err = _require_admin()
+    if err: return err
+    e = db.session.get(Enrollment, enrollment_id)
+    if not e:
+        return jsonify({"msg": "Enrollment not found"}), 404
+    data = request.get_json(silent=True) or {}
+    source = data.get('source')
+    if source not in ('stripe', 'admin_grant', 'free'):
+        return jsonify({"msg": "source must be stripe, admin_grant or free"}), 400
+    try:
+        amount = 0.0 if source == 'free' else float(data.get('amount'))
+    except (TypeError, ValueError):
+        return jsonify({"msg": "Enter the amount paid as a number"}), 400
+    if amount < 0 or amount > 100000:
+        return jsonify({"msg": "Amount is out of range"}), 400
+    before = f"{e.payment_source or 'unset'} / {('$%.2f' % (e.amount_paid_cents / 100)) if e.amount_paid_cents is not None else 'no amount'}"
+    e.payment_source = source
+    e.amount_paid_cents = int(round(amount * 100))
+    e.currency = e.currency or 'USD'
+    e.amount_estimated = False
+    user = db.session.get(User, e.user_id); course = db.session.get(Course, e.course_id)
+    db.session.add(AuditLog(admin_email=admin.email, action="Enrollment Payment Corrected",
+                            details=f"#{e.id} {user.email if user else ''} / {course.title if course else e.course_id}: {before} -> {source} / ${amount:.2f}",
+                            timestamp=datetime.utcnow()))
+    db.session.commit()
+    return jsonify({"msg": "Saved", "item": _tx_dict(e, user, course)}), 200
 
 @app.route('/api/chat', methods=['POST'])
 def chat_support():

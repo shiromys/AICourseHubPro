@@ -17,6 +17,7 @@ import FootprintModal from '../components/admin/FootprintModal';
 import CertificatesPanel from '../components/admin/CertificatesPanel';
 import NewsletterPanel from '../components/admin/NewsletterPanel';
 import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
+import RevenuePanel from '../components/admin/RevenuePanel';
 
 // --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
@@ -52,7 +53,10 @@ const AdminDashboard = () => {
   const [courses, setCourses] = useState([]); 
   const [users, setUsers] = useState([]); 
   const [stats, setStats] = useState({ revenue: 0, students: 0, courses: 0, uptime: "99.9%", chart_data: [], recent_messages: [] });
-  const [transactions, setTransactions] = useState([]);
+  const [headerDb, setHeaderDb] = useState(null);       // null = checking, true/false = real database status
+  const [analyticsDays, setAnalyticsDays] = useState(30);
+  const [grantAmount, setGrantAmount] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
   const [messages, setMessages] = useState([]);
   const [logs, setLogs] = useState([]);
   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
@@ -119,10 +123,6 @@ const AdminDashboard = () => {
               const r = await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${token}` } });
               setUsers(r.data);
             }
-            else if (activeTab === 'revenue') { 
-              const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${token}` } });
-              setTransactions(r.data);
-            }
             else if (activeTab === 'support') { 
               const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
               setMessages(r.data);
@@ -136,7 +136,7 @@ const AdminDashboard = () => {
               setSettings(r.data); 
             }
             else if (activeTab === 'analytics') {
-              const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
+              const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { params: { days: analyticsDays }, headers: { Authorization: `Bearer ${token}` } });
               setAnalytics(r.data);
             }
             else if (activeTab === 'system') {
@@ -147,10 +147,12 @@ const AdminDashboard = () => {
         setLoading(false);
       };
       loadTabData();
+      axios.get(`${API_BASE_URL}/api/admin/system-health`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => setHeaderDb(!!r.data.db_connected)).catch(() => setHeaderDb(false));
     } else {
         navigate('/login');
     }
-  }, [activeTab, navigate]);
+  }, [activeTab, navigate, analyticsDays]);
 
   // Seed the chart when systemHealth first loads
   useEffect(() => {
@@ -198,7 +200,8 @@ const AdminDashboard = () => {
         data: { cutoff_date: resetDate }
       });
       alert(`Done! Deleted ${r.data.deleted_enrollments} test enrollments and ${r.data.deleted_users} test users.`);
-      const s = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${t}` } });
+      setResetConfirm('');
+      const s = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { params: { days: analyticsDays }, headers: { Authorization: `Bearer ${t}` } });
       setAnalytics(s.data);
     } catch(e) { console.error("Reset failed:", e); alert("Failed to reset test data. Please try again."); }
     finally { setResetLoading(false); }
@@ -260,8 +263,9 @@ const AdminDashboard = () => {
     if (!grantAccessCourseId) { alert("Please select a course."); return; }
     try {
       const t = localStorage.getItem('token');
-      const r = await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/grant-course`, { course_id: grantAccessCourseId }, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/grant-course`, { course_id: grantAccessCourseId, amount: grantAmount }, { headers: { Authorization: `Bearer ${t}` } });
       alert(r.data.msg);
+      setGrantAmount('');
       setIsGrantAccessModalOpen(false);
     } catch (e) { console.error("Grant access failed:", e); alert("Failed to grant access. Please try again."); }
   };
@@ -314,18 +318,6 @@ const AdminDashboard = () => {
 
   const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
   const confirmCloseTicket = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${t}` } }); setMessages(prev => prev.filter(msg => msg.id !== messageToClose)); setIsCloseTicketModalOpen(false); };
-
-  const handleExportCSV = () => {
-    if (transactions.length === 0) return alert("No data");
-    const headers = ["User,Email,Course,Date,Status"];
-    const rows = transactions.map(tx => `${tx.user},${tx.email},"${tx.course}",${tx.date},Paid`);
-    const csvContent = [headers, ...rows].join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.setAttribute("href", URL.createObjectURL(blob));
-    link.setAttribute("download", "transactions.csv");
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  };
 
   const handleAddModule = (isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = {...t, modules: [...t.modules, {title: "New Module", lessons: []}]}; isEdit ? setEditingCourse(u) : setNewCourse(u); };
   const handleAddLesson = (mIdx, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[mIdx].lessons.push({title: "New Lesson", type: "text", content: ""}); isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
@@ -452,8 +444,8 @@ const AdminDashboard = () => {
               <Menu size={24} />
             </button>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1>
-              <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox' })[activeTab] || activeTab.replace('_', ' ')}</h1>
+              <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className={`w-2 h-2 rounded-full ${headerDb === null ? 'bg-gray-300' : headerDb ? 'bg-green-500' : 'bg-red-500'}`}></span> {headerDb === null ? 'Checking database…' : headerDb ? 'Database connected' : 'Database or API unreachable'}</p>
             </div>
           </div>
 
@@ -497,10 +489,10 @@ const AdminDashboard = () => {
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-fade-in">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600"><DollarSign size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Revenue</p></div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600"><DollarSign size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">${Number(stats.revenue || 0).toFixed(2)}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Revenue</p></div>
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600"><Users size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.students}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Students</p></div>
               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600"><BookOpen size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Courses</p></div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600"><Activity size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">System Uptime</p></div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600"><Activity size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Server Uptime</p></div>
             </div>
             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
                 <h3 className="text-lg font-bold mb-6 text-gray-900">Revenue Overview</h3>
@@ -512,7 +504,7 @@ const AdminDashboard = () => {
         )}
 
         {/* --- TABLES --- */}
-        {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
+        {['courses', 'users', 'deleted_users', 'audit'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
                     <div className="w-full flex justify-between items-center md:block">
@@ -527,7 +519,6 @@ const AdminDashboard = () => {
                             <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200 w-full md:w-auto"><Plus size={18} /> Add</button>
                         </div>
                     )}
-                    {activeTab === 'revenue' && <button onClick={handleExportCSV} className="text-xs bg-gray-900 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-900">Export CSV</button>}
                 </div>
                 
                 <div className="overflow-x-auto">
@@ -536,7 +527,6 @@ const AdminDashboard = () => {
                             <tr>
                                 {activeTab === 'courses' && <><th className="px-6 py-4">Title</th><th className="px-6 py-4">Price</th><th className="px-6 py-4">Category</th><th className="px-6 py-4">Modules</th><th className="px-6 py-4 text-right">Actions</th></>}
                                 {(activeTab === 'users' || activeTab === 'deleted_users') && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></>}
-                                {activeTab === 'revenue' && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Status</th></>}
                                 {activeTab === 'audit' && <><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></>}
                             </tr>
                         </thead>
@@ -544,7 +534,6 @@ const AdminDashboard = () => {
                             {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setUploadedCurriculum(null);setLearnerMode('clamp');setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
                             {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
                             {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
-                            {activeTab === 'revenue' && transactions.map((t,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{t.user}</td><td className="px-6 py-4 text-gray-700">{t.course}</td><td className="px-6 py-4 text-gray-500">{t.date}</td><td className="px-6 py-4 text-green-700 font-bold">Paid</td></tr>))}
                             {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
                         </tbody>
                     </table>
@@ -555,6 +544,7 @@ const AdminDashboard = () => {
         {/* CERTIFICATES TAB */}
         {activeTab === 'certificates' && <CertificatesPanel />}
         {activeTab === 'flagged' && <FlaggedPaymentsPanel />}
+        {activeTab === 'revenue' && <RevenuePanel />}
 
         {/* NEWSLETTER TAB */}
         {activeTab === 'newsletter' && <NewsletterPanel />}
@@ -615,8 +605,8 @@ const AdminDashboard = () => {
                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <span className="text-gray-700 font-medium">Stripe Integration</span>
                                 {systemHealth.stripe_active
-                                  ? <span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Active</span>
-                                  : <span className="text-red-600 text-sm font-bold">Key Missing</span>
+                                  ? <span className={`text-sm font-bold flex items-center gap-2 ${systemHealth.stripe_mode === 'live' ? 'text-green-700' : 'text-yellow-700'}`}><div className={`w-2 h-2 rounded-full animate-pulse ${systemHealth.stripe_mode === 'live' ? 'bg-green-500' : 'bg-yellow-500'}`}></div> {systemHealth.stripe_mode === 'live' ? 'Live mode' : 'Test mode'}</span>
+                                  : <span className="text-red-600 text-sm font-bold">{systemHealth.stripe_mode === 'missing' ? 'Key Missing' : 'Check key / environment'}</span>
                                 }
                             </div>
                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -671,6 +661,54 @@ const AdminDashboard = () => {
                             </div>
                         </div>
                         <p className="text-xs text-gray-400 mt-4 text-right font-mono">Last updated: {new Date(systemHealth.timestamp + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+                    </div>
+                </div>
+
+                {/* Configuration + operations */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                        <h3 className="font-bold mb-4 text-gray-900">Configuration checks</h3>
+                        <ul className="space-y-3">
+                            {(systemHealth.checks || []).map(c => (
+                                <li key={c.id} className="flex items-start gap-3 text-sm">
+                                    <span className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${c.ok ? 'bg-green-100 text-green-700' : c.level === 'warn' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{c.ok ? '✓' : '!'}</span>
+                                    <span><span className="font-bold text-gray-900">{c.label}</span><span className={`block text-xs ${c.ok ? 'text-gray-500' : c.level === 'warn' ? 'text-yellow-700' : 'text-red-600'}`}>{c.detail}</span></span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
+                        <div>
+                            <h3 className="font-bold mb-3 text-gray-900">Deployment</h3>
+                            <div className="space-y-2 text-sm">
+                                <div className="flex justify-between"><span className="text-gray-500">Environment</span><span className="font-mono text-gray-800">{systemHealth.environment || 'not reported'}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-500">Release</span><span className="font-mono text-gray-800">{systemHealth.release || 'not reported'}</span></div>
+                                <div className="flex justify-between"><span className="text-gray-500">Server running for</span><span className="font-mono text-gray-800">{systemHealth.process_uptime}</span></div>
+                                <div className="flex justify-between items-center"><span className="text-gray-500">Database migration</span>
+                                    {systemHealth.db_up_to_date === null || systemHealth.db_up_to_date === undefined
+                                      ? <span className="font-mono text-gray-500">{systemHealth.db_revision || 'unknown'}</span>
+                                      : systemHealth.db_up_to_date
+                                        ? <span className="text-green-700 font-bold text-xs bg-green-100 px-2 py-0.5 rounded-full border border-green-200">Up to date</span>
+                                        : <span className="text-red-700 font-bold text-xs bg-red-100 px-2 py-0.5 rounded-full border border-red-200" title={`database ${systemHealth.db_revision} / code ${systemHealth.db_head_revision}`}>Migration pending</span>}
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="font-bold mb-3 text-gray-900">Needs attention</h3>
+                            <div className="grid grid-cols-2 gap-3 text-center">
+                                {[
+                                  ['Flagged payments', systemHealth.ops?.pending_flagged_payments, 'flagged'],
+                                  ['Unread messages', systemHealth.ops?.unread_messages, 'support'],
+                                  ['Unverified enrollments', systemHealth.ops?.unverified_enrollments, 'revenue'],
+                                  ['Newsletter subscribers', systemHealth.ops?.newsletter_subscribers, 'newsletter'],
+                                ].map(([label, n, tab]) => (
+                                  <button key={label} onClick={() => setActiveTab(tab)} className={`p-3 rounded-lg border text-left hover:bg-gray-50 ${label !== 'Newsletter subscribers' && n > 0 ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200'}`}>
+                                    <p className="text-2xl font-black text-gray-900">{n ?? '—'}</p><p className="text-xs text-gray-500">{label}</p>
+                                  </button>
+                                ))}
+                            </div>
+                            <p className="text-xs text-gray-400 mt-3">Last weekly digest sent: {systemHealth.ops?.last_digest_sent_at ? new Date(systemHealth.ops.last_digest_sent_at + 'Z').toLocaleString() : 'never'}{systemHealth.ops?.queued_digests ? ` · ${systemHealth.ops.queued_digests} queued` : ''}</p>
+                        </div>
                     </div>
                 </div>
 
@@ -731,6 +769,16 @@ const AdminDashboard = () => {
               <div className="text-center py-20 text-gray-400">Loading analytics...</div>
             ) : (
               <>
+                {/* Range selector */}
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <p className="text-sm text-gray-500">Charts and period figures cover the selected range. Funnel and totals are all-time.</p>
+                  <div className="flex gap-2">
+                    {[[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']].map(([d, l]) => (
+                      <button key={d} onClick={() => setAnalyticsDays(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${analyticsDays === d ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Key Metrics Row */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
@@ -744,12 +792,31 @@ const AdminDashboard = () => {
                   </div>
                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                     <p className="text-xs font-bold text-gray-400 uppercase mb-1">Avg Revenue / User</p>
-                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.avg_revenue_per_user}</p>
+                    <p className="text-2xl font-black text-gray-900">${Number(analytics.key_metrics.avg_revenue_per_user).toFixed(2)}</p>
                   </div>
                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
                     <p className="text-xs font-bold text-gray-400 uppercase mb-1">Bundle Rate</p>
                     <p className="text-2xl font-black text-purple-600">{analytics.bundle_rate}%</p>
                     <p className="text-xs text-gray-400 mt-1">Of paid users</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Revenue ({analyticsDays === 365 ? '1 year' : `${analyticsDays} days`})</p>
+                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.period_revenue.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">New sign-ups ({analyticsDays === 365 ? '1 year' : `${analyticsDays} days`})</p>
+                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.period_signups}</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Certificates issued</p>
+                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.certificates_issued}</p>
+                  </div>
+                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Newsletter subscribers</p>
+                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.newsletter_subscribers}</p>
                   </div>
                 </div>
 
@@ -792,13 +859,13 @@ const AdminDashboard = () => {
 
                 {/* Revenue Chart 30 days */}
                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-                  <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 30 Days</h3>
+                  <h3 className="font-bold text-gray-900 mb-4">Revenue — Last {analyticsDays === 365 ? 'Year' : `${analyticsDays} Days`}</h3>
                   <div className="h-64 min-w-[600px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={analytics.revenue_chart}>
                         <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/><stop offset="95%" stopColor="#dc2626" stopOpacity={0}/></linearGradient></defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
-                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
+                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={analyticsDays > 30 ? Math.floor(analyticsDays / 8) : 4}/>
                         <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={v => `$${v}`}/>
                         <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`$${v}`, 'Revenue']}/>
                         <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={2} fillOpacity={1} fill="url(#revGrad)"/>
@@ -809,13 +876,13 @@ const AdminDashboard = () => {
 
                 {/* User Growth Chart */}
                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-                  <h3 className="font-bold text-gray-900 mb-4">User Registrations — Last 30 Days</h3>
+                  <h3 className="font-bold text-gray-900 mb-4">User Registrations — Last {analyticsDays === 365 ? 'Year' : `${analyticsDays} Days`}</h3>
                   <div className="h-64 min-w-[600px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={analytics.growth}>
                         <defs><linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
-                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
+                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={analyticsDays > 30 ? Math.floor(analyticsDays / 8) : 4}/>
                         <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false}/>
                         <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [v, 'New Users']}/>
                         <Area type="monotone" dataKey="users" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#growthGrad)"/>
@@ -830,13 +897,14 @@ const AdminDashboard = () => {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left min-w-[700px]">
                       <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold tracking-wider">
-                        <tr><th className="px-6 py-3">Course</th><th className="px-6 py-3">Enrolled</th><th className="px-6 py-3">Completed</th><th className="px-6 py-3">Completion Rate</th><th className="px-6 py-3">Revenue</th></tr>
+                        <tr><th className="px-6 py-3">Course</th><th className="px-6 py-3">Enrolled</th><th className="px-6 py-3">Started</th><th className="px-6 py-3">Completed</th><th className="px-6 py-3">Completion Rate</th><th className="px-6 py-3">Revenue</th></tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100 text-sm">
                         {analytics.course_performance.map((c, i) => (
                           <tr key={i} className="hover:bg-gray-50 transition">
                             <td className="px-6 py-4 font-medium text-gray-900">{c.title}</td>
                             <td className="px-6 py-4 text-gray-700">{c.enrolled}</td>
+                            <td className="px-6 py-4 text-gray-700">{c.started} <span className="text-gray-400 text-xs">({c.start_rate}%)</span></td>
                             <td className="px-6 py-4 text-gray-700">{c.completed}</td>
                             <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-24 bg-gray-100 rounded-full h-2"><div className="bg-green-500 h-2 rounded-full" style={{ width: `${c.completion_rate}%` }}></div></div><span className="text-xs font-bold text-gray-600">{c.completion_rate}%</span></div></td>
                             <td className="px-6 py-4 font-bold text-green-600">${c.revenue.toFixed(2)}</td>
@@ -856,7 +924,11 @@ const AdminDashboard = () => {
                       <label className="text-xs font-bold text-gray-500 mb-1 block">Cutoff Date (delete data before this date)</label>
                       <input type="date" value={resetDate} onChange={e => setResetDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500"/>
                     </div>
-                    <button onClick={handleResetTestData} disabled={resetLoading || !resetDate} className="mt-4 sm:mt-5 px-5 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 mb-1 block">Type DELETE to confirm</label>
+                      <input value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} placeholder="DELETE" className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-32 focus:outline-none focus:border-red-500"/>
+                    </div>
+                    <button onClick={handleResetTestData} disabled={resetLoading || !resetDate || resetConfirm !== 'DELETE'} className="mt-4 sm:mt-5 px-5 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
                       {resetLoading ? 'Clearing...' : 'Clear Test Data'}
                     </button>
                   </div>
@@ -896,6 +968,11 @@ const AdminDashboard = () => {
                       <option value="">Select a course...</option>
                       {courses.map(c => (<option key={c.id} value={c.id}>{c.title}</option>))}
                     </select>
+                </div>
+                <div className="mb-4">
+                    <label className="text-sm text-gray-600 font-bold">Payment received (optional)</label>
+                    <input type="number" min="0" step="0.01" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} placeholder="Leave empty for a free grant" className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"/>
+                    <p className="text-xs text-gray-400 mt-1">Only fill this if the customer really paid (e.g. paid but never got unlocked). It is then counted as revenue.</p>
                 </div>
                 <button onClick={handleConfirmGrantAccess} className="bg-green-600 w-full py-2 rounded font-bold text-white hover:bg-green-700 transition">Grant Access</button>
                 <button onClick={() => setIsGrantAccessModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>

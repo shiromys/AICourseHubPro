@@ -94,6 +94,14 @@ class Enrollment(db.Model):
     completion_date = db.Column(db.DateTime, nullable=True)
     enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # What this enrollment actually brought in (cents). Bundles are split across their
+    # courses so the parts add up to the amount Stripe charged. payment_source:
+    #   stripe | stripe_bundle | admin_grant | free | unverified (older rows with no receipt)
+    amount_paid_cents = db.Column(db.Integer, nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+    payment_source = db.Column(db.String(20), nullable=True)
+    amount_estimated = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text('false'))
+
     # Certificate snapshot, frozen at the moment the certificate is issued so the
     # admin copy (and /verify) keeps showing what was actually awarded even if the
     # learner later renames their profile or the course is retitled/restructured.
