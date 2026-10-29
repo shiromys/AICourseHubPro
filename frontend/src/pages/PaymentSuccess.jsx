@@ -155,7 +155,7 @@ const PaymentSuccess = () => {
               <h2 className="text-2xl font-bold mb-2 text-yellow-500">You Already Own This Course</h2>
               <p className="text-gray-400 mb-6">
                 Our records show you already have access to this course. We've flagged this payment for
-                our team to review, and we'll follow up shortly about a refund. Taking you back to your
+                our team to review, and we'll contact you within 5 business days. Taking you back to your
                 course now...
               </p>
             </>
@@ -167,7 +167,7 @@ const PaymentSuccess = () => {
               <h2 className="text-2xl font-bold mb-2 text-yellow-500">You Already Own This Course</h2>
               <p className="text-gray-400 mb-6">
                 Our records show this email already has access to this course. We've flagged this payment
-                for our team to review, and we'll follow up shortly about a refund. Please log in to access
+                for our team to review, and we'll contact you within 5 business days. Please log in to access
                 your course in the meantime.
               </p>
               <button

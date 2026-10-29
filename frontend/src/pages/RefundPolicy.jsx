@@ -63,14 +63,29 @@ const RefundPolicy = () => {
                     <span className="text-red-600">03.</span> Exceptions
                 </h3>
                 <p className="text-gray-400 mb-4">
-                  We will consider refund requests <strong>only</strong> in the event of a technical or billing error:
+                  We will consider requests <strong>only</strong> in the event of a technical or billing error:
                 </p>
                 <ul className="space-y-3">
                     <li className="flex items-start gap-3 bg-gray-950 p-4 rounded-lg border border-gray-800">
                         <CheckCircle className="text-green-500 shrink-0 mt-1" size={20}/>
-                        <span>You were charged twice for the same course due to a payment processing error.</span>
+                        <span>You were charged more than once for the same course (a duplicate charge).</span>
                     </li>
                 </ul>
+            </section>
+
+            <section>
+                <h3 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                    <span className="text-red-600">04.</span> Duplicate Charges
+                </h3>
+                <p className="text-gray-400 mb-4">
+                  Our checkout is designed to stop you from buying a course you already own. If a duplicate charge still goes through
+                  (for example, two payments made at the same moment), it is flagged automatically and reviewed individually by our team.
+                  We will contact you within <strong className="text-white">5 business days</strong> at the email used for the payment.
+                </p>
+                <p className="text-gray-400">
+                  Each case is decided at the discretion of management. Depending on the circumstances, the outcome may be a refund of
+                  the duplicate charge, a credit toward another course, or no action. You keep full access to the course you already own while the review is pending.
+                </p>
             </section>
 
           </div>

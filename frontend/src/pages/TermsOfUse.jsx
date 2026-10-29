@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { FileText, ChevronRight } from 'lucide-react';
@@ -54,6 +55,16 @@ const TermsOfUse = () => {
                     <li className="bg-black/30 p-3 rounded border border-gray-800 flex items-center gap-2"><ChevronRight size={14} className="text-red-500"/> No sharing accounts</li>
                     <li className="bg-black/30 p-3 rounded border border-gray-800 flex items-center gap-2"><ChevronRight size={14} className="text-red-500"/> No reselling materials</li>
                 </ul>
+            </section>
+
+            <section>
+                <h3 className="text-xl font-bold text-white mb-3">5. Payments & Duplicate Charges</h3>
+                <p className="text-gray-400 leading-relaxed">
+                  All purchases are final and non-refundable, as described in our <Link to="/refund-policy" className="text-red-500 hover:underline">Refund Policy</Link>.
+                  If you are charged more than once for the same course, the extra charge is reviewed individually by our team, which will
+                  contact you within 5 business days. The outcome of each review (a refund, a credit toward another course, or no action) is decided
+                  at the discretion of management, and that decision is final.
+                </p>
             </section>
 
           </div>

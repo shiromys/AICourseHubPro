@@ -539,41 +539,112 @@ def admin_send_reset(user_id):
 
     return jsonify({"msg": f"Password reset email sent to {target_user.email}"}), 200
 
+def _flag_to_dict(f, users=None, courses=None):
+    user = db.session.get(User, f.user_id)
+    course = db.session.get(Course, f.course_id)
+    # Direct link to the payment in the Stripe Dashboard (a plain link - no Stripe API involved).
+    live = not (f.stripe_session_id or '').startswith('cs_test_')
+    base = "https://dashboard.stripe.com/" + ("" if live else "test/")
+    stripe_url = (base + "payments/" + f.payment_intent_id) if f.payment_intent_id else None
+    return {
+        "id": f.id,
+        "user_name": user.name if user else "Unknown",
+        "user_email": f.customer_email or (user.email if user else "Unknown"),
+        "course_title": course.title if course else f"course_id={f.course_id}",
+        "stripe_session_id": f.stripe_session_id,
+        "payment_intent_id": f.payment_intent_id,
+        "stripe_url": stripe_url,
+        "amount": (f.amount_cents / 100.0) if f.amount_cents is not None else None,
+        "currency": f.currency,
+        "created_at": str(f.created_at) if f.created_at else None,
+        "resolved": f.resolved,
+        "resolved_at": str(f.resolved_at) if f.resolved_at else None,
+        "outcome": f.outcome,
+        "outcome_label": FLAG_OUTCOMES.get(f.outcome) if f.outcome else ("Resolved (no outcome recorded)" if f.resolved else None),
+        "resolution_note": f.resolution_note,
+        "resolved_by": f.resolved_by,
+    }
+
+
+def _flag_query_for(status):
+    q = FlaggedPayment.query
+    if status == 'pending':
+        q = q.filter_by(resolved=False)
+    elif status == 'resolved':
+        q = q.filter_by(resolved=True)
+    return q.order_by(FlaggedPayment.created_at.desc())
+
+
 @app.route('/api/flagged-payments', methods=['GET'])
 @jwt_required()
 def get_flagged_payments():
-    """Admin queue of 'paid for a course already owned' incidents needing manual
-    refund review - populated by resolve_guest_checkout, never auto-refunded."""
+    """Admin review queue + permanent record of 'paid for a course already owned'
+    incidents. Nothing here is ever deleted or refunded automatically: management
+    decides each case and the decision is recorded (see resolve endpoint).
+
+    ?status=pending (default) | resolved | all   (legacy ?resolved=true still works)"""
     admin_id = get_jwt_identity()
     admin = db.session.get(User, admin_id)
     if not admin or not admin.is_admin:
         return jsonify({"msg": "Admin only"}), 403
 
-    show_resolved = request.args.get('resolved') == 'true'
-    flags = FlaggedPayment.query.filter_by(resolved=show_resolved).order_by(FlaggedPayment.created_at.desc()).all()
+    status = request.args.get('status')
+    if not status:
+        status = 'resolved' if request.args.get('resolved') == 'true' else 'pending'
+    if status not in ('pending', 'resolved', 'all'):
+        return jsonify({"msg": "status must be pending, resolved or all"}), 400
 
-    output = []
-    for f in flags:
-        user = db.session.get(User, f.user_id)
-        course = db.session.get(Course, f.course_id)
-        output.append({
-            "id": f.id,
-            "user_name": user.name if user else "Unknown",
-            "user_email": user.email if user else "Unknown",
-            "course_title": course.title if course else f"course_id={f.course_id}",
-            "stripe_session_id": f.stripe_session_id,
-            "payment_intent_id": f.payment_intent_id,
-            "created_at": str(f.created_at) if f.created_at else None,
-            "resolved": f.resolved,
-            "resolved_at": str(f.resolved_at) if f.resolved_at else None
-        })
-    return jsonify(output), 200
+    return jsonify([_flag_to_dict(f) for f in _flag_query_for(status).all()]), 200
+
+
+@app.route('/api/flagged-payments/counts', methods=['GET'])
+@jwt_required()
+def flagged_payment_counts():
+    admin = db.session.get(User, get_jwt_identity())
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+    pending = FlaggedPayment.query.filter_by(resolved=False).count()
+    resolved = FlaggedPayment.query.filter_by(resolved=True).count()
+    return jsonify({"pending": pending, "resolved": resolved, "all": pending + resolved}), 200
+
+
+@app.route('/api/flagged-payments.csv', methods=['GET'])
+@jwt_required()
+def flagged_payments_csv():
+    """Permanent record for accounting / management review."""
+    admin = db.session.get(User, get_jwt_identity())
+    if not admin or not admin.is_admin:
+        return jsonify({"msg": "Admin only"}), 403
+    import csv, io
+    from flask import Response
+    status = request.args.get('status', 'all')
+    if status not in ('pending', 'resolved', 'all'):
+        status = 'all'
+    def safe(v):  # block spreadsheet formula injection from user-controlled text
+        v = '' if v is None else str(v)
+        return "'" + v if v[:1] in ('=', '+', '-', '@') else v
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ID", "Flagged at (UTC)", "Customer", "Email", "Course", "Amount", "Currency", "Status",
+                "Outcome", "Decision note", "Decided by", "Decided at (UTC)", "Stripe payment", "Stripe session"])
+    for f in _flag_query_for(status).all():
+        d = _flag_to_dict(f)
+        w.writerow([d["id"], d["created_at"], safe(d["user_name"]), safe(d["user_email"]), safe(d["course_title"]),
+                    "" if d["amount"] is None else f"{d['amount']:.2f}", d["currency"] or "",
+                    "Resolved" if d["resolved"] else "Needs review", d["outcome_label"] or "",
+                    safe(d["resolution_note"]), safe(d["resolved_by"]), d["resolved_at"] or "",
+                    d["payment_intent_id"] or "", d["stripe_session_id"] or ""])
+    return Response(buf.getvalue(), mimetype='text/csv',
+                    headers={"Content-Disposition": "attachment; filename=flagged_payments.csv"})
+
 
 @app.route('/api/flagged-payments/<int:flag_id>/resolve', methods=['POST'])
 @jwt_required()
 def resolve_flagged_payment(flag_id):
-    """Admin marks a flagged duplicate-payment as handled, after refunding it
-    manually in Stripe Dashboard. Doesn't touch Stripe itself - just tracking."""
+    """Record management's decision on a flagged duplicate payment.
+    Body: {"outcome": "refunded" | "credit_given" | "declined", "note": "..."}.
+    This only RECORDS the decision - any refund is done by hand in the Stripe Dashboard.
+    The row is kept forever; it just moves from 'Needs review' to 'Resolved'."""
     admin_id = get_jwt_identity()
     admin = db.session.get(User, admin_id)
     if not admin or not admin.is_admin:
@@ -582,12 +653,33 @@ def resolve_flagged_payment(flag_id):
     flag = db.session.get(FlaggedPayment, flag_id)
     if not flag:
         return jsonify({"msg": "Flagged payment not found"}), 404
+    if flag.resolved:
+        return jsonify({"msg": "This payment was already resolved."}), 409
+
+    data = request.get_json(silent=True) or {}
+    outcome = (data.get('outcome') or '').strip()
+    note = (data.get('note') or '').strip()[:2000]
+    if outcome not in FLAG_OUTCOMES:
+        return jsonify({"msg": "Choose an outcome: refunded, credit_given or declined."}), 400
+    if outcome == 'declined' and not note:
+        return jsonify({"msg": "Add a short reason when declining, so the record explains the decision."}), 400
 
     flag.resolved = True
     flag.resolved_at = datetime.utcnow()
+    flag.outcome = outcome
+    flag.resolution_note = note or None
+    flag.resolved_by = admin.email
+    course = db.session.get(Course, flag.course_id)
+    db.session.add(AuditLog(
+        admin_email=admin.email, action="Flagged Payment Resolved",
+        details=f"#{flag.id} {flag.customer_email or ''} / {course.title if course else flag.course_id}: "
+                f"{FLAG_OUTCOMES[outcome]}" + (f" - {note[:200]}" if note else ""),
+        timestamp=datetime.utcnow()))
     db.session.commit()
+    log_activity(flag.user_id, 'duplicate_payment_resolved',
+                 detail=f"Duplicate payment decision: {FLAG_OUTCOMES[outcome]}", course_id=flag.course_id)
 
-    return jsonify({"msg": "Marked as resolved"}), 200
+    return jsonify({"msg": "Decision recorded", "flag": _flag_to_dict(flag)}), 200
 
 @app.route('/api/profile', methods=['PUT'])
 @jwt_required()
@@ -1052,7 +1144,21 @@ def log_activity(user_id, event_type, detail=None, path=None, course_id=None):
         print(f"log_activity failed ({event_type}): {e}", flush=True)
 
 
-def flag_duplicate_payment(user, course_id, session_id, payment_intent_id=None, payer_email=None):
+DUPLICATE_REVIEW_WINDOW = "5 business days"   # shown to customers whose payment was flagged
+def session_money(session):
+    """(amount_cents, currency) from a Stripe session as kwargs for flag_duplicate_payment.
+    Never raises - a missing amount must not break a payment that already succeeded."""
+    try:
+        return {"amount_cents": session['amount_total'], "currency": session['currency']}
+    except Exception:
+        return {}
+
+
+FLAG_OUTCOMES = {'refunded': 'Refunded', 'credit_given': 'Credit given', 'declined': 'Declined'}
+
+
+def flag_duplicate_payment(user, course_id, session_id, payment_intent_id=None, payer_email=None,
+                           amount_cents=None, currency=None):
     """Records a payment that arrived for a course the user ALREADY owns, so a human
     can refund it. This is the backstop behind the pre-checkout ownership check
     (create_checkout_session) - it only fires for races (two tabs/devices paying at
@@ -1069,7 +1175,9 @@ def flag_duplicate_payment(user, course_id, session_id, payment_intent_id=None, 
 
     flag = FlaggedPayment(
         user_id=user.id, course_id=course_id, stripe_session_id=session_id,
-        payment_intent_id=payment_intent_id, created_at=datetime.utcnow(), resolved=False
+        payment_intent_id=payment_intent_id, created_at=datetime.utcnow(), resolved=False,
+        amount_cents=amount_cents, currency=(currency or None) and str(currency).upper(),
+        customer_email=payer_email or user.email
     )
     db.session.add(flag)
     try:
@@ -1084,15 +1192,16 @@ def flag_duplicate_payment(user, course_id, session_id, payment_intent_id=None, 
     email = payer_email or user.email
 
     internal_alert_html = (
-        f"<h3>Duplicate purchase detected — needs manual refund review</h3>"
+        f"<h3>Duplicate purchase detected — needs review</h3>"
         f"<p><strong>Customer:</strong> {user.name} ({email})</p>"
         f"<p><strong>Course already owned:</strong> {course_title}</p>"
         f"<p><strong>Stripe session ID:</strong> {session_id}</p>"
         f"<p><strong>Stripe payment intent:</strong> {payment_intent_id or 'unavailable'}</p>"
         f"<p>The pre-checkout ownership check should normally stop this, so this is a race "
-        f"(two payments in flight) or an old checkout link. No refund has been issued "
-        f"automatically — review it in the admin panel's Flagged Payments tab, or in the "
-        f"Stripe Dashboard directly, and refund if appropriate.</p>"
+        f"(two payments in flight) or an old checkout link. Nothing has been refunded "
+        f"automatically — open the admin panel's Flagged Payments tab and record management's "
+        f"decision (refunded, credit given, or declined). Customers were told we reply within "
+        f"{DUPLICATE_REVIEW_WINDOW}.</p>"
     )
     threading.Thread(
         target=send_email,
@@ -1102,14 +1211,14 @@ def flag_duplicate_payment(user, course_id, session_id, payment_intent_id=None, 
 
     if user.account_setup_complete:
         body = (f"Our records show you already have access to <strong>{course_title}</strong>. "
-                f"We've flagged this payment for our team to review, and we'll be in touch shortly "
-                f"about your refund. In the meantime, please log in to access your course.")
+                f"We've flagged this payment for our team to review, and we'll contact you within "
+                f"{DUPLICATE_REVIEW_WINDOW}. In the meantime, please log in to access your course.")
         btn_text, btn_url = "Log In", f"{DOMAIN}/login"
     else:
         # Still-incomplete guest: no working password, so "log in" is a dead end.
         token = create_access_token(identity=str(user.id), expires_delta=timedelta(days=30))
         body = (f"Our records show you already have access to <strong>{course_title}</strong>. "
-                f"We've flagged this payment for our team to review, and we'll be in touch shortly about your refund. "
+                f"We've flagged this payment for our team to review, and we'll contact you within {DUPLICATE_REVIEW_WINDOW}. "
                 f"Here's a link straight back to your course in the meantime.")
         btn_text, btn_url = "Go To Course", f"{DOMAIN}/resume?token={token}&course_id={course_id}"
     html = get_email_template("You Already Own This Course", body, btn_text, btn_url)
@@ -1298,7 +1407,8 @@ def create_bundle_checkout():
 
 
 
-def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None):
+def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None,
+                           amount_cents=None, currency=None):
     """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
     safety net) so a guest's payment is never lost even if their browser tab
     closes before verify-payment runs - Stripe fires the webhook regardless.
@@ -1340,7 +1450,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
             # flight) or an old checkout link. Never move money automatically - flag it
             # (idempotent per Stripe session) so a human can refund it.
             flag_duplicate_payment(existing_user, course_id, session_id,
-                                   payment_intent_id=payment_intent_id, payer_email=guest_email)
+                                   payment_intent_id=payment_intent_id, payer_email=guest_email,
+                                   amount_cents=amount_cents, currency=currency)
 
             if existing_user.account_setup_complete:
                 return {"status": "already_owned_flagged", "user": existing_user}
@@ -1478,19 +1589,20 @@ def verify_payment():
             if not guest_email:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent,
+                                           **session_money(session))
             if not result:
                 return jsonify({"msg": "Could not determine payer email from Stripe session"}), 400
 
             if result["status"] == "already_owned_flagged":
                 return jsonify({
-                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "msg": f"You already own this course. Our team will review this payment and contact you within {DUPLICATE_REVIEW_WINDOW}.",
                     "status": "already_owned_flagged",
                 }), 200
 
             if result["status"] == "already_owned_flagged_guest":
                 return jsonify({
-                    "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                    "msg": f"You already own this course. Our team will review this payment and contact you within {DUPLICATE_REVIEW_WINDOW}.",
                     "status": "already_owned_flagged_guest",
                     "token": result["token"],
                     "name": result["user"].name,
@@ -1554,9 +1666,10 @@ def verify_payment():
                     # Paid, but the course was already owned from a DIFFERENT payment/grant.
                     # (Replaying the same session_id is harmless and falls through below.)
                     user = db.session.get(User, user_id)
-                    flag_duplicate_payment(user, course_id, session_id, payment_intent_id=session.payment_intent)
+                    flag_duplicate_payment(user, course_id, session_id, payment_intent_id=session.payment_intent,
+                                           **session_money(session))
                     return jsonify({
-                        "msg": "You already own this course. Our team has been notified and will follow up about a refund.",
+                        "msg": f"You already own this course. Our team will review this payment and contact you within {DUPLICATE_REVIEW_WINDOW}.",
                         "status": "already_owned_flagged",
                     }), 200
 
@@ -1814,7 +1927,8 @@ def stripe_webhook():
             print(f"Webhook: guest checkout detected for session {session_id}, course_id={course_id} — resolving...", flush=True)
             guest_email = session.customer_details.email if session.customer_details else None
             guest_name = session.customer_details.name if session.customer_details else None
-            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent)
+            result = resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=session.payment_intent,
+                                           **session_money(session))
             if not result:
                 print(f"Webhook: guest checkout for session {session_id} had no payer email — skipping", flush=True)
             else:
@@ -1855,7 +1969,8 @@ def stripe_webhook():
                 # Paid for a course already owned from a different payment/grant: flag for refund review.
                 dup_user = db.session.get(User, user_id)
                 if dup_user:
-                    flag_duplicate_payment(dup_user, course_id, session_id, payment_intent_id=session.payment_intent)
+                    flag_duplicate_payment(dup_user, course_id, session_id, payment_intent_id=session.payment_intent,
+                                           **session_money(session))
             if not existing:
                 new_enrollment = Enrollment(
                     user_id=user_id, course_id=course_id, 

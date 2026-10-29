@@ -13,6 +13,7 @@ const EVENT_META = {
   login_failed:              { label: 'Failed login',           icon: ShieldAlert,   tint: 'bg-red-50 text-red-600',       group: 'logins' },
   page_view:                 { label: 'Viewed page',            icon: Eye,           tint: 'bg-gray-100 text-gray-600',    group: 'pages' },
   payment:                   { label: 'Payment',                icon: CreditCard,    tint: 'bg-emerald-50 text-emerald-600', group: 'payments' },
+  duplicate_payment_resolved: { label: 'Duplicate payment decision recorded', icon: AlertTriangle, tint: 'bg-green-50 text-green-700', group: 'payments' },
   duplicate_payment_flagged: { label: 'Duplicate payment flagged', icon: AlertTriangle, tint: 'bg-yellow-50 text-yellow-700', group: 'payments' },
   course_granted:            { label: 'Course granted',         icon: Gift,          tint: 'bg-purple-50 text-purple-600', group: 'payments' },
   lesson_progress:           { label: 'Progress',               icon: GraduationCap, tint: 'bg-indigo-50 text-indigo-600', group: 'learning' },

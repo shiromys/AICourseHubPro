@@ -145,6 +145,13 @@ class FlaggedPayment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     resolved = db.Column(db.Boolean, default=False, nullable=False)
     resolved_at = db.Column(db.DateTime, nullable=True)
+    # Review trail: what was paid, who paid it, and how management decided.
+    amount_cents = db.Column(db.Integer, nullable=True)
+    currency = db.Column(db.String(10), nullable=True)
+    customer_email = db.Column(db.String(255), nullable=True)
+    outcome = db.Column(db.String(30), nullable=True)      # refunded | credit_given | declined
+    resolution_note = db.Column(db.Text, nullable=True)
+    resolved_by = db.Column(db.String(255), nullable=True)  # admin email
 
 
 # 8. USER ACTIVITY MODEL (the "digital footprint")
