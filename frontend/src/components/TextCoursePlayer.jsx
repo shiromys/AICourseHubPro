@@ -23,6 +23,10 @@ const TextCoursePlayer = () => {
   const [showResults, setShowResults] = useState(false);
   const [score, setScore] = useState(0);
   const [passed, setPassed] = useState(false);
+  const [percentage, setPercentage] = useState(0);
+  const [quizResult, setQuizResult] = useState(null);   // what the server sent back, including the answer key
+  const [submitting, setSubmitting] = useState(false);
+  const [quizError, setQuizError] = useState('');
 
   // When a quiz lesson is already 'completed' server-side, showResults/passed
   // reset to blank on every page load/navigation - so without this flag,
@@ -54,11 +58,12 @@ const TextCoursePlayer = () => {
     try {
       const token = localStorage.getItem('token');
       
-      const response = await axios.get(`${API_BASE_URL}/api/courses`, {
+      // The lessons come from a members-only address; quiz answers are never included.
+      const response = await axios.get(`${API_BASE_URL}/api/courses/${parseInt(id)}/learn`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
-      const foundCourse = response.data.find(c => c.id === parseInt(id));
+      const foundCourse = response.data;
       
       if (foundCourse) {
         setCourse(foundCourse);
@@ -89,6 +94,7 @@ const TextCoursePlayer = () => {
       }
     } catch (error) {
       console.error("Error:", error);
+      if (error.response && [401, 403, 404].includes(error.response.status)) navigate('/dashboard');
     } finally {
       setLoading(false);
     }
@@ -200,29 +206,33 @@ const TextCoursePlayer = () => {
   const isFinalLesson = modules.length > 0 && activeModuleIndex === modules.length - 1 &&
     activeLessonIndex === (modules[modules.length - 1]?.lessons?.length || 1) - 1;
 
-  const submitQuiz = () => {
-    if (!currentLesson?.questions) return;
-    let calculatedScore = 0;
-    const totalQuestions = currentLesson.questions.length;
-
-    currentLesson.questions.forEach((q, index) => {
-      if (userAnswers[index] === q.correct_answer) calculatedScore++;
-    });
-
-    setScore(calculatedScore);
-    const percentage = (calculatedScore / totalQuestions) * 100;
-    const isPassed = percentage >= 70;
-    
-    setPassed(isPassed);
-    setShowResults(true);
-    
-    if (isPassed) {
-      // Only the course's final lesson completes it. A mid-course quiz just records progress,
-      // so the learner can keep going and is never flipped into "review mode" early.
-      if (isFinalLesson) setAlreadyCompleted(true);
-      saveProgress(activeModuleIndex, activeLessonIndex, 'completed', percentage);
+  // The server marks the quiz. We send the learner's choices and show what comes back.
+  const submitQuiz = async () => {
+    if (!currentLesson?.questions || submitting) return;
+    setSubmitting(true);
+    setQuizError('');
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_BASE_URL}/api/quiz/submit`, {
+        course_id: course.id,
+        module_idx: activeModuleIndex,
+        lesson_idx: activeLessonIndex,
+        answers: userAnswers
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      const r = res.data;
+      setScore(r.correct);
+      setPercentage(r.score_percent);
+      setPassed(r.passed);
+      setQuizResult(r);
+      setShowResults(true);
+      // Only the course's final quiz completes it, and the server has already recorded that.
+      if (r.passed && r.is_final && !r.preview) setAlreadyCompleted(true);
+      window.scrollTo(0, 0);
+    } catch (e) {
+      setQuizError(e.response?.data?.msg || 'Your answers could not be submitted. Please check your connection and try again.');
+    } finally {
+      setSubmitting(false);
     }
-    window.scrollTo(0, 0);
   };
 
   const resetQuiz = () => {
@@ -230,6 +240,9 @@ const TextCoursePlayer = () => {
     setShowResults(false);
     setScore(0);
     setPassed(false);
+    setPercentage(0);
+    setQuizResult(null);
+    setQuizError('');
     setRetaking(false);
     window.scrollTo(0, 0);
   };
@@ -355,10 +368,14 @@ const TextCoursePlayer = () => {
                   {currentLesson.type === 'roleplay' && (
                     <RoleplayLesson 
                       lesson={currentLesson} 
+                      courseId={course.id}
+                      moduleIdx={activeModuleIndex}
+                      lessonIdx={activeLessonIndex}
                       onNext={goToNextLesson} 
                       onPrevious={goToPrevLesson}
-                      onComplete={(score) => {
-                        saveProgress(activeModuleIndex, activeLessonIndex, 'completed', score);
+                      onComplete={() => {
+                        // The server has already recorded the simulation result; this just keeps the bookmark.
+                        if (!alreadyCompleted) saveProgress(activeModuleIndex, activeLessonIndex, 'in-progress');
                       }}
                     />
                   )}
@@ -389,7 +406,7 @@ const TextCoursePlayer = () => {
                           </div>
                           <div>
                             <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">{passed ? "Assessment Passed!" : "Assessment Failed"}</h2>
-                            <p className="text-gray-500 text-lg">You scored <span className={`font-bold ${passed ? 'text-green-600' : 'text-red-600'}`}>{score}</span> / <span className="font-bold">{currentLesson.questions.length}</span></p>
+                            <p className="text-gray-500 text-lg">You scored <span className={`font-bold ${passed ? 'text-green-600' : 'text-red-600'}`}>{score}</span> / <span className="font-bold">{currentLesson.questions.length}</span> ({percentage}%) &middot; pass mark {quizResult?.pass_mark ?? 70}%</p>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-4 pt-4 w-full sm:w-auto">
                             <button onClick={() => { resetQuiz(); setRetaking(true); }} className="px-6 py-2 bg-white text-gray-700 font-bold border border-gray-300 rounded-lg hover:bg-gray-50">Retake Quiz</button>
@@ -404,6 +421,32 @@ const TextCoursePlayer = () => {
                               </button>
                             )}
                           </div>
+
+                          {/* ANSWER KEY - shown only now, after the server has marked the quiz */}
+                          {quizResult?.results && (
+                            <div className="w-full text-left border-t border-gray-200 pt-6 mt-2">
+                              <h3 className="text-lg font-bold text-gray-900 mb-1">Answer key</h3>
+                              <p className="text-sm text-gray-500 mb-4">Use this to review what you missed.</p>
+                              <div className="space-y-4">
+                                {quizResult.results.map((r) => {
+                                  const q = currentLesson.questions[r.index];
+                                  if (!q) return null;
+                                  return (
+                                    <div key={r.index} className={`rounded-lg border p-4 ${r.is_correct ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                                      <p className="font-bold text-gray-900 text-sm md:text-base"><span className="text-gray-400 mr-2">{r.index + 1}.</span>{q.question}</p>
+                                      <p className={`text-sm mt-2 ${r.is_correct ? 'text-green-800' : 'text-red-800'}`}>
+                                        <span className="font-bold">{r.is_correct ? 'Correct' : 'Your answer'}:</span> {r.your_answer ? q.options[r.your_answer] : 'No answer'}
+                                      </p>
+                                      {!r.is_correct && r.correct_answer && (
+                                        <p className="text-sm mt-1 text-green-800"><span className="font-bold">Correct answer:</span> {q.options[r.correct_answer]}</p>
+                                      )}
+                                      {r.explanation && <p className="text-sm mt-2 text-gray-600">{r.explanation}</p>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="p-4 md:p-8 space-y-8">
@@ -423,8 +466,9 @@ const TextCoursePlayer = () => {
                               </div>
                             </div>
                           ))}
-                          <div className="pt-6 flex justify-end">
-                            <button onClick={submitQuiz} disabled={Object.keys(userAnswers).length < currentLesson.questions.length} className="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition">Submit Answers</button>
+                          <div className="pt-6 flex flex-col items-end gap-2">
+                            {quizError && <p className="text-sm text-red-600 font-medium" role="alert">{quizError}</p>}
+                            <button onClick={submitQuiz} disabled={submitting || Object.keys(userAnswers).length < currentLesson.questions.length} className="w-full sm:w-auto px-8 py-3 bg-red-600 text-white font-bold rounded shadow hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition">{submitting ? 'Marking...' : 'Submit Answers'}</button>
                           </div>
                         </div>
                       )}

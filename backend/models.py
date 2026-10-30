@@ -212,3 +212,36 @@ class NewsletterIssue(db.Model):
     segment = db.Column(db.String(30), nullable=False, default='all', server_default='all')
     batch_key = db.Column(db.String(12), nullable=True, index=True)
     auto_generated = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+
+
+# 11. LESSON ATTEMPTS (server-marked quiz and simulation results)
+class LessonAttempt(db.Model):
+    __tablename__ = 'lesson_attempts'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    module_idx = db.Column(db.Integer, nullable=False)
+    lesson_idx = db.Column(db.Integer, nullable=False)
+    kind = db.Column(db.String(12), nullable=False)          # 'quiz' | 'roleplay'
+    score = db.Column(db.Float, nullable=False)              # percent 0-100, set by the server
+    correct = db.Column(db.Integer, nullable=True)           # quiz only
+    total = db.Column(db.Integer, nullable=True)             # quiz only
+    passed = db.Column(db.Boolean, nullable=False, default=False)
+    answers = db.Column(JSON, nullable=True)                 # quiz only: {"0": "b", ...}
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+# 12. SIMULATION SESSIONS (the server keeps the transcript, so it cannot be edited by the learner)
+class RoleplaySession(db.Model):
+    __tablename__ = 'roleplay_sessions'
+    id = db.Column(db.String(36), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    module_idx = db.Column(db.Integer, nullable=False)
+    lesson_idx = db.Column(db.Integer, nullable=False)
+    messages = db.Column(JSON, nullable=False, default=list)
+    status = db.Column(db.String(10), nullable=False, default='open')   # open | graded
+    score = db.Column(db.Float, nullable=True)
+    feedback = db.Column(JSON, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
