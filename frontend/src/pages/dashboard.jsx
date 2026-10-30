@@ -7,7 +7,7 @@ import API_BASE_URL from '../config';
 import useCheckout from '../hooks/useCheckout';
 import { 
   BookOpen, Award, Clock, PlayCircle, Trophy, 
-  LayoutDashboard, Search, X, Loader2, ShoppingCart, CheckCircle
+  LayoutDashboard, Search, X, Loader2, ShoppingCart, CheckCircle, Sparkles, ArrowRight
 } from 'lucide-react';
 
 const Dashboard = () => {
@@ -23,6 +23,8 @@ const Dashboard = () => {
   const [user, setUser] = useState({ name: 'Learner' });
   const [isAdmin, setIsAdmin] = useState(false);
   const [accountSetupComplete, setAccountSetupComplete] = useState(true);
+  const [notices, setNotices] = useState([]);          // old courses that have a new version
+  const [showUpgrade, setShowUpgrade] = useState(false);
 
   // --- FILTER STATES ---
   const [searchQuery, setSearchQuery] = useState("");
@@ -90,6 +92,15 @@ const Dashboard = () => {
         console.warn("Could not fetch enrollments", err);
       }
 
+      try {
+        const nRes = await axios.get(`${API_BASE_URL}/api/my-upgrade-notice`, { headers: { Authorization: `Bearer ${token}` } });
+        const list = nRes.data.notices || [];
+        setNotices(list);
+        let seen = false;
+        try { seen = localStorage.getItem('upgrade_popup_seen') === new Date().toISOString().slice(0, 10); } catch (e) { /* ignore */ }
+        if (list.length > 0 && !seen) setShowUpgrade(true);
+      } catch (e) { /* non-fatal - no pop-up if this fails */ }
+
       setCourses(coursesRes.data);
     } catch (error) {
       console.error("Error loading dashboard:", error);
@@ -107,6 +118,14 @@ const Dashboard = () => {
 
     startCheckout(courses.find(c => c.id === courseId) || { id: courseId });
   };
+
+  const closeUpgrade = () => {
+    setShowUpgrade(false);
+    try { localStorage.setItem('upgrade_popup_seen', new Date().toISOString().slice(0, 10)); } catch (e) { /* ignore */ }
+  };
+  const goNew = (id) => { closeUpgrade(); navigate(`/courses/${id}`); };
+  const fmtDate = (iso) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short', timeZoneName: 'short' }) : '';
+  const legacyInfo = (id) => enrollments.find(e => e.id === id && e.legacy);
 
   const handleStartLearning = (courseId) => {
     navigate(`/courses/${courseId}`);
@@ -136,7 +155,7 @@ const Dashboard = () => {
   const categories = ["All", ...new Set(courses.map(c => c.category || "General"))];
   const myLearningIds = new Set(enrollments.map(e => e.id));
   const myLearning = courses.filter(c => myLearningIds.has(c.id));
-  const baseList = activeTab === 'active' ? myLearning : courses;
+  const baseList = activeTab === 'active' ? myLearning : courses.filter(c => !c.legacy);
   
   const displayList = baseList.filter(course => {
     const matchesSearch = course.title.toLowerCase().includes(searchQuery.toLowerCase());
@@ -144,7 +163,7 @@ const Dashboard = () => {
     return matchesSearch && matchesCategory;
   });
 
-  const activeCourses = enrollments.filter(e => e.status === 'in-progress');
+  const activeCourses = enrollments.filter(e => e.status === 'in-progress' && !e.closed);
   const featuredCourse = activeCourses.length > 0 ? activeCourses[0] : (enrollments.length > 0 ? enrollments[0] : null);
   
   // HERO SECTION LOGIC
@@ -295,7 +314,7 @@ const Dashboard = () => {
                   {/* Recommended courses */}
                   <h3 className="text-lg font-bold text-gray-900 mb-6">Recommended for You</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {courses.slice(0, 6).map((course) => {
+                    {courses.filter(c => !c.legacy).slice(0, 6).map((course) => {
                       const isBuying = buying === course.id;
                       return (
                         <div key={course.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group">
@@ -356,6 +375,7 @@ const Dashboard = () => {
                           <span className="bg-red-50 text-red-600 text-xs font-bold uppercase px-3 py-1 rounded-full">{course.category || 'General'}</span>
                           
                           {/* DYNAMIC BADGE */}
+                          {legacyInfo(course.id) && <span className="bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold px-2 py-0.5 rounded-full">Previous version</span>}
                           {certified && <span className="text-green-600 flex items-center gap-1 text-xs font-bold"><Award size={14}/> Certified</span>}
                           {!certified && (completed || percent === 100) && <span className="text-orange-500 flex items-center gap-1 text-xs font-bold"><Clock size={14}/> Needs Retake</span>}
                           {!isEnrolled && <span className="text-gray-900 font-black text-lg">${course.price}</span>}
@@ -366,7 +386,18 @@ const Dashboard = () => {
                           {course.description || "Master this topic with interactive lessons."}
                         </p>
 
-                        {isEnrolled ? (
+                        {legacyInfo(course.id) && !certified && (
+                          <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2 mb-3">
+                            {legacyInfo(course.id).closed ? 'This version has closed.' : `This version closes ${fmtDate(legacyInfo(course.id).closes_at)}.`} The new version is free for you.
+                          </p>
+                        )}
+                        {legacyInfo(course.id)?.replaced_by_id && (legacyInfo(course.id).closed || certified) && (
+                          <button onClick={() => navigate(`/courses/${legacyInfo(course.id).replaced_by_id}`)}
+                            className="w-full mb-2 py-3 font-bold rounded-lg flex items-center justify-center gap-2 bg-red-600 text-white hover:bg-red-700">
+                            Open the new version <Sparkles size={16} />
+                          </button>
+                        )}
+                        {isEnrolled && !(legacyInfo(course.id)?.closed && !certified) ? (
                             <button 
                               onClick={() => {
                                 if (certified) handleViewCertificate(course.id);
@@ -379,7 +410,7 @@ const Dashboard = () => {
                               {certified ? "View Certificate" : ((completed || percent === 100) ? "Retake Assessment" : (percent > 0 ? "Continue Learning" : "Start Course"))} 
                               {certified ? <Award size={16} /> : <PlayCircle size={16} />}
                             </button>
-                        ) : (
+                        ) : legacyInfo(course.id) ? null : (
                             <button 
                               onClick={() => handleCourseAction(course.id)}
                               disabled={isBuying}
@@ -408,6 +439,35 @@ const Dashboard = () => {
       
       <Footer />
       {checkoutModal}
+
+      {showUpgrade && notices.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-red-600 to-red-500 text-white p-6 rounded-t-2xl relative">
+              <button onClick={closeUpgrade} aria-label="Close" className="absolute right-4 top-4 text-white/80 hover:text-white"><X size={20} /></button>
+              <Sparkles size={28} className="mb-2" />
+              <h2 id="upgrade-title" className="text-2xl font-black">A brand-new learning system is here</h2>
+              <p className="text-white/90 text-sm mt-1">Redesigned lessons, hands-on simulations and a fresh final assessment, free for you, for life.</p>
+            </div>
+            <div className="p-6 space-y-4">
+              {notices.map(n => (
+                <div key={n.old_course_id} className="border border-gray-200 rounded-xl p-4">
+                  <p className="font-bold text-gray-900">{n.old_title}</p>
+                  {n.completed ? (
+                    <p className="text-sm text-gray-600 mt-1">You finished the original. Your certificate stays valid, and the new version is yours to explore.</p>
+                  ) : (
+                    <p className="text-sm text-gray-600 mt-1">You are {n.progress}% through the original. {n.closed ? 'It has now closed.' : <>You can keep using it until <strong>{fmtDate(n.closes_at)}</strong>, but we recommend learning the new system.</>}</p>
+                  )}
+                  <button onClick={() => goNew(n.new_course_id)} className="mt-3 w-full py-2.5 bg-gray-900 text-white font-bold rounded-lg hover:bg-black flex items-center justify-center gap-2">
+                    Start the new version <ArrowRight size={16} />
+                  </button>
+                </div>
+              ))}
+              <button onClick={closeUpgrade} className="w-full text-sm text-gray-500 hover:text-gray-700">Remind me later</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

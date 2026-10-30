@@ -3,7 +3,7 @@ import axios from 'axios';
 import API_BASE_URL from '../../config';
 import {
   X, Loader2, LogIn, Eye, CreditCard, GraduationCap, Award, UserPlus, KeyRound,
-  ShieldAlert, AlertTriangle, Gift, User as UserIcon, Ban, Globe, Monitor, Clock
+  ShieldAlert, AlertTriangle, Gift, User as UserIcon, Ban, Globe, Monitor, Clock, Mail
 } from 'lucide-react';
 
 // Per-event presentation: label, icon, tint, and which filter chip it belongs to.
@@ -18,6 +18,7 @@ const EVENT_META = {
   course_granted:            { label: 'Course granted',         icon: Gift,          tint: 'bg-purple-50 text-purple-600', group: 'payments' },
   lesson_progress:           { label: 'Progress',               icon: GraduationCap, tint: 'bg-indigo-50 text-indigo-600', group: 'learning' },
   certificate_issued:        { label: 'Certificate issued',     icon: Award,         tint: 'bg-amber-50 text-amber-600',   group: 'learning' },
+  course_upgrade_email:      { label: 'Upgrade email sent',     icon: Mail,          tint: 'bg-blue-50 text-blue-600',     group: 'account' },
   quiz_attempt:              { label: 'Quiz attempt',           icon: GraduationCap, tint: 'bg-indigo-50 text-indigo-600', group: 'learning' },
   simulation_graded:         { label: 'Simulation graded',      icon: GraduationCap, tint: 'bg-indigo-50 text-indigo-600', group: 'learning' },
   account_setup:             { label: 'Account setup completed', icon: UserIcon,     tint: 'bg-blue-50 text-blue-600',     group: 'account' },

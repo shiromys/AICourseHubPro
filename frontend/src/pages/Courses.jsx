@@ -45,7 +45,7 @@ const Courses = () => {
         // Wait for both requests to finish
         const [coursesRes, enrollmentsRes] = await Promise.all([coursesPromise, enrollmentsPromise]);
         
-        setCourses(coursesRes.data);
+        setCourses(coursesRes.data.filter(c => !c.legacy));
         
         // Extract just the course IDs from the enrollments for easy checking
         if (enrollmentsRes.data.length > 0) {

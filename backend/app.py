@@ -836,7 +836,7 @@ def get_admin_stats():
 
     total_revenue = revenue_dollars()
     total_students = User.query.filter_by(is_admin=False, is_deleted=False).count()
-    total_courses = Course.query.filter_by(is_deleted=False).count()
+    total_courses = _sellable_courses().count()
 
     by_day = revenue_by_day(7)
     chart_data = []
@@ -885,8 +885,12 @@ def get_admin_analytics():
         .filter(Course.is_deleted == False, Enrollment.user_id.in_(real_users))
     total_paid = live_enrollments.with_entities(Enrollment.user_id).distinct().count()
     # Count users enrolled in every live course (bundle equivalent)
-    total_courses = Course.query.filter_by(is_deleted=False).count()
-    bundle_buyers = live_enrollments.with_entities(Enrollment.user_id)\
+    total_courses = _sellable_courses().count()
+    # "Bundle buyers" = people who own every course currently on sale (retired versions do not count).
+    sellable_enrollments = db.session.query(Enrollment).join(Course, Course.id == Enrollment.course_id)\
+        .filter((Course.is_deleted == False) | (Course.is_deleted == None), (Course.is_legacy == False) | (Course.is_legacy == None),
+                Enrollment.user_id.in_(real_users))
+    bundle_buyers = sellable_enrollments.with_entities(Enrollment.user_id)\
         .group_by(Enrollment.user_id)\
         .having(func.count(Enrollment.course_id) >= total_courses).count() if total_courses else 0
 
@@ -921,7 +925,7 @@ def get_admin_analytics():
         started = len([e for e in enrollments if (e.progress or 0) > 0])
         completed = len([e for e in enrollments if e.status == 'completed'])
         course_performance.append({
-            "title": c.title,
+            "title": c.title + (" (previous version)" if c.is_legacy else ""),
             "enrolled": total_enr,
             "started": started,
             "completed": completed,
@@ -1109,14 +1113,25 @@ def get_courses():
         viewer = db.session.get(User, int(uid)) if uid else None
         is_admin = bool(viewer and viewer.is_admin)
         courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
+        # A retired course is shown only to the people who own it (and to admins).
+        mine = {e.course_id: e for e in Enrollment.query.filter_by(user_id=viewer.id).all()} if viewer and not is_admin else {}
         output = []
         for c in courses:
+            legacy = bool(c.is_legacy)
+            if legacy and not is_admin and c.id not in mine:
+                continue
             mods = c.course_data.get('modules', []) if c.course_data else []
-            output.append({
+            item = {
                 'id': c.id, 'title': c.title, 'description': c.description,
                 'price': c.price, 'category': c.category,
-                'modules': mods if is_admin else outline_modules(mods)
-            })
+                'modules': mods if is_admin else outline_modules(mods),
+                'legacy': legacy,
+            }
+            if legacy:
+                e = mine.get(c.id)
+                item.update({'replaced_by_id': c.replaced_by_id, 'closes_at': _iso(_legacy_access_end(e)),
+                             'closed': _legacy_closed(c, e)})
+            output.append(item)
         return jsonify(output), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1133,8 +1148,13 @@ def get_course_for_learner(course_id):
     course = db.session.get(Course, course_id)
     if not course or course.is_deleted:
         return jsonify({"msg": "Course not found"}), 404
-    if not user.is_admin and not Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first():
-        return jsonify({"msg": "You are not enrolled in this course."}), 403
+    if not user.is_admin:
+        enr = Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first()
+        if not enr:
+            return jsonify({"msg": "You are not enrolled in this course."}), 403
+        if _legacy_closed(course, enr):
+            return jsonify({"msg": "This version of the course has been retired. Your new course is ready and free for you.",
+                            "code": "legacy_closed", "replaced_by_id": course.replaced_by_id}), 403
     mods = (course.course_data or {}).get('modules', [])
     return jsonify({"id": course.id, "title": course.title, "description": course.description,
                     "category": course.category, "modules": learner_modules(mods)}), 200
@@ -1470,6 +1490,7 @@ def create_checkout_session():
     data = request.json or {}
     course = db.session.get(Course, data.get('course_id')) # FIXED
     if not course or course.is_deleted: return jsonify({'message': 'Course not found'}), 404
+    if course.is_legacy: return jsonify({'message': 'This version of the course is no longer sold.'}), 410
 
     # --- OWNERSHIP CHECK (the actual fix for duplicate payments) ---
     # Nobody gets sent to Stripe for a course they already own.
@@ -1554,11 +1575,12 @@ def create_bundle_checkout():
     
     # 1. Calculate how many distinct courses they own
     owned_enrollments = Enrollment.query.filter_by(user_id=user_id).all()
-    owned_course_ids = set([e.course_id for e in owned_enrollments])
+    sellable_ids = {c.id for c in _sellable_courses().all()}
+    owned_course_ids = set([e.course_id for e in owned_enrollments]) & sellable_ids
     owned_count = len(owned_course_ids)
     
-    # 2. Total courses in system
-    total_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).count()
+    # 2. Total courses on sale (retired versions are not part of the bundle)
+    total_courses = len(sellable_ids)
     
     if owned_count >= total_courses:
         return jsonify({'error': 'You already own all available courses!'}), 400
@@ -1836,7 +1858,7 @@ def verify_payment():
                 if Enrollment.query.filter_by(stripe_session_id=session_id).first():
                     return jsonify({"msg": "Bundle Enrolled", "status": "enrolled", "courses_added": 0}), 200
 
-                all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
+                all_courses = _sellable_courses().all()
                 owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
 
                 enrolled_count = 0
@@ -1907,6 +1929,8 @@ def enroll_free():
     course = db.session.get(Course, course_id) if course_id else None
     if not course or course.is_deleted:
         return jsonify({"msg": "Course not found"}), 404
+    if course.is_legacy:
+        return jsonify({"msg": "This version of the course is no longer available."}), 410
     # Paid courses are only unlocked through a verified Stripe payment (or an admin grant).
     # Without this check any logged-in user could POST here and unlock any course for free.
     if (course.price or 0) > 0:
@@ -1976,6 +2000,8 @@ def submit_quiz():
         enr = Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first()
         if not enr:
             return jsonify({"msg": "You are not enrolled in this course."}), 403
+        if _legacy_closed(course, enr):
+            return jsonify({"msg": "This version of the course has been retired.", "code": "legacy_closed", "replaced_by_id": course.replaced_by_id}), 403
     if throttled('quiz', f"{user.id}:{course_id}", 40, 3600):
         return jsonify({"msg": "Too many attempts in a short time. Please wait a little and try again."}), 429
 
@@ -2107,7 +2133,11 @@ def get_my_enrollments():
         "description": c.description,
         "progress": e.progress, 
         "status": e.status,
-        "cert_id": e.certificate_id
+        "cert_id": e.certificate_id,
+        "legacy": bool(c.is_legacy),
+        "replaced_by_id": c.replaced_by_id if c.is_legacy else None,
+        "closed": _legacy_closed(c, e),
+        "closes_at": _iso(_legacy_access_end(e)) if c.is_legacy else None,
     } for e, c in results])
 
 
@@ -2140,7 +2170,7 @@ def get_my_payments():
             }
         grouped[key]["courses"].append(c)
         
-    total_courses_in_db = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).count()
+    total_courses_in_db = _sellable_courses().count()
     
     payments = []
     for key, data in grouped.items():
@@ -2259,7 +2289,7 @@ def stripe_webhook():
 
         # --- BUNDLE UNLOCK LOGIC ---
         if is_bundle:
-            all_courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
+            all_courses = _sellable_courses().all()
             owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
             
             enrolled_count = 0
@@ -2749,7 +2779,8 @@ def _week_number(batch_key):
 
 def _live_courses():
     return Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None),
-                               (Course.is_active == True) | (Course.is_active == None)).order_by(Course.id).all()
+                               (Course.is_active == True) | (Course.is_active == None),
+                               (Course.is_legacy == False) | (Course.is_legacy == None)).order_by(Course.id).all()
 
 
 def _course_titles():
@@ -3411,7 +3442,7 @@ def revenue_summary():
 
     by_course = []
     for c in Course.query.filter_by(is_deleted=False).all():
-        by_course.append({"title": c.title, "revenue": revenue_dollars(E.course_id == c.id),
+        by_course.append({"title": c.title + (" (previous version)" if c.is_legacy else ""), "revenue": revenue_dollars(E.course_id == c.id),
                           "sales": E.query.filter(E.course_id == c.id, E.amount_paid_cents > 0).count()})
     by_course.sort(key=lambda x: x["revenue"], reverse=True)
 
@@ -3720,8 +3751,12 @@ def roleplay_start():
     lesson = _lesson_at(course, module_idx, lesson_idx) if course and not course.is_deleted else None
     if not user or not lesson or lesson.get('type') != 'roleplay':
         return jsonify({"error": "Simulation not found."}), 404
-    if not user.is_admin and not Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first():
-        return jsonify({"error": "You are not enrolled in this course."}), 403
+    if not user.is_admin:
+        enr = Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first()
+        if not enr:
+            return jsonify({"error": "You are not enrolled in this course."}), 403
+        if _legacy_closed(course, enr):
+            return jsonify({"error": "This version of the course has been retired."}), 403
     since = datetime.utcnow() - timedelta(days=1)
     if RoleplaySession.query.filter(RoleplaySession.user_id == user.id, RoleplaySession.created_at > since).count() >= ROLEPLAY_STARTS_PER_DAY:
         return jsonify({"error": "You have reached today's simulation limit. Please try again tomorrow."}), 429
@@ -3853,6 +3888,310 @@ TRANSCRIPT (JSON):
     if not user.is_admin:
         log_activity(user.id, 'simulation_graded', detail=f"Simulation scored {score}/100 - {'passed' if passed else 'not passed'}", course_id=sess.course_id)
     return jsonify(result), 200
+
+
+# ==========================================
+# COURSE UPGRADE: retire the old courses, launch the new ones
+# ==========================================
+# Old courses are never deleted. They are marked "legacy": hidden from sale and from the public catalogue,
+# still open to the people who own them until the closing date, and their certificates keep verifying.
+LEGACY_CUTOFF_DEFAULT = datetime(2026, 11, 25, 6, 0, 0)    # 25 Nov 2026, 12:00 AM CST (UTC-6), stored as naive UTC
+LEGACY_CUTOFF_KEY = 'legacy_cutoff_utc'
+
+
+def _sellable_courses():
+    """Courses that are on sale today: not deleted and not retired."""
+    return Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None),
+                               (Course.is_legacy == False) | (Course.is_legacy == None))
+
+
+def _iso(dt):
+    return dt.isoformat() + 'Z' if dt else None
+
+
+def _legacy_cutoff():
+    s = SystemSetting.query.filter_by(key=LEGACY_CUTOFF_KEY).first()
+    if s and s.value:
+        try:
+            return datetime.strptime(s.value[:19], '%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            pass
+    return LEGACY_CUTOFF_DEFAULT
+
+
+def _legacy_access_end(enr):
+    cutoff = _legacy_cutoff()
+    if enr is not None and getattr(enr, 'legacy_access_until', None):
+        return max(cutoff, enr.legacy_access_until)
+    return cutoff
+
+
+def _legacy_closed(course, enr):
+    return bool(course.is_legacy) and datetime.utcnow() >= _legacy_access_end(enr)
+
+
+def _upgrade_email_html(user, items):
+    """items: [(old_title, new_course_id)]. One short, friendly email per learner."""
+    names = ', '.join(f"<strong>{html_lib.escape(t)}</strong>" for t, _ in items)
+    plural = len(items) > 1
+    body = (f"<p>Hi {html_lib.escape(user.name or 'there')},</p>"
+            f"<p>We have launched a brand-new version of {'your courses' if plural else 'your course'}: {names}. "
+            f"It has redesigned lessons, practical projects you keep, a hands-on simulation and a fresh final assessment.</p>"
+            f"<p>Because you completed the original, the new version is <strong>yours free, for life</strong>. "
+            f"It is already in your account.</p>"
+            f"<p>Your original certificate stays valid and can be verified any time. Nothing you earned changes.</p>")
+    if user.account_setup_complete:
+        link = f"{DOMAIN}/dashboard"
+    else:
+        link = f"{DOMAIN}/resume?token={create_access_token(identity=str(user.id), expires_delta=timedelta(days=30))}&course_id={items[0][1]}"
+    return get_email_template("Your course has a free new version", body, "Start the new version", link)
+
+
+def _send_upgrade_emails(user_ids):
+    """Emails learners who FINISHED a retired course. Safe to repeat: nobody is emailed twice for the same course."""
+    with app.app_context():
+        for uid in user_ids:
+            user = db.session.get(User, uid)
+            if not user or user.is_deleted or not user.email:
+                continue
+            rows = db.session.query(Enrollment, Course).join(Course, Course.id == Enrollment.course_id)\
+                .filter(Enrollment.user_id == uid, Course.is_legacy == True, Course.replaced_by_id.isnot(None),
+                        (Enrollment.status == 'completed') | (Enrollment.certificate_id.isnot(None))).all()
+            todo = []
+            for e, c in rows:
+                done = UserActivity.query.filter_by(user_id=uid, event_type='course_upgrade_email', course_id=c.replaced_by_id).first()
+                if not done:
+                    todo.append((c.title, c.replaced_by_id))
+            if not todo:
+                continue
+            subject = (f"Your {todo[0][0]} course has a free new version" if len(todo) == 1
+                       else "Your AICourseHubPro courses have free new versions")
+            if send_email(user.email, subject, _upgrade_email_html(user, todo)):
+                for _, new_id in todo:
+                    log_activity(uid, 'course_upgrade_email', detail="Emailed: a free new version of a completed course is available", course_id=new_id)
+            time.sleep(0.6)
+
+
+def _clean_new_course(item):
+    """Validates one new course object from the upload. Returns (clean_dict_or_None, [errors])."""
+    errs = []
+    if not isinstance(item, dict):
+        return None, ["each course must be an object"]
+    title = str(item.get('title') or '').strip()
+    if not title or len(title) > 255: errs.append("title is missing or too long")
+    desc = str(item.get('description') or '')
+    category = str(item.get('category') or 'General').strip()[:100]
+    try:
+        price = float(item.get('price', 29))
+        if price < 0: raise ValueError
+    except (TypeError, ValueError):
+        errs.append("price must be a number"); price = 29.0
+    modules = item.get('modules')
+    errs += validate_course_modules(modules)
+    if not errs:
+        last = modules[-1]['lessons'][-1]
+        if last.get('type') != 'quiz' or not last.get('questions'):
+            errs.append("the final lesson must be a quiz with questions (the certificate is issued when it is passed)")
+    return ({"title": title, "description": desc, "category": category, "price": price, "modules": modules} if not errs else None), errs
+
+
+def _upgrade_plan(items):
+    """Matches each uploaded course to the OLD course it replaces (by its id) and checks everything.
+    Returns (plan, errors). Writes nothing."""
+    if not isinstance(items, list) or not items:
+        return [], ["Upload a list of courses (the all_courses_new.json file)."]
+    plan, errors, seen = [], [], set()
+    for idx, item in enumerate(items):
+        label = f"course {idx + 1}"
+        clean, errs = _clean_new_course(item)
+        label = f"course {idx + 1} ({(item or {}).get('title', '?') if isinstance(item, dict) else '?'})"
+        errors += [f"{label}: {e}" for e in errs]
+        try:
+            old_id = int(item.get('old_id', item.get('id')))
+        except (TypeError, ValueError, AttributeError):
+            errors.append(f"{label}: no id to say which existing course it replaces"); continue
+        old = db.session.get(Course, old_id)
+        if not old or old.is_deleted:
+            errors.append(f"{label}: the existing course with id {old_id} was not found")
+        elif old.is_legacy:
+            errors.append(f"{label}: existing course {old_id} ('{old.title}') has already been upgraded")
+        elif old_id in seen:
+            errors.append(f"{label}: id {old_id} appears twice in the upload")
+        seen.add(old_id)
+        if clean and old and not old.is_legacy and not old.is_deleted:
+            enrs = Enrollment.query.filter_by(course_id=old.id).all()
+            completed = [e for e in enrs if e.status == 'completed' or e.certificate_id]
+            plan.append({"old": old, "new": clean, "enrollments": enrs,
+                         "counts": {"learners": len(enrs), "completed": len(completed), "in_progress": len(enrs) - len(completed)}})
+    return plan, errors
+
+
+def _plan_summary(plan):
+    return [{"old_id": p["old"].id, "old_title": p["old"].title, "new_title": p["new"]["title"],
+             "new_modules": len(p["new"]["modules"]), "price": p["new"]["price"], **p["counts"]} for p in plan]
+
+
+@app.route('/api/admin/course-upgrade/status', methods=['GET'])
+@jwt_required()
+def admin_upgrade_status():
+    admin, err = _require_admin()
+    if err: return err
+    legacy = Course.query.filter(Course.is_legacy == True, (Course.is_deleted == False) | (Course.is_deleted == None)).order_by(Course.id).all()
+    out = []
+    for c in legacy:
+        enrs = Enrollment.query.filter_by(course_id=c.id).all()
+        done = [e for e in enrs if e.status == 'completed' or e.certificate_id]
+        new = db.session.get(Course, c.replaced_by_id) if c.replaced_by_id else None
+        sent = UserActivity.query.filter_by(event_type='course_upgrade_email', course_id=c.replaced_by_id).count() if c.replaced_by_id else 0
+        out.append({"id": c.id, "title": c.title, "new_id": c.replaced_by_id, "new_title": new.title if new else None,
+                    "learners": len(enrs), "completed": len(done), "in_progress": len(enrs) - len(done), "emails_sent": sent,
+                    "extended": sum(1 for e in enrs if e.legacy_access_until)})
+    cutoff = _legacy_cutoff()
+    return jsonify({"cutoff_utc": _iso(cutoff), "closed": datetime.utcnow() >= cutoff, "legacy_courses": out,
+                    "live_courses": _sellable_courses().count()}), 200
+
+
+@app.route('/api/admin/course-upgrade/preview', methods=['POST'])
+@jwt_required()
+def admin_upgrade_preview():
+    admin, err = _require_admin()
+    if err: return err
+    plan, errors = _upgrade_plan((request.get_json(silent=True) or {}).get('courses'))
+    return jsonify({"ok": not errors, "errors": errors, "plan": _plan_summary(plan),
+                    "totals": {"free_grants": sum(p["counts"]["learners"] for p in plan),
+                               "emails": len({e.user_id for p in plan for e in p["enrollments"] if e.status == 'completed' or e.certificate_id}),
+                               "popups": sum(p["counts"]["in_progress"] for p in plan)}}), 200
+
+
+@app.route('/api/admin/course-upgrade/run', methods=['POST'])
+@jwt_required()
+def admin_upgrade_run():
+    """One step: creates the new courses, retires the old ones, gives every existing learner the new
+    version free, and emails the people who had finished. Everything is checked first; if anything is
+    wrong nothing is changed."""
+    admin, err = _require_admin()
+    if err: return err
+    data = request.get_json(silent=True) or {}
+    plan, errors = _upgrade_plan(data.get('courses'))
+    if errors:
+        return jsonify({"msg": "Nothing was changed. Fix these first: " + "; ".join(errors[:6]), "errors": errors}), 400
+    if data.get('confirm') != 'UPGRADE':
+        return jsonify({"msg": "Type UPGRADE to confirm."}), 400
+    now = datetime.utcnow()
+    grants = 0
+    email_users = set()
+    try:
+        for p in plan:
+            n = p["new"]
+            new = Course(title=n["title"], description=n["description"], category=n["category"], price=n["price"],
+                         course_data={"modules": n["modules"]}, is_active=True, is_deleted=False, is_legacy=False)
+            db.session.add(new)
+            db.session.flush()
+            old = p["old"]
+            old.is_legacy = True
+            old.replaced_by_id = new.id
+            have = {e.user_id for e in Enrollment.query.filter_by(course_id=new.id).all()}
+            for e in p["enrollments"]:
+                if e.user_id in have:
+                    continue
+                have.add(e.user_id)
+                db.session.add(Enrollment(user_id=e.user_id, course_id=new.id, status='in-progress', progress=0, score=0,
+                                          last_module_index=0, last_lesson_index=0, enrolled_at=now,
+                                          payment_source='admin_grant', amount_paid_cents=0, currency='USD', amount_estimated=False))
+                grants += 1
+                if e.status == 'completed' or e.certificate_id:
+                    email_users.add(e.user_id)
+            db.session.add(AuditLog(admin_email=admin.email, action="Course Upgrade",
+                                    details=f"'{old.title}' (id {old.id}) retired -> new course id {new.id}: {p['counts']['learners']} learners given the new version free",
+                                    timestamp=now))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print(f"[Course Upgrade] failed: {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({"msg": "The upgrade failed and nothing was changed. Please try again."}), 500
+    sending = 0
+    if data.get('send_emails', True) and email_users:
+        sending = len(email_users)
+        threading.Thread(target=_send_upgrade_emails, args=(sorted(email_users),), daemon=True).start()
+    return jsonify({"msg": "Upgrade complete.", "courses_upgraded": len(plan), "free_grants": grants,
+                    "emails_queued": sending, "plan": _plan_summary(plan)}), 200
+
+
+@app.route('/api/admin/course-upgrade/resend-emails', methods=['POST'])
+@jwt_required()
+def admin_upgrade_resend():
+    """Sends the announcement to finished learners who have not had it yet (never twice to the same person)."""
+    admin, err = _require_admin()
+    if err: return err
+    uids = {e.user_id for e, c in db.session.query(Enrollment, Course).join(Course, Course.id == Enrollment.course_id)
+            .filter(Course.is_legacy == True, Course.replaced_by_id.isnot(None),
+                    (Enrollment.status == 'completed') | (Enrollment.certificate_id.isnot(None))).all()}
+    threading.Thread(target=_send_upgrade_emails, args=(sorted(uids),), daemon=True).start()
+    return jsonify({"msg": f"Checking {len(uids)} learner(s); anyone not yet emailed will be."}), 202
+
+
+@app.route('/api/admin/course-upgrade/cutoff', methods=['PUT'])
+@jwt_required()
+def admin_upgrade_cutoff():
+    admin, err = _require_admin()
+    if err: return err
+    raw = str((request.get_json(silent=True) or {}).get('cutoff_utc') or '')
+    try:
+        dt = datetime.strptime(raw.replace('Z', '')[:19], '%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+        return jsonify({"msg": "cutoff_utc must look like 2026-11-25T06:00:00Z"}), 400
+    s = SystemSetting.query.filter_by(key=LEGACY_CUTOFF_KEY).first()
+    if s: s.value = dt.isoformat()
+    else: db.session.add(SystemSetting(key=LEGACY_CUTOFF_KEY, value=dt.isoformat()))
+    db.session.add(AuditLog(admin_email=admin.email, action="Course Upgrade Closing Date Changed", details=f"Old courses close at {dt.isoformat()} UTC", timestamp=datetime.utcnow()))
+    db.session.commit()
+    return jsonify({"msg": "Saved", "cutoff_utc": _iso(dt)}), 200
+
+
+@app.route('/api/admin/course-upgrade/extend', methods=['POST'])
+@jwt_required()
+def admin_upgrade_extend():
+    """Gives ONE learner more time on a retired course (for example after a support request)."""
+    admin, err = _require_admin()
+    if err: return err
+    data = request.get_json(silent=True) or {}
+    email = str(data.get('email') or '').strip().lower()
+    try:
+        course_id = int(data.get('course_id'))
+        days = int(data.get('days', 14))
+    except (TypeError, ValueError):
+        return jsonify({"msg": "course_id and days must be numbers"}), 400
+    if not (1 <= days <= 365):
+        return jsonify({"msg": "days must be between 1 and 365"}), 400
+    user = User.query.filter(func.lower(User.email) == email).first()
+    course = db.session.get(Course, course_id)
+    if not user or not course or not course.is_legacy:
+        return jsonify({"msg": "No such learner, or that course has not been retired."}), 404
+    enr = Enrollment.query.filter_by(user_id=user.id, course_id=course_id).first()
+    if not enr:
+        return jsonify({"msg": "That learner does not own this course."}), 404
+    until = max(datetime.utcnow(), _legacy_cutoff()) + timedelta(days=days)
+    enr.legacy_access_until = until
+    db.session.add(AuditLog(admin_email=admin.email, action="Old Course Access Extended",
+                            details=f"{user.email} / {course.title}: open until {until.isoformat()} UTC", timestamp=datetime.utcnow()))
+    db.session.commit()
+    return jsonify({"msg": f"{user.email} can use the old course until {until.strftime('%d %b %Y %H:%M')} UTC.", "until": _iso(until)}), 200
+
+
+@app.route('/api/my-upgrade-notice', methods=['GET'])
+@jwt_required()
+def my_upgrade_notice():
+    """Powers the dashboard pop-up: the learner's retired courses, what replaces them and when they close."""
+    uid = int(get_jwt_identity())
+    rows = db.session.query(Enrollment, Course).join(Course, Course.id == Enrollment.course_id)\
+        .filter(Enrollment.user_id == uid, Course.is_legacy == True, Course.replaced_by_id.isnot(None)).all()
+    notices = []
+    for e, c in rows:
+        new = db.session.get(Course, c.replaced_by_id)
+        notices.append({"old_course_id": c.id, "old_title": c.title, "new_course_id": c.replaced_by_id,
+                        "new_title": new.title if new else c.title, "completed": e.status == 'completed' or bool(e.certificate_id),
+                        "progress": e.progress or 0, "closes_at": _iso(_legacy_access_end(e)), "closed": _legacy_closed(c, e)})
+    return jsonify({"notices": notices}), 200
 
 
 if __name__ == '__main__':

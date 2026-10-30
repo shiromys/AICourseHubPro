@@ -94,7 +94,8 @@ const TextCoursePlayer = () => {
       }
     } catch (error) {
       console.error("Error:", error);
-      if (error.response && [401, 403, 404].includes(error.response.status)) navigate('/dashboard');
+      if (error.response?.data?.code === 'legacy_closed' && error.response.data.replaced_by_id) navigate(`/courses/${error.response.data.replaced_by_id}`);
+      else if (error.response && [401, 403, 404].includes(error.response.status)) navigate('/dashboard');
     } finally {
       setLoading(false);
     }

@@ -56,6 +56,11 @@ class Course(db.Model):
     is_deleted = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Course upgrade: a retired ("legacy") course is hidden from sale and the public catalogue but stays
+    # in the database so existing learners can finish it and every certificate keeps verifying.
+    is_legacy = db.Column(db.Boolean, nullable=False, default=False, server_default=db.text('false'))
+    replaced_by_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=True)
+
     # --- FIXED HELPER METHOD ---
     def to_dict(self):
         return {
@@ -65,7 +70,8 @@ class Course(db.Model):
             'price': self.price,
             'category': self.category,
             'modules': self.course_data.get('modules', []) if self.course_data else [],
-            'is_active': self.is_active
+            'is_active': self.is_active,
+            'is_legacy': bool(self.is_legacy)
         }
 
 # 3. ENROLLMENT MODEL
@@ -107,6 +113,9 @@ class Enrollment(db.Model):
     # learner later renames their profile or the course is retitled/restructured.
     certificate_name = db.Column(db.String(150), nullable=True)
     certificate_course_title = db.Column(db.String(255), nullable=True)
+
+    # Per-learner extension for a retired course (support cases). Overrides the global closing date if later.
+    legacy_access_until = db.Column(db.DateTime, nullable=True)
     
 
 # 4. CONTACT MESSAGE MODEL

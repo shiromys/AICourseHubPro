@@ -16,6 +16,7 @@ import {
 import FootprintModal from '../components/admin/FootprintModal';
 import CertificatesPanel from '../components/admin/CertificatesPanel';
 import NewsletterPanel from '../components/admin/NewsletterPanel';
+import CourseUpgradePanel from '../components/admin/CourseUpgradePanel';
 import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
 import RevenuePanel from '../components/admin/RevenuePanel';
 
@@ -417,6 +418,7 @@ const AdminDashboard = () => {
           <SidebarItem id="deleted_users" icon={Trash2} label="Deleted Accounts" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="flagged" icon={AlertCircle} label="Flagged Payments" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="certificates" icon={Award} label="Certificates" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="course_upgrade" icon={BookOpen} label="Course Upgrade" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="newsletter" icon={Mail} label="Newsletter" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
           <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -444,7 +446,7 @@ const AdminDashboard = () => {
               <Menu size={24} />
             </button>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox' })[activeTab] || activeTab.replace('_', ' ')}</h1>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox', course_upgrade: 'Course Upgrade' })[activeTab] || activeTab.replace('_', ' ')}</h1>
               <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className={`w-2 h-2 rounded-full ${headerDb === null ? 'bg-gray-300' : headerDb ? 'bg-green-500' : 'bg-red-500'}`}></span> {headerDb === null ? 'Checking database…' : headerDb ? 'Database connected' : 'Database or API unreachable'}</p>
             </div>
           </div>
@@ -548,6 +550,7 @@ const AdminDashboard = () => {
 
         {/* NEWSLETTER TAB */}
         {activeTab === 'newsletter' && <NewsletterPanel />}
+        {activeTab === 'course_upgrade' && <CourseUpgradePanel />}
 
         {/* SUPPORT TAB */}
         {activeTab === 'support' && (
