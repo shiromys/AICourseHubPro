@@ -244,6 +244,7 @@ def get_system_health():
                 "unread_messages": ContactMessage.query.filter_by(is_read=False).count(),
                 "newsletter_subscribers": NewsletterSubscriber.query.filter_by(status='active').count(),
                 "queued_digests": NewsletterIssue.query.filter_by(status='queued').count(),
+                "draft_digests": NewsletterIssue.query.filter_by(status='draft', auto_generated=True).count(),
                 "unverified_enrollments": Enrollment.query.filter_by(payment_source='unverified').count(),
             }
             last = NewsletterIssue.query.filter_by(status='sent').order_by(NewsletterIssue.sent_at.desc()).first()
@@ -2432,14 +2433,14 @@ def newsletter_unsubscribe():
     return jsonify({"msg": "You've been unsubscribed. You won't receive any more digests."}), 200
 
 
-def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
+def render_newsletter_html(issue, sub=None, preview=False, api_base='', next_step_html=''):
     """Wraps the admin-written body in the branded shell + a per-recipient unsubscribe footer."""
     if sub:
         unsub_url = f"{DOMAIN}/newsletter?unsubscribe={sub.unsubscribe_token}"
     else:
         unsub_url = f"{DOMAIN}/newsletter?unsubscribe=preview"
     pre = (f'<div style="display:none;max-height:0;overflow:hidden;opacity:0">{issue.preheader}</div>' if issue.preheader else '')
-    body = (issue.body_html or '').replace('{{unsubscribe_url}}', unsub_url)
+    body = (issue.body_html or '').replace('{{unsubscribe_url}}', unsub_url).replace('{{next_step}}', next_step_html or '')
     # CAN-SPAM requires a valid postal address in marketing email: set NEWSLETTER_POSTAL_ADDRESS on Railway.
     postal = html_lib.escape((os.getenv('NEWSLETTER_POSTAL_ADDRESS') or '').strip())
     postal_html = f"<br>{postal}" if postal else ""
@@ -2460,45 +2461,72 @@ def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
 
 
 def _send_issue_worker(issue_id, api_base):
-    """Background send. Throttled to stay inside Resend's per-second limit."""
+    _send_issues_worker([issue_id], api_base)
+
+
+def _send_issues_worker(issue_ids, api_base):
+    """Background send of one or more issues, one after the other. Throttled to stay inside
+    Resend's per-second limit. Each issue goes to its own audience (segment); a person is never
+    emailed twice in the same run."""
     with app.app_context():
-        issue = db.session.get(NewsletterIssue, issue_id)
-        if not issue:
-            return
-        sent = 0
-        for sub in NewsletterSubscriber.query.filter_by(status='active').all():
-            headers = {
-                "List-Unsubscribe": f"<{api_base}/api/newsletter/unsubscribe?token={sub.unsubscribe_token}>, <{DOMAIN}/newsletter?unsubscribe={sub.unsubscribe_token}>",
-                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-            }
-            if send_email(sub.email, issue.subject, render_newsletter_html(issue, sub), "AICourseHubPro Weekly", "info@aicoursehubpro.com", headers=headers):
-                sub.last_sent_at = datetime.utcnow()
-                sent += 1
-                db.session.commit()
-            time.sleep(0.6)
-        issue.status = 'sent'
-        issue.sent_at = datetime.utcnow()
-        issue.recipient_count = sent
-        db.session.commit()
-        print(f"Newsletter issue {issue_id} sent to {sent} subscribers", flush=True)
+        by_email, by_uid = _learner_map()
+        live = _live_courses()
+        already = set()
+        for issue_id in issue_ids:
+            issue = db.session.get(NewsletterIssue, issue_id)
+            if not issue:
+                continue
+            week = _week_number(issue.batch_key)
+            sent = 0
+            for sub in _issue_recipients(issue, by_email, by_uid):
+                if sub.id in already:
+                    continue
+                already.add(sub.id)
+                owned = _sub_courses(sub, by_email, by_uid)
+                headers = {
+                    "List-Unsubscribe": f"<{api_base}/api/newsletter/unsubscribe?token={sub.unsubscribe_token}>, <{DOMAIN}/newsletter?unsubscribe={sub.unsubscribe_token}>",
+                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                }
+                html_out = render_newsletter_html(issue, sub, next_step_html=_next_step_html(owned, live, week))
+                if send_email(sub.email, issue.subject, html_out, "AICourseHubPro Weekly", "info@aicoursehubpro.com", headers=headers):
+                    sub.last_sent_at = datetime.utcnow()
+                    sent += 1
+                    db.session.commit()
+                time.sleep(0.6)
+            issue.status = 'sent'
+            issue.sent_at = datetime.utcnow()
+            issue.recipient_count = sent
+            db.session.commit()
+            print(f"Newsletter issue {issue_id} ({issue.segment}) sent to {sent} subscribers", flush=True)
 
 
-def _claim_and_send(issue):
+def _claim_issue(issue):
     """Atomically move draft/queued -> sending so a double click (or cron + click) can't send twice."""
     claimed = NewsletterIssue.query.filter(NewsletterIssue.id == issue.id, NewsletterIssue.status.in_(['draft', 'queued']))\
         .update({'status': 'sending'}, synchronize_session=False)
     db.session.commit()
-    if not claimed:
-        return False
-    threading.Thread(target=_send_issue_worker, args=(issue.id, _api_base()), daemon=True).start()
-    return True
+    return bool(claimed)
 
 
-def _issue_dict(i, full=False):
+def _claim_and_send_many(issues):
+    claimed = [i.id for i in issues if _claim_issue(i)]
+    if claimed:
+        threading.Thread(target=_send_issues_worker, args=(claimed, _api_base()), daemon=True).start()
+    return claimed
+
+
+def _claim_and_send(issue):
+    return bool(_claim_and_send_many([issue]))
+
+
+def _issue_dict(i, full=False, titles=None):
     d = {"id": i.id, "subject": i.subject, "preheader": i.preheader, "status": i.status,
          "created_at": i.created_at.isoformat() + "Z" if i.created_at else None,
          "sent_at": i.sent_at.isoformat() + "Z" if i.sent_at else None,
-         "recipient_count": i.recipient_count or 0}
+         "recipient_count": i.recipient_count or 0,
+         "segment": i.segment or 'all', "batch_key": i.batch_key, "auto_generated": bool(i.auto_generated),
+         "unfinished": _unfinished(i.body_html),
+         "segment_label": _segment_label(i.segment or 'all', titles if titles is not None else _course_titles())}
     if full:
         d["body_html"] = i.body_html
     return d
@@ -2532,6 +2560,307 @@ TIP_LIBRARY = [
     "Add 'If you are not sure, say so instead of guessing' to any prompt where accuracy matters.",
     "Run the same prompt twice. If the answers disagree on a fact, that fact needs checking.",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Automatic weekly digest: who gets what
+#   - Learners get a prompt taken from a course THEY own (never another course's).
+#     A learner with several courses gets one of them each week, in rotation.
+#   - Subscribers who have not enrolled get a free "taster" prompt from one course
+#     plus a link to it.
+#   - Drafts are created automatically; nothing is sent until the owner approves.
+# ---------------------------------------------------------------------------
+NEWSLETTER_PLACEHOLDER = "[Write one or two lines"
+UNFINISHED_MSG = ("This issue still has a placeholder to fill in (for example the \"What's new\" line). "
+                  "Edit or delete it, then try again.")
+_TOKEN_RE = re.compile(r"\{\{(?!unsubscribe_url\}\}|next_step\}\})")
+_TEMPLATE_RE = re.compile(r'<div[^>]*background:#111827[^>]*>\s*<div[^>]*>\s*Template\s*</div>(.*?)</div>', re.S | re.I)
+
+
+def _unfinished(body):
+    b = body or ''
+    return NEWSLETTER_PLACEHOLDER in b or bool(_TOKEN_RE.search(b))
+
+
+def _week_key(dt=None):
+    iso = (dt or datetime.utcnow()).isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}", iso[1]
+
+
+def _week_number(batch_key):
+    try:
+        return int(str(batch_key).split('-W')[1])
+    except Exception:
+        return datetime.utcnow().isocalendar()[1]
+
+
+def _live_courses():
+    return Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None),
+                               (Course.is_active == True) | (Course.is_active == None)).order_by(Course.id).all()
+
+
+def _course_titles():
+    return {c.id: c.title for c in Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()}
+
+
+def _segment_label(seg, titles):
+    if seg == 'nonlearner':
+        return "Not enrolled yet"
+    if seg and seg.startswith('course:'):
+        try:
+            return f"Learners: {titles.get(int(seg.split(':')[1]), 'a course')}"
+        except ValueError:
+            return "Learners"
+    return "Everyone"
+
+
+def _learner_map():
+    """Returns (by_email, by_uid): for each person with an account, {course_id: enrollment status}
+    for the LIVE courses they own."""
+    live_ids = {c.id for c in _live_courses()}
+    by_email, by_uid = {}, {}
+    rows = db.session.query(User.id, User.email, Enrollment.course_id, Enrollment.status)\
+        .join(Enrollment, Enrollment.user_id == User.id)\
+        .filter((User.is_deleted == False) | (User.is_deleted == None)).all()
+    for uid, email, cid, status in rows:
+        if cid not in live_ids:
+            continue
+        by_uid.setdefault(uid, {})[cid] = status
+        by_email.setdefault((email or '').lower(), {})[cid] = status
+    return by_email, by_uid
+
+
+def _sub_courses(sub, by_email, by_uid):
+    return by_uid.get(sub.user_id) or by_email.get((sub.email or '').lower()) or {}
+
+
+def _assigned_course(owned_ids, week):
+    ids = sorted(owned_ids)
+    return ids[week % len(ids)] if ids else None
+
+
+def _segments_for(subs, week, by_email, by_uid):
+    """Splits subscribers into disjoint audiences: 'nonlearner' and one 'course:<id>' per learner."""
+    out = {'nonlearner': []}
+    for sub in subs:
+        cid = _assigned_course(_sub_courses(sub, by_email, by_uid).keys(), week)
+        out.setdefault(f"course:{cid}" if cid else 'nonlearner', []).append(sub)
+    return out
+
+
+def _issue_recipients(issue, by_email, by_uid):
+    subs = NewsletterSubscriber.query.filter_by(status='active').all()
+    seg = issue.segment or 'all'
+    if seg == 'all':
+        return subs
+    return _segments_for(subs, _week_number(issue.batch_key), by_email, by_uid).get(seg, [])
+
+
+def _html_to_text(h):
+    h = re.sub(r'<br\s*/?>', '\n', h, flags=re.I)
+    h = re.sub(r'</(p|li|div)>', '\n', h, flags=re.I)
+    h = re.sub(r'<[^>]+>', '', h)
+    return html_lib.unescape(h).strip()
+
+
+def _clean_lesson_title(t):
+    t = re.sub(r'^(Lesson|Module)\s+[\d.]+(\s+Project)?:\s*', '', t or '').strip()
+    return t or (t or 'Prompt')
+
+
+_CATEGORY_HINTS = [("human resources", "HR"), ("hr", "HR"), ("education", "Education"), ("automation", "Automation"),
+                   ("analytics", "Business"), ("business", "Business"), ("non-profit", "Non-Profit"), ("social impact", "Non-Profit"),
+                   ("government", "Public Services"), ("public service", "Public Services")]
+
+
+def course_prompts(course):
+    """Ready-to-use prompts for a course, as [(lesson title, prompt text)]. They are read from the
+    reusable templates inside the course's own lessons, so a learner only ever sees prompts from
+    what they bought. Courses with no template blocks fall back to the built-in library for their topic."""
+    out = []
+    data = course.course_data or {}
+    for m in (data.get('modules') or []):
+        for l in (m.get('lessons') or []):
+            if l.get('type') != 'text':
+                continue
+            for block in _TEMPLATE_RE.findall(l.get('content') or ''):
+                text = _html_to_text(block)
+                if 40 <= len(text) <= 1600:
+                    out.append((_clean_lesson_title(l.get('title')), text))
+    if out:
+        return out
+    hay = f"{course.title or ''} {course.category or ''}".lower()
+    cats = {c for key, c in _CATEGORY_HINTS if key in hay}
+    lib = [(t, p) for (c, t, p) in PROMPT_LIBRARY if c in cats] or [(t, p) for (c, t, p) in PROMPT_LIBRARY if c == 'Everyday']
+    return lib
+
+
+def _prompt_box(text):
+    return ('<div style="background:#f9fafb;border-left:4px solid #dc2626;padding:14px 16px;border-radius:4px;'
+            'font-family:Consolas,monospace;font-size:13px;color:#222;white-space:pre-wrap;">' + html_lib.escape(text) + '</div>')
+
+
+def _spotlight_html(course, heading):
+    desc = html_lib.escape((course.description or '')[:220]).rstrip() + ('…' if course.description and len(course.description) > 220 else '')
+    return (f'<h3 style="color:#111;margin:28px 0 6px;">{html_lib.escape(heading)}</h3>'
+            f'<p style="margin:0 0 6px;"><strong>{html_lib.escape(course.title)}</strong></p><p style="margin:0 0 12px;color:#555;">{desc}</p>'
+            f'<p style="margin:0;"><a href="{DOMAIN}/courses/{course.id}" style="color:#dc2626;font-weight:bold;">See the course &rarr;</a></p>')
+
+
+def _next_step_html(owned, live, week):
+    """Per-recipient block: only for a learner who has COMPLETED every course they own and still has
+    a course they have not bought. Everyone else gets nothing here."""
+    if not owned or any(st != 'completed' for st in owned.values()):
+        return ''
+    unowned = [c for c in live if c.id not in owned]
+    if not unowned:
+        return ''
+    return _spotlight_html(unowned[week % len(unowned)], "What to try next")
+
+
+def build_learner_digest(course, week):
+    prompts = course_prompts(course)
+    title, text = prompts[week % len(prompts)]
+    tip = TIP_LIBRARY[week % len(TIP_LIBRARY)]
+    body = (f'<h2 style="color:#dc2626;margin-top:0;">Your prompt for this week</h2>'
+            f'<p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:1px;">From your course: {html_lib.escape(course.title)}</p>'
+            f'<p style="margin:0 0 10px;"><strong>{html_lib.escape(title)}</strong></p>'
+            f'{_prompt_box(text)}'
+            f'<p style="margin:10px 0 0;color:#555;font-size:14px;">Copy it, replace the [BRACKETS] and run it in your AI tool. Always read the result before you use it.</p>'
+            f'<p style="margin:14px 0 0;"><a href="{DOMAIN}/dashboard" style="color:#dc2626;font-weight:bold;">Open your course &rarr;</a></p>'
+            f'<h3 style="color:#111;margin:28px 0 6px;">One tip</h3><p style="margin:0;">{html_lib.escape(tip)}</p>'
+            f'{{{{next_step}}}}')
+    return {"subject": f"Your weekly prompt: {title}"[:200],
+            "preheader": f"From {course.title}: a ready-to-use prompt and one tip."[:200], "body_html": body}
+
+
+def build_taster_digest(live, week):
+    course = live[week % len(live)]
+    prompts = course_prompts(course)
+    title, text = prompts[(week // len(live)) % len(prompts)]
+    tip = TIP_LIBRARY[week % len(TIP_LIBRARY)]
+    body = (f'<h2 style="color:#dc2626;margin-top:0;">A free prompt to try this week</h2>'
+            f'<p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:1px;">From our course: {html_lib.escape(course.title)}</p>'
+            f'<p style="margin:0 0 10px;"><strong>{html_lib.escape(title)}</strong></p>'
+            f'{_prompt_box(text)}'
+            f'<p style="margin:10px 0 0;color:#555;font-size:14px;">Copy it, replace the [BRACKETS] and run it in your favourite AI tool. Always read the result before you use it.</p>'
+            f'<h3 style="color:#111;margin:28px 0 6px;">One tip</h3><p style="margin:0;">{html_lib.escape(tip)}</p>'
+            f'{_spotlight_html(course, "Want more like this?")}')
+    return {"subject": f"This week's AI prompt: {title}"[:200],
+            "preheader": "A free, ready-to-use prompt and one practical tip."[:200], "body_html": body}
+
+
+def generate_weekly_batch(created_by='auto'):
+    """Creates this ISO week's drafts: one for non-learners and one per course that has learners.
+    Safe to call repeatedly - segments already drafted this week are left alone."""
+    key, week = _week_key()
+    live = _live_courses()
+    if not live:
+        return key, []
+    subs = NewsletterSubscriber.query.filter_by(status='active').all()
+    by_email, by_uid = _learner_map()
+    segs = _segments_for(subs, week, by_email, by_uid)
+    have = {i.segment for i in NewsletterIssue.query.filter_by(batch_key=key).all()}
+    created = []
+    for seg in ['nonlearner'] + [f"course:{c.id}" for c in live]:
+        if seg in have:
+            continue
+        if subs and not segs.get(seg):
+            continue          # nobody in this audience this week
+        if seg == 'nonlearner':
+            built = build_taster_digest(live, week)
+        else:
+            course = next(c for c in live if f"course:{c.id}" == seg)
+            built = build_learner_digest(course, week)
+        issue = NewsletterIssue(status='draft', segment=seg, batch_key=key, auto_generated=True, created_by=created_by, **built)
+        db.session.add(issue)
+        created.append(issue)
+    db.session.commit()
+    return key, created
+
+
+def _review_recipients():
+    env = (os.getenv('NEWSLETTER_REVIEW_EMAIL') or '').strip()
+    if env:
+        return [e.strip() for e in env.split(',') if e.strip()]
+    return [u.email for u in User.query.filter_by(is_admin=True).all() if u.email]
+
+
+def _notify_digest_ready(key, issues, counts):
+    titles = _course_titles()
+    rows = ''.join(f'<li><strong>{html_lib.escape(_segment_label(i.segment, titles))}</strong> - {counts.get(i.segment, 0)} people: '
+                   f'{html_lib.escape(i.subject)}</li>' for i in issues)
+    html_out = (f'<div style="font-family:Arial,sans-serif;max-width:560px;"><h2>This week\'s digest drafts are ready</h2>'
+                f'<p>{len(issues)} email(s) were drafted for {key}. Nothing has been sent. Open the admin panel, check each one, '
+                f'then choose <strong>Approve &amp; queue all</strong>.</p><ul>{rows}</ul>'
+                f'<p><a href="{DOMAIN}/admin">Review the drafts &rarr;</a></p></div>')
+    for to in _review_recipients():
+        threading.Thread(target=send_email, args=(to, f"Weekly digest drafts ready for review ({key})", html_out), daemon=True).start()
+
+
+def _batch_payload():
+    key, week = _week_key()
+    issues = NewsletterIssue.query.filter_by(batch_key=key).order_by(NewsletterIssue.id).all()
+    by_email, by_uid = _learner_map()
+    subs = NewsletterSubscriber.query.filter_by(status='active').all()
+    segs = _segments_for(subs, week, by_email, by_uid)
+    titles = _course_titles()
+    items = []
+    for i in issues:
+        d = _issue_dict(i, titles=titles)
+        d["recipients"] = i.recipient_count if i.status in ('sending', 'sent') else len(segs.get(i.segment, []))
+        items.append(d)
+    return {"batch_key": key, "issues": items, "subscribers": len(subs)}
+
+
+@app.route('/api/admin/newsletter/batch', methods=['GET'])
+@jwt_required()
+def admin_newsletter_batch_get():
+    admin, err = _require_admin()
+    if err: return err
+    return jsonify(_batch_payload()), 200
+
+
+@app.route('/api/admin/newsletter/batch', methods=['POST'])
+@jwt_required()
+def admin_newsletter_batch_generate():
+    admin, err = _require_admin()
+    if err: return err
+    key, created = generate_weekly_batch(created_by=admin.email)
+    payload = _batch_payload()
+    payload["created"] = len(created)
+    return jsonify(payload), 200
+
+
+@app.route('/api/admin/newsletter/batch/action', methods=['POST'])
+@jwt_required()
+def admin_newsletter_batch_action():
+    """Approve this week's drafts together: action 'queue' (the scheduler sends them) or 'send' (now)."""
+    admin, err = _require_admin()
+    if err: return err
+    action = (request.json or {}).get('action')
+    if action not in ('queue', 'send'):
+        return jsonify({"msg": "action must be 'queue' or 'send'"}), 400
+    key, _ = _week_key()
+    open_issues = NewsletterIssue.query.filter(NewsletterIssue.batch_key == key, NewsletterIssue.status.in_(['draft', 'queued'])).all()
+    if not open_issues:
+        return jsonify({"msg": "There are no unsent drafts for this week."}), 400
+    titles = _course_titles()
+    bad = [_segment_label(i.segment, titles) for i in open_issues if _unfinished(i.body_html)]
+    if bad:
+        return jsonify({"msg": f"Finish these first (they still contain a placeholder): {', '.join(bad)}."}), 400
+    if action == 'queue':
+        for i in open_issues:
+            i.status = 'queued'
+        db.session.add(AuditLog(admin_email=admin.email, action="Newsletter Batch Queued", details=f"{key}: {len(open_issues)} issue(s)", timestamp=datetime.utcnow()))
+        db.session.commit()
+        return jsonify({"msg": f"{len(open_issues)} email(s) queued - the weekly scheduler will send them."}), 200
+    if NewsletterSubscriber.query.filter_by(status='active').count() == 0:
+        return jsonify({"msg": "There are no confirmed subscribers yet."}), 400
+    claimed = _claim_and_send_many(open_issues)
+    db.session.add(AuditLog(admin_email=admin.email, action="Newsletter Batch Sent", details=f"{key}: {len(claimed)} issue(s)", timestamp=datetime.utcnow()))
+    db.session.commit()
+    return jsonify({"msg": f"Sending {len(claimed)} email(s) in the background."}), 202
 
 
 @app.route('/api/admin/newsletter/stats', methods=['GET'])
@@ -2592,7 +2921,8 @@ def admin_newsletter_export():
 def admin_newsletter_issues():
     admin, err = _require_admin()
     if err: return err
-    return jsonify([_issue_dict(i) for i in NewsletterIssue.query.order_by(NewsletterIssue.created_at.desc()).limit(100).all()]), 200
+    titles = _course_titles()
+    return jsonify([_issue_dict(i, titles=titles) for i in NewsletterIssue.query.order_by(NewsletterIssue.created_at.desc()).limit(100).all()]), 200
 
 
 @app.route('/api/admin/newsletter/issues/<int:issue_id>', methods=['GET'])
@@ -2616,6 +2946,8 @@ def admin_newsletter_issue_save(issue_id=None):
     body = data.get('body_html') or ''
     if not subject or not body.strip():
         return jsonify({"msg": "A subject and a body are required."}), 400
+    if data.get('status') == 'queued' and _unfinished(body):
+        return jsonify({"msg": UNFINISHED_MSG}), 400
     if issue_id:
         i = db.session.get(NewsletterIssue, issue_id)
         if not i: return jsonify({"msg": "Issue not found"}), 404
@@ -2678,6 +3010,8 @@ def admin_newsletter_send(issue_id):
     if err: return err
     i = db.session.get(NewsletterIssue, issue_id)
     if not i: return jsonify({"msg": "Issue not found"}), 404
+    if _unfinished(i.body_html):
+        return jsonify({"msg": UNFINISHED_MSG}), 400
     active = NewsletterSubscriber.query.filter_by(status='active').count()
     if active == 0:
         return jsonify({"msg": "There are no confirmed subscribers yet."}), 400
@@ -2718,21 +3052,53 @@ def admin_newsletter_suggest():
     return jsonify({"subject": f"This week's AI prompt: {title}", "preheader": "A ready-to-use prompt, one practical tip and what's new.", "body_html": body}), 200
 
 
+def _cron_authorised():
+    secret = os.environ.get('CRON_SECRET')
+    return bool(secret) and request.headers.get('X-Cron-Secret') == secret
+
+
+@app.route('/api/newsletter/cron/draft', methods=['POST'])
+def newsletter_cron_draft():
+    """For a scheduler (e.g. a Railway cron job, early in the week): builds this week's drafts and
+    emails the owner a 'ready for review' note. Sends nothing to subscribers. Protected by CRON_SECRET."""
+    if not _cron_authorised():
+        return jsonify({"msg": "Forbidden"}), 403
+    key, created = generate_weekly_batch(created_by='auto')
+    if not created:
+        return jsonify({"msg": f"Nothing new to draft for {key}."}), 200
+    by_email, by_uid = _learner_map()
+    segs = _segments_for(NewsletterSubscriber.query.filter_by(status='active').all(), _week_number(key), by_email, by_uid)
+    _notify_digest_ready(key, created, {k: len(v) for k, v in segs.items()})
+    return jsonify({"msg": f"Drafted {len(created)} email(s) for {key}; review request sent."}), 201
+
+
 @app.route('/api/newsletter/cron/weekly', methods=['POST'])
 def newsletter_cron_weekly():
-    """For a scheduler (e.g. a Railway cron job curl-ing this weekly): releases the OLDEST *queued*
-    issue. Drafts are never sent automatically. Protected by the CRON_SECRET env var."""
-    secret = os.environ.get('CRON_SECRET')
-    if not secret or request.headers.get('X-Cron-Secret') != secret:
+    """For a scheduler (e.g. a Railway cron job curl-ing this weekly): releases the OLDEST queued
+    batch (all of its audience emails together; a lone manual issue goes alone). Drafts are never
+    sent automatically, and a queued batch more than 3 weeks old is returned to draft rather than
+    sent late. Protected by the CRON_SECRET env var."""
+    if not _cron_authorised():
         return jsonify({"msg": "Forbidden"}), 403
-    issue = NewsletterIssue.query.filter_by(status='queued').order_by(NewsletterIssue.created_at.asc()).first()
-    if not issue:
-        return jsonify({"msg": "No queued issue - nothing sent."}), 200
     if NewsletterSubscriber.query.filter_by(status='active').count() == 0:
         return jsonify({"msg": "No confirmed subscribers - nothing sent."}), 200
-    if not _claim_and_send(issue):
-        return jsonify({"msg": "Issue was already claimed."}), 200
-    return jsonify({"msg": f"Sending issue {issue.id}."}), 202
+    stale_before = datetime.utcnow() - timedelta(days=21)
+    for old in NewsletterIssue.query.filter(NewsletterIssue.status == 'queued', NewsletterIssue.batch_key.isnot(None),
+                                            NewsletterIssue.created_at < stale_before).all():
+        old.status = 'draft'
+    db.session.commit()
+    queued = NewsletterIssue.query.filter_by(status='queued').order_by(NewsletterIssue.created_at.asc()).all()
+    if not queued:
+        return jsonify({"msg": "No queued issue - nothing sent."}), 200
+    first = queued[0]
+    group = [i for i in queued if i.batch_key == first.batch_key] if first.batch_key else [first]
+    ready = [i for i in group if not _unfinished(i.body_html)]
+    skipped = len(group) - len(ready)
+    claimed = _claim_and_send_many(ready)
+    if not claimed:
+        return jsonify({"msg": "Issue was already claimed or not ready."}), 200
+    note = f" ({skipped} skipped: placeholder not filled in)" if skipped else ""
+    return jsonify({"msg": f"Sending {len(claimed)} issue(s){note}."}), 202
 
 
 # ==========================================

@@ -700,6 +700,7 @@ const AdminDashboard = () => {
                                   ['Flagged payments', systemHealth.ops?.pending_flagged_payments, 'flagged'],
                                   ['Unread messages', systemHealth.ops?.unread_messages, 'support'],
                                   ['Unverified enrollments', systemHealth.ops?.unverified_enrollments, 'revenue'],
+                                  ['Digest drafts to review', systemHealth.ops?.draft_digests, 'newsletter'],
                                   ['Newsletter subscribers', systemHealth.ops?.newsletter_subscribers, 'newsletter'],
                                 ].map(([label, n, tab]) => (
                                   <button key={label} onClick={() => setActiveTab(tab)} className={`p-3 rounded-lg border text-left hover:bg-gray-50 ${label !== 'Newsletter subscribers' && n > 0 ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200'}`}>

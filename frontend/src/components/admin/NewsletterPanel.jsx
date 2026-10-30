@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
-import { Loader2, Wand2, Send, Save, Eye, Download, Trash2, Plus, Clock, CheckCircle, Mail } from 'lucide-react';
+import { Loader2, Wand2, Send, Save, Eye, Download, Trash2, Plus, Clock, CheckCircle, Mail, CalendarClock, AlertTriangle } from 'lucide-react';
 
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 const api = (path) => `${API_BASE_URL}/api/admin/newsletter${path}`;
@@ -22,6 +22,7 @@ const NewsletterPanel = () => {
   const [subs, setSubs] = useState({ items: [], total: 0 });
   const [subFilter, setSubFilter] = useState('');
   const [issues, setIssues] = useState([]);
+  const [batch, setBatch] = useState({ batch_key: '', issues: [], subscribers: 0 });
   const [draft, setDraft] = useState(null);          // issue being composed
   const [preview, setPreview] = useState('');
   const [busy, setBusy] = useState('');
@@ -32,12 +33,13 @@ const NewsletterPanel = () => {
 
   const loadAll = useCallback(async () => {
     try {
-      const [s, l, i] = await Promise.all([
+      const [s, l, i, b] = await Promise.all([
         axios.get(api('/stats'), { headers: authHeaders() }),
         axios.get(api('/subscribers'), { headers: authHeaders(), params: { status: subFilter || undefined, per_page: 50 } }),
         axios.get(api('/issues'), { headers: authHeaders() }),
+        axios.get(api('/batch'), { headers: authHeaders() }),
       ]);
-      setStats(s.data); setSubs(l.data); setIssues(i.data);
+      setStats(s.data); setSubs(l.data); setIssues(i.data); setBatch(b.data);
     } catch { flash('err', 'Could not load newsletter data.'); }
   }, [subFilter]);
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -53,6 +55,22 @@ const NewsletterPanel = () => {
     setDraft({ ...EMPTY, ...r.data }); setPreview('');
     flash('ok', 'Starter draft generated - edit anything, then preview and send a test.');
   });
+
+  const generateBatch = () => run('batch', async () => {
+    const r = await axios.post(api('/batch'), {}, { headers: authHeaders() });
+    setBatch(r.data); await loadAll();
+    flash('ok', r.data.created ? `${r.data.created} draft email(s) created. Check each one, then approve.` : 'This week\'s drafts already exist.');
+  });
+
+  const batchAction = (action) => {
+    const open = batch.issues.filter(i => i.status === 'draft' || i.status === 'queued');
+    const people = open.reduce((n, i) => n + (i.recipients || 0), 0);
+    if (action === 'send' && !window.confirm(`Send ${open.length} email(s) to about ${people} confirmed subscribers now? This cannot be undone.`)) return;
+    run('batch-' + action, async () => {
+      const r = await axios.post(api('/batch/action'), { action }, { headers: authHeaders() });
+      flash('ok', r.data.msg); await loadAll();
+    });
+  };
 
   const openIssue = (id) => run('open', async () => {
     const r = await axios.get(api(`/issues/${id}`), { headers: authHeaders() });
@@ -110,6 +128,35 @@ const NewsletterPanel = () => {
           <div key={l} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm"><p className="text-xs text-gray-500 font-medium">{l}</p><p className="text-xl font-bold text-gray-900 mt-1">{v ?? '—'}</p></div>))}
       </div>
 
+      {/* AUTOMATIC WEEKLY DIGEST */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-bold text-gray-900 flex items-center gap-2"><CalendarClock size={18} className="text-red-600" /> This week's digest <span className="text-gray-400 font-normal text-sm">{batch.batch_key}</span></h3>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={generateBatch} disabled={!!busy} className="flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100">
+              {busy === 'batch' ? <Loader2 className="animate-spin" size={15} /> : <Wand2 size={15} />} {batch.issues.length ? 'Add missing drafts' : 'Create this week\'s drafts'}</button>
+            {batch.issues.some(i => i.status === 'draft') && <button onClick={() => batchAction('queue')} disabled={!!busy} className="flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"><Clock size={15} /> Approve &amp; queue all</button>}
+            {batch.issues.some(i => i.status === 'draft' || i.status === 'queued') && <button onClick={() => batchAction('send')} disabled={!!busy} className="flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700"><Send size={15} /> Send all now</button>}
+          </div>
+        </div>
+        <p className="px-5 pt-4 text-sm text-gray-600">Each week the system drafts one email per audience from your own course content: learners get a prompt from <b>the course they bought</b>, and everyone else gets a free taster with a link to that course. <b>Nothing is sent until you approve it.</b></p>
+        {batch.issues.length === 0
+          ? <p className="p-6 text-center text-sm text-gray-400">No drafts for this week yet. They are created automatically when the weekly scheduler runs - or click <b>Create this week's drafts</b>.</p>
+          : <div className="overflow-x-auto"><table className="w-full text-sm text-left mt-3">
+              <thead className="bg-gray-50 text-gray-500 uppercase text-xs"><tr><th className="px-5 py-2">Audience</th><th className="px-5 py-2">Subject</th><th className="px-5 py-2">People</th><th className="px-5 py-2">Status</th></tr></thead>
+              <tbody className="divide-y divide-gray-100">
+                {batch.issues.map(i => (
+                  <tr key={i.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">{i.segment_label}</td>
+                    <td className="px-5 py-3"><button onClick={() => openIssue(i.id)} className="font-bold text-gray-900 hover:text-red-600 text-left">{i.subject}</button>
+                      {i.unfinished && <span className="ml-2 inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5"><AlertTriangle size={11} /> Needs a line filled in</span>}</td>
+                    <td className="px-5 py-3 text-gray-700">{i.recipients}</td>
+                    <td className="px-5 py-3"><Pill s={i.status} /></td>
+                  </tr>))}
+              </tbody></table></div>}
+        <div className="h-3" />
+      </div>
+
       {/* COMPOSER */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
@@ -127,6 +174,8 @@ const NewsletterPanel = () => {
           <div className="p-5 grid lg:grid-cols-2 gap-5">
             <div className="space-y-3">
               {locked && <p className="text-sm bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg px-3 py-2">This issue is {draft.status} and can't be edited.</p>}
+              {draft.segment && draft.segment !== 'all' && <p className="text-sm bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-3 py-2">Audience: <b>{draft.segment_label}</b>. The line <code>{'{{next_step}}'}</code> (if present) is replaced automatically, and only for a learner who has finished all their courses - leave it in place.</p>}
+              {draft.unfinished && !locked && <p className="text-sm bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2">This draft still has a line to fill in (for example the "What's new" text). It can't be queued or sent until you replace or remove it.</p>}
               <div><label className="text-xs font-bold text-gray-500 uppercase">Subject</label><input className={input} disabled={locked} value={draft.subject} onChange={e => setDraft({ ...draft, subject: e.target.value })} maxLength={200} /></div>
               <div><label className="text-xs font-bold text-gray-500 uppercase">Preview text <span className="normal-case font-normal">(shown next to the subject in inboxes)</span></label><input className={input} disabled={locked} value={draft.preheader || ''} onChange={e => setDraft({ ...draft, preheader: e.target.value })} maxLength={200} /></div>
               <div><label className="text-xs font-bold text-gray-500 uppercase">Body (HTML)</label><textarea className={`${input} font-mono h-72`} disabled={locked} value={draft.body_html} onChange={e => setDraft({ ...draft, body_html: e.target.value })} spellCheck={false} /></div>
@@ -162,7 +211,7 @@ const NewsletterPanel = () => {
           {issues.map(i => (
             <tr key={i.id} className="hover:bg-gray-50">
               <td className="px-5 py-3"><button onClick={() => openIssue(i.id)} className="font-bold text-gray-900 hover:text-red-600 text-left">{i.subject}</button>
-                <div className="text-xs text-gray-400">{i.status === 'sent' ? `Sent ${fmt(i.sent_at)} to ${i.recipient_count}` : `Created ${fmt(i.created_at)}`}</div></td>
+                <div className="text-xs text-gray-400">{i.segment && i.segment !== 'all' ? `${i.segment_label} · ` : ''}{i.status === 'sent' ? `Sent ${fmt(i.sent_at)} to ${i.recipient_count}` : `Created ${fmt(i.created_at)}`}</div></td>
               <td className="px-5 py-3"><Pill s={i.status} /></td>
               <td className="px-5 py-3 text-right">{(i.status === 'draft' || i.status === 'queued') && <button onClick={() => del(i.id)} title="Delete" className="p-2 text-red-600 bg-red-50 rounded hover:bg-red-100"><Trash2 size={16} /></button>}</td>
             </tr>))}

@@ -207,3 +207,8 @@ class NewsletterIssue(db.Model):
     sent_at = db.Column(db.DateTime, nullable=True)
     recipient_count = db.Column(db.Integer, default=0)
     created_by = db.Column(db.String(120), nullable=True)
+    # Automatic weekly digest: one issue per audience, grouped by ISO week ("2026-W45").
+    #   segment: 'all' (everyone) | 'nonlearner' (not enrolled in any live course) | 'course:<id>' (learners of that course)
+    segment = db.Column(db.String(30), nullable=False, default='all', server_default='all')
+    batch_key = db.Column(db.String(12), nullable=True, index=True)
+    auto_generated = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
