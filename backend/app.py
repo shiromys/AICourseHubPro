@@ -3582,7 +3582,7 @@ def verify_cert(cert_id):
         "valid": True, 
         "student_name": enr.certificate_name or u.name, 
         "course_title": enr.certificate_course_title or c.title, 
-        "completion_date": enr.completion_date.strftime('%Y-%m-%d')
+        "completion_date": enr.completion_date.strftime('%Y-%m-%d') if enr.completion_date else None
     })
 
 @app.route('/api/forgot-password', methods=['POST'])

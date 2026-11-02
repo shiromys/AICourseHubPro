@@ -81,9 +81,11 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
                           <CheckCircle size={16} className="text-green-600"/>
                           <span className="text-gray-700 font-bold text-sm">Score: {score}%</span>
                       </div>
-                      <div className="bg-gray-100 px-4 py-2 rounded-md">
-                          <span className="text-gray-700 font-bold text-sm">Issued: {completionDate}</span>
-                      </div>
+                      {completionDate ? (
+                        <div className="bg-gray-100 px-4 py-2 rounded-md">
+                            <span className="text-gray-700 font-bold text-sm">Issued: {completionDate}</span>
+                        </div>
+                      ) : null}
                   </div>
               </div>
   
