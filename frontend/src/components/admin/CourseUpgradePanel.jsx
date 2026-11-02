@@ -30,6 +30,28 @@ const CourseUpgradePanel = () => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  const rePreview = async (list) => {
+    setBusy('preview'); setConfirm('');
+    try {
+      const r = await axios.post(api('/preview'), { courses: list }, { headers: authHeaders() });
+      setPreview(r.data);
+    } catch (e) {
+      if (e?.response?.data?.rows) setPreview(e.response.data); else flash('err', errText(e));
+    } finally { setBusy(''); }
+  };
+
+  // The admin picks which existing course each uploaded course replaces ('' = automatic, 'none' = add as a new course).
+  const choose = (idx, value) => {
+    const next = courses.map((c, i) => {
+      if (i !== idx) return c;
+      const copy = { ...c };
+      if (value === '') delete copy.old_id; else copy.old_id = value === 'none' ? 'none' : Number(value);
+      return copy;
+    });
+    setCourses(next);
+    rePreview(next);
+  };
+
   const onFile = (ev) => {
     const f = ev.target.files?.[0];
     if (!f) return;
@@ -40,12 +62,10 @@ const CourseUpgradePanel = () => {
         const parsed = JSON.parse(reader.result);
         const list = Array.isArray(parsed) ? parsed : parsed.courses;
         setCourses(list);
-        setBusy('preview');
-        const r = await axios.post(api('/preview'), { courses: list }, { headers: authHeaders() });
-        setPreview(r.data);
+        await rePreview(list);
       } catch (e) {
-        if (e?.response?.data) setPreview(e.response.data); else flash('err', 'That file is not valid JSON.');
-      } finally { setBusy(''); }
+        flash('err', 'That file is not valid JSON.');
+      }
     };
     reader.readAsText(f);
   };
@@ -105,12 +125,42 @@ const CourseUpgradePanel = () => {
 
       <div className="bg-white border border-gray-200 rounded-xl p-5">
         <h3 className="font-bold text-lg flex items-center gap-2"><Rocket size={18} /> Launch the new courses</h3>
-        <p className="text-sm text-gray-600 mt-1">Upload <code>all_courses_new.json</code>. Each course replaces the existing course with the same <code>id</code>. You will see exactly what will happen before anything changes.</p>
+        <p className="text-sm text-gray-600 mt-1">Upload <code>all_courses_new.json</code>. Each course replaces the existing course with the same title; if none matches you choose which one it replaces. You will see exactly what will happen before anything changes.</p>
         <label className="mt-3 inline-flex items-center gap-2 px-4 py-2 border border-dashed border-gray-400 rounded-lg cursor-pointer text-sm font-bold hover:bg-gray-50">
           <Upload size={16} /> {fileName || 'Choose file'}
           <input type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
         </label>
         {busy === 'preview' && <Loader2 className="animate-spin inline ml-3" size={18} />}
+
+        {preview?.rows?.length > 0 && (
+          <div className="mt-4">
+            <p className="text-sm font-bold text-gray-700 mb-1">Which existing course does each new course replace?</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs uppercase text-gray-400"><th className="py-1">New course (from the file)</th><th>Replaces</th></tr></thead>
+                <tbody>{preview.rows.map(r => (
+                  <tr key={r.index} className="border-t border-gray-100 align-top">
+                    <td className="py-2 pr-3">{r.new_title}</td>
+                    <td className="py-2">
+                      <select
+                        value={courses?.[r.index]?.old_id === 'none' ? 'none' : (courses?.[r.index]?.old_id != null ? String(courses[r.index].old_id) : (r.old_id != null ? String(r.old_id) : ''))}
+                        onChange={e => choose(r.index, e.target.value)}
+                        className={`border rounded-lg px-2 py-1.5 text-sm max-w-full ${r.problem ? 'border-red-400 bg-red-50' : 'border-gray-300'}`}>
+                        <option value="">— choose —</option>
+                        {(preview.available || []).map(a => <option key={a.id} value={String(a.id)}>{a.title} (#{a.id})</option>)}
+                        <option value="none">Add as a new course (replaces nothing)</option>
+                      </select>
+                      {r.matched_by && r.matched_by !== 'choice' && r.matched_by !== 'new' && (
+                        <span className="ml-2 text-xs text-gray-500">matched by {r.matched_by}</span>
+                      )}
+                      {r.title_differs && <p className="text-xs text-amber-700 mt-1">Titles differ. Check this is the right course before upgrading.</p>}
+                    </td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {preview && !preview.ok && (
           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -125,7 +175,7 @@ const CourseUpgradePanel = () => {
               <table className="w-full text-sm">
                 <thead><tr className="text-left text-xs uppercase text-gray-400"><th className="py-1">Old course</th><th>New course</th><th>Price</th><th>Learners</th><th>Finished</th><th>Mid-course</th></tr></thead>
                 <tbody>{preview.plan.map(p => (
-                  <tr key={p.old_id} className="border-t border-gray-100"><td className="py-2">{p.old_title}</td><td>{p.new_title}</td><td>${p.price}</td><td>{p.learners}</td><td>{p.completed}</td><td>{p.in_progress}</td></tr>
+                  <tr key={p.old_id ?? `new-${p.new_title}`} className="border-t border-gray-100"><td className="py-2">{p.old_title || <span className="text-gray-400">(new course)</span>}</td><td>{p.new_title}</td><td>${p.price}</td><td>{p.learners}</td><td>{p.completed}</td><td>{p.in_progress}</td></tr>
                 ))}</tbody>
               </table>
             </div>

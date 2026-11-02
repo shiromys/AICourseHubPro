@@ -3995,40 +3995,82 @@ def _clean_new_course(item):
     return ({"title": title, "description": desc, "category": category, "price": price, "modules": modules} if not errs else None), errs
 
 
+def _norm_title(t):
+    return re.sub(r'[^a-z0-9]+', '', str(t or '').lower().replace('&', 'and'))
+
+
 def _upgrade_plan(items):
-    """Matches each uploaded course to the OLD course it replaces (by its id) and checks everything.
-    Returns (plan, errors). Writes nothing."""
+    """Matches each uploaded course to the existing course it replaces and checks everything.
+    Order: the admin's own choice ('old_id' on the item, or "none" = add as a brand-new course),
+    then the same title, then the same id. Returns (plan, errors, rows). Writes nothing."""
+    # Courses that were themselves created by an earlier upgrade are never candidates: uploading the
+    # same file twice must not retire the new courses.
+    upgraded = {r[0] for r in db.session.query(Course.replaced_by_id).filter(Course.replaced_by_id.isnot(None)).all()}
+    available = [c for c in _sellable_courses().order_by(Course.id).all() if c.id not in upgraded]
     if not isinstance(items, list) or not items:
-        return [], ["Upload a list of courses (the all_courses_new.json file)."]
-    plan, errors, seen = [], [], set()
+        return [], ["Upload a list of courses (the all_courses_new.json file)."], [], available
+    by_title = {}
+    for c in available:
+        by_title.setdefault(_norm_title(c.title), []).append(c)
+    upgraded_titles = {_norm_title(c.title) for c in Course.query.filter(Course.id.in_(upgraded)).all()} if upgraded else set()
+    plan, errors, rows, seen = [], [], [], set()
     for idx, item in enumerate(items):
-        label = f"course {idx + 1}"
         clean, errs = _clean_new_course(item)
-        label = f"course {idx + 1} ({(item or {}).get('title', '?') if isinstance(item, dict) else '?'})"
+        new_title = str(item.get('title', '?')) if isinstance(item, dict) else '?'
+        label = f"course {idx + 1} ({new_title})"
         errors += [f"{label}: {e}" for e in errs]
-        try:
-            old_id = int(item.get('old_id', item.get('id')))
-        except (TypeError, ValueError, AttributeError):
-            errors.append(f"{label}: no id to say which existing course it replaces"); continue
-        old = db.session.get(Course, old_id)
-        if not old or old.is_deleted:
-            errors.append(f"{label}: the existing course with id {old_id} was not found")
-        elif old.is_legacy:
-            errors.append(f"{label}: existing course {old_id} ('{old.title}') has already been upgraded")
-        elif old_id in seen:
-            errors.append(f"{label}: id {old_id} appears twice in the upload")
-        seen.add(old_id)
-        if clean and old and not old.is_legacy and not old.is_deleted:
-            enrs = Enrollment.query.filter_by(course_id=old.id).all()
+        if not isinstance(item, dict):
+            continue
+        old, how, problem = None, None, None
+        choice = item.get('old_id', None)
+        if isinstance(choice, str) and choice.strip().lower() == 'none':
+            how = 'new'
+        elif choice not in (None, ''):
+            try:
+                old = db.session.get(Course, int(choice)); how = 'choice'
+            except (TypeError, ValueError):
+                problem = "the chosen existing course is not valid"
+            if not problem and (not old or old.is_deleted):
+                problem, old = f"the chosen existing course (id {choice}) was not found", None
+        else:
+            hits = by_title.get(_norm_title(new_title), [])
+            if len(hits) == 1:
+                old, how = hits[0], 'title'
+            elif len(hits) > 1:
+                problem = "more than one existing course has this title; choose which one it replaces"
+            else:
+                try:
+                    cand = db.session.get(Course, int(item.get('id')))
+                except (TypeError, ValueError):
+                    cand = None
+                if _norm_title(new_title) in upgraded_titles:
+                    problem = "this course has already been upgraded (its new version is live)"
+                elif cand and not cand.is_deleted and not cand.is_legacy and cand.id not in upgraded:
+                    old, how = cand, 'id'
+                else:
+                    problem = "no existing course has this title or id; choose which one it replaces, or add it as a new course"
+        if old is not None and old.is_legacy:
+            problem, old = f"existing course '{old.title}' has already been upgraded", None
+        if old is not None:
+            if old.id in seen:
+                problem = f"existing course '{old.title}' is already being replaced by another course in this upload"
+            seen.add(old.id)
+        if problem:
+            errors.append(f"{label}: {problem}")
+        rows.append({"index": idx, "new_title": new_title, "old_id": old.id if old else None, "old_title": old.title if old else None,
+                     "matched_by": how if not problem else None, "problem": problem,
+                     "title_differs": bool(old and _norm_title(old.title) != _norm_title(new_title))})
+        if clean and not problem and (old is not None or how == 'new'):
+            enrs = Enrollment.query.filter_by(course_id=old.id).all() if old else []
             completed = [e for e in enrs if e.status == 'completed' or e.certificate_id]
             plan.append({"old": old, "new": clean, "enrollments": enrs,
                          "counts": {"learners": len(enrs), "completed": len(completed), "in_progress": len(enrs) - len(completed)}})
-    return plan, errors
+    return plan, errors, rows, available
 
 
 def _plan_summary(plan):
-    return [{"old_id": p["old"].id, "old_title": p["old"].title, "new_title": p["new"]["title"],
-             "new_modules": len(p["new"]["modules"]), "price": p["new"]["price"], **p["counts"]} for p in plan]
+    return [{"old_id": p["old"].id if p["old"] else None, "old_title": p["old"].title if p["old"] else None,
+             "new_title": p["new"]["title"], "new_modules": len(p["new"]["modules"]), "price": p["new"]["price"], **p["counts"]} for p in plan]
 
 
 @app.route('/api/admin/course-upgrade/status', methods=['GET'])
@@ -4056,8 +4098,9 @@ def admin_upgrade_status():
 def admin_upgrade_preview():
     admin, err = _require_admin()
     if err: return err
-    plan, errors = _upgrade_plan((request.get_json(silent=True) or {}).get('courses'))
-    return jsonify({"ok": not errors, "errors": errors, "plan": _plan_summary(plan),
+    plan, errors, rows, available = _upgrade_plan((request.get_json(silent=True) or {}).get('courses'))
+    return jsonify({"ok": not errors, "errors": errors, "plan": _plan_summary(plan), "rows": rows,
+                    "available": [{"id": c.id, "title": c.title} for c in available],
                     "totals": {"free_grants": sum(p["counts"]["learners"] for p in plan),
                                "emails": len({e.user_id for p in plan for e in p["enrollments"] if e.status == 'completed' or e.certificate_id}),
                                "popups": sum(p["counts"]["in_progress"] for p in plan)}}), 200
@@ -4072,7 +4115,7 @@ def admin_upgrade_run():
     admin, err = _require_admin()
     if err: return err
     data = request.get_json(silent=True) or {}
-    plan, errors = _upgrade_plan(data.get('courses'))
+    plan, errors, rows, available = _upgrade_plan(data.get('courses'))
     if errors:
         return jsonify({"msg": "Nothing was changed. Fix these first: " + "; ".join(errors[:6]), "errors": errors}), 400
     if data.get('confirm') != 'UPGRADE':
@@ -4088,6 +4131,9 @@ def admin_upgrade_run():
             db.session.add(new)
             db.session.flush()
             old = p["old"]
+            if old is None:
+                db.session.add(AuditLog(admin_email=admin.email, action="Course Upgrade", details=f"New course '{new.title}' added (id {new.id}); it replaces no existing course", timestamp=now))
+                continue
             old.is_legacy = True
             old.replaced_by_id = new.id
             have = {e.user_id for e in Enrollment.query.filter_by(course_id=new.id).all()}
