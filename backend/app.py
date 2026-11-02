@@ -1943,9 +1943,11 @@ def enroll_free():
         db.session.commit()
     return jsonify({"msg": "Enrolled"}), 201
 
-def _issue_certificate(enr, user_id):
-    """Issues the certificate once, ever. Returns True only the first time."""
-    if enr.status != 'completed' or enr.certificate_id:
+def _issue_certificate(enr, user_id, earned=False):
+    """Issues the certificate once, ever. Returns True only the first time.
+    `earned` must be True: the caller has just seen the server mark a PASS on the final quiz.
+    A course that is merely marked completed (older records, or a stray save) never mints a certificate."""
+    if not earned or enr.status != 'completed' or enr.certificate_id:
         return False
     enr.certificate_id = f"AIC-{str(uuid.uuid4())[:8].upper()}"
     enr.completion_date = datetime.utcnow()
@@ -2041,7 +2043,7 @@ def submit_quiz():
             enr.status = 'completed'
             enr.progress = 100
             enr.last_module_index, enr.last_lesson_index = module_idx, lesson_idx
-        newly_certified = _issue_certificate(enr, user.id)
+        newly_certified = _issue_certificate(enr, user.id, earned=is_final)
     db.session.commit()
     log_activity(user.id, 'quiz_attempt', detail=f"Quiz attempt {prior + 1}: {correct}/{total} ({score:g}%) - {'passed' if passed else 'not passed'}", course_id=course_id)
     if newly_certified:
@@ -2073,6 +2075,7 @@ def update_progress():
     except (TypeError, ValueError):
         return jsonify({"msg": "progress, score and indexes must be numbers"}), 400
     already_done = enr.status == 'completed'
+    earned = False
     if new_progress is not None and not already_done: enr.progress = new_progress
     if module_idx is not None: enr.last_module_index = module_idx
     if lesson_idx is not None: enr.last_lesson_index = lesson_idx
@@ -2101,6 +2104,7 @@ def update_progress():
         if is_final_lesson and passed:
             enr.status = 'completed'
             enr.progress = 100
+            earned = True
         elif already_done:
             pass            # a finished course is never moved back by a stray save
         else:
@@ -2110,7 +2114,7 @@ def update_progress():
     elif requested_status is not None and not already_done:
         enr.status = requested_status
 
-    newly_certified = _issue_certificate(enr, user_id)
+    newly_certified = _issue_certificate(enr, user_id, earned=earned)
 
     db.session.commit()
 
@@ -2234,7 +2238,7 @@ def get_enrollment_status(course_id):
         "progress": enr.progress, "status": enr.status, 
         "last_module_index": enr.last_module_index,
         "last_lesson_index": enr.last_lesson_index,
-        "certificate_id": enr.certificate_id,
+        "certificate_id": enr.certificate_id, "score": enr.score,
         "completion_date": enr.completion_date.strftime('%B %d, %Y') if enr.completion_date else None
     })
 

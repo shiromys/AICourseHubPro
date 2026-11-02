@@ -56,7 +56,7 @@ const Certificate = () => {
         setData({
             courseTitle: course?.title || "Unknown Course",
             completionDate: enrollRes.data.completion_date || '',   // never invent a date: if none was recorded, the certificate shows none
-            score: enrollRes.data.score || 100,
+            score: Math.round(enrollRes.data.score) || 100,   // the saved score of the passing attempt
             certId: enrollRes.data.certificate_id || "PENDING"
         });
 
