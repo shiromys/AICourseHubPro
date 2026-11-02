@@ -2657,6 +2657,7 @@ def _issue_recipients(issue, by_email, by_uid):
 
 
 def _html_to_text(h):
+    h = h if isinstance(h, str) else ''
     h = re.sub(r'<br\s*/?>', '\n', h, flags=re.I)
     h = re.sub(r'</(p|li|div)>', '\n', h, flags=re.I)
     h = re.sub(r'<[^>]+>', '', h)
@@ -2664,6 +2665,7 @@ def _html_to_text(h):
 
 
 def _clean_lesson_title(t):
+    t = t if isinstance(t, str) else ''
     t = re.sub(r'^(Lesson|Module)\s+[\d.]+(\s+Project)?:\s*', '', t or '').strip()
     return t or (t or 'Prompt')
 
@@ -2678,18 +2680,23 @@ def course_prompts(course):
     reusable templates inside the course's own lessons, so a learner only ever sees prompts from
     what they bought. Courses with no template blocks fall back to the built-in library for their topic."""
     out = []
-    data = course.course_data or {}
+    data = course.course_data if isinstance(course.course_data, dict) else {}
     for m in (data.get('modules') or []):
+        if not isinstance(m, dict):
+            continue
         for l in (m.get('lessons') or []):
-            if l.get('type') != 'text':
+            if not isinstance(l, dict) or l.get('type') != 'text':
                 continue
-            for block in _TEMPLATE_RE.findall(l.get('content') or ''):
+            content = l.get('content')
+            if isinstance(content, list):      # some lessons store their text as a list of pieces
+                content = '\n'.join(x if isinstance(x, str) else str(x.get('content') or x.get('html') or x.get('text') or '') if isinstance(x, dict) else '' for x in content)
+            for block in _TEMPLATE_RE.findall(content if isinstance(content, str) else ''):
                 text = _html_to_text(block)
                 if 40 <= len(text) <= 1600:
                     out.append((_clean_lesson_title(l.get('title')), text))
     if out:
         return out
-    hay = f"{course.title or ''} {course.category or ''}".lower()
+    hay = f"{str(course.title or '')} {str(course.category or '')}".lower()
     cats = {c for key, c in _CATEGORY_HINTS if key in hay}
     lib = [(t, p) for (c, t, p) in PROMPT_LIBRARY if c in cats] or [(t, p) for (c, t, p) in PROMPT_LIBRARY if c == 'Everyday']
     return lib
@@ -2762,20 +2769,29 @@ def generate_weekly_batch(created_by='auto'):
     segs = _segments_for(subs, week, by_email, by_uid)
     have = {i.segment for i in NewsletterIssue.query.filter_by(batch_key=key).all()}
     created = []
+    failed = []
     for seg in ['nonlearner'] + [f"course:{c.id}" for c in live]:
         if seg in have:
             continue
         if subs and not segs.get(seg):
             continue          # nobody in this audience this week
-        if seg == 'nonlearner':
-            built = build_taster_digest(live, week)
-        else:
-            course = next(c for c in live if f"course:{c.id}" == seg)
-            built = build_learner_digest(course, week)
-        issue = NewsletterIssue(status='draft', segment=seg, batch_key=key, auto_generated=True, created_by=created_by, **built)
-        db.session.add(issue)
-        created.append(issue)
-    db.session.commit()
+        # Each audience is built and saved on its own, so one problem course can never stop the others.
+        try:
+            if seg == 'nonlearner':
+                built = build_taster_digest(live, week)
+            else:
+                course = next(c for c in live if f"course:{c.id}" == seg)
+                built = build_learner_digest(course, week)
+            issue = NewsletterIssue(status='draft', segment=seg, batch_key=key, auto_generated=True,
+                                    created_by=(created_by or 'auto')[:120], **built)
+            db.session.add(issue)
+            db.session.commit()
+            created.append(issue)
+        except Exception as e:
+            db.session.rollback()
+            failed.append(f"{seg}: {type(e).__name__}: {str(e)[:200]}")
+            print(f"[Newsletter] could not draft {seg} for {key}: {e}\n{traceback.format_exc()}", flush=True)
+    generate_weekly_batch.last_failed = failed
     return key, created
 
 
@@ -2826,9 +2842,17 @@ def admin_newsletter_batch_get():
 def admin_newsletter_batch_generate():
     admin, err = _require_admin()
     if err: return err
-    key, created = generate_weekly_batch(created_by=admin.email)
-    payload = _batch_payload()
+    try:
+        key, created = generate_weekly_batch(created_by=admin.email)
+        failed = list(getattr(generate_weekly_batch, 'last_failed', []))
+        payload = _batch_payload()
+    except Exception as e:
+        db.session.rollback()
+        print(f"[Newsletter] batch failed: {e}\n{traceback.format_exc()}", flush=True)
+        return jsonify({"msg": f"Could not create the drafts ({type(e).__name__}: {str(e)[:200]}). Please send this message to support."}), 500
     payload["created"] = len(created)
+    if failed:
+        payload["warnings"] = failed
     return jsonify(payload), 200
 
 

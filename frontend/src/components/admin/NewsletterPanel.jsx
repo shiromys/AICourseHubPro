@@ -59,7 +59,8 @@ const NewsletterPanel = () => {
   const generateBatch = () => run('batch', async () => {
     const r = await axios.post(api('/batch'), {}, { headers: authHeaders() });
     setBatch(r.data); await loadAll();
-    flash('ok', r.data.created ? `${r.data.created} draft email(s) created. Check each one, then approve.` : 'This week\'s drafts already exist.');
+    if (r.data.warnings?.length) flash('err', `${r.data.created} draft(s) created, but some could not be made: ${r.data.warnings.join(' | ')}`);
+    else flash('ok', r.data.created ? `${r.data.created} draft email(s) created. Check each one, then approve.` : 'This week\'s drafts already exist.');
   });
 
   const batchAction = (action) => {
