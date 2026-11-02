@@ -2216,7 +2216,14 @@ def get_enrollment_status(course_id):
     user = db.session.get(User, user_id) 
     
     if user.is_admin:
-        return jsonify({"status": "completed", "progress": 100, "certificate_id": "ADMIN_PREVIEW"})
+        # Admins can open any course/certificate as a preview. If the admin has really completed this
+        # course, show their real certificate (real id and real date); otherwise it is a labelled preview.
+        own = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).filter(Enrollment.certificate_id.isnot(None)).first()
+        if own:
+            return jsonify({"status": own.status, "progress": own.progress, "score": own.score, "certificate_id": own.certificate_id,
+                            "completion_date": own.completion_date.strftime('%B %d, %Y') if own.completion_date else None,
+                            "last_module_index": own.last_module_index, "last_lesson_index": own.last_lesson_index})
+        return jsonify({"status": "completed", "progress": 100, "certificate_id": "ADMIN_PREVIEW", "completion_date": None, "preview": True})
         
     # THE FIX: Order by progress descending so the backend ALWAYS grabs your highest score, ignoring bad duplicates!
     enr = Enrollment.query.filter_by(user_id=user_id, course_id=course_id).order_by(Enrollment.progress.desc()).first()
