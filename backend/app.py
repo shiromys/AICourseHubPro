@@ -3347,9 +3347,47 @@ def mark_message_read(id):
 @app.route('/api/admin/logs', methods=['GET'])
 @jwt_required()
 def get_audit_logs():
-    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
-    return jsonify([{"action": l.action, "admin": l.admin_email, "details": l.details, "date": l.timestamp.strftime('%Y-%m-%d %H:%M')} for l in logs])
+    """Audit log with a date filter. `from` / `to` are calendar dates (YYYY-MM-DD, both inclusive) in the
+    admin's own time zone, given by `tz_offset` (minutes, as JavaScript's getTimezoneOffset reports it)."""
+    admin, err = _require_admin()
+    if err: return err
+    args = request.args
+
+    def day(name):
+        raw = (args.get(name) or '').strip()
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw[:10], '%Y-%m-%d')
+        except ValueError:
+            raise ValueError(f"{name} must look like 2026-11-03")
+    try:
+        d_from, d_to = day('from'), day('to')
+        tz_offset = int(args.get('tz_offset', 0))
+        page = max(int(args.get('page', 1)), 1)
+        per_page = min(max(int(args.get('per_page', 25)), 1), 100)
+    except ValueError as e:
+        return jsonify({"msg": str(e) if 'must look' in str(e) else "page, per_page and tz_offset must be numbers"}), 400
+    if d_from and d_to and d_from > d_to:
+        d_from, d_to = d_to, d_from
+    tz_offset = max(-840, min(840, tz_offset))
+    query = AuditLog.query
+    if d_from:   # local midnight, converted to UTC (getTimezoneOffset is UTC minus local, in minutes)
+        query = query.filter(AuditLog.timestamp >= d_from + timedelta(minutes=tz_offset))
+    if d_to:
+        query = query.filter(AuditLog.timestamp < d_to + timedelta(days=1, minutes=tz_offset))
+    q = (args.get('q') or '').strip().lower()
+    if q:
+        like = f"%{q}%"
+        query = query.filter(db.or_(func.lower(func.coalesce(AuditLog.action, '')).like(like),
+                                    func.lower(func.coalesce(AuditLog.admin_email, '')).like(like),
+                                    func.lower(func.coalesce(AuditLog.details, '')).like(like)))
+    total = query.count()
+    logs = query.order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    return jsonify({"items": [{"action": l.action, "admin": l.admin_email, "details": l.details,
+                               "date": l.timestamp.strftime('%Y-%m-%d %H:%M') if l.timestamp else '',
+                               "timestamp": (l.timestamp.isoformat() + 'Z') if l.timestamp else None} for l in logs],
+                    "total": total, "page": page, "per_page": per_page}), 200
 
 SOURCE_LABELS = {
     'stripe': 'Stripe - single course', 'stripe_bundle': 'Stripe - All-Access bundle',

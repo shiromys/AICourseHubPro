@@ -17,6 +17,7 @@ import FootprintModal from '../components/admin/FootprintModal';
 import CertificatesPanel from '../components/admin/CertificatesPanel';
 import NewsletterPanel from '../components/admin/NewsletterPanel';
 import CourseUpgradePanel from '../components/admin/CourseUpgradePanel';
+import AuditLogsPanel from '../components/admin/AuditLogsPanel';
 import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
 import RevenuePanel from '../components/admin/RevenuePanel';
 
@@ -127,10 +128,6 @@ const AdminDashboard = () => {
             else if (activeTab === 'support') { 
               const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
               setMessages(r.data);
-            }
-            else if (activeTab === 'audit') { 
-              const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${token}` } });
-              setLogs(r.data);
             }
             else if (activeTab === 'settings') { 
               const r = await axios.get(`${API_BASE_URL}/api/settings`); 
@@ -506,7 +503,7 @@ const AdminDashboard = () => {
         )}
 
         {/* --- TABLES --- */}
-        {['courses', 'users', 'deleted_users', 'audit'].includes(activeTab) && (
+        {['courses', 'users', 'deleted_users'].includes(activeTab) && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
                     <div className="w-full flex justify-between items-center md:block">
@@ -551,6 +548,7 @@ const AdminDashboard = () => {
         {/* NEWSLETTER TAB */}
         {activeTab === 'newsletter' && <NewsletterPanel />}
         {activeTab === 'course_upgrade' && <CourseUpgradePanel />}
+        {activeTab === 'audit' && <AuditLogsPanel />}
 
         {/* SUPPORT TAB */}
         {activeTab === 'support' && (
