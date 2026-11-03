@@ -86,7 +86,13 @@ const CertificatesPanel = () => {
                 <td className="px-6 py-4 font-mono text-xs text-gray-700">{c.certificate_id}</td>
                 <td className="px-6 py-4"><div className="font-bold text-gray-900">{c.name}</div><div className="text-xs text-gray-500">{c.user_email}</div>
                   {c.name !== c.user_name_now && <div className="text-xs text-gray-400">Account name now: {c.user_name_now}</div>}</td>
-                <td className="px-6 py-4 text-gray-700">{c.course_title}</td>
+                <td className="px-6 py-4 text-gray-700">{c.course_title}{' '}
+                  {c.course_version === 'previous'
+                    ? <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">Previous version</span>
+                    : c.course_version === 'new'
+                      ? <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">New version</span>
+                      : null}
+                </td>
                 <td className="px-6 py-4 text-gray-500">{c.completion_date || '—'}</td>
                 <td className="px-6 py-4 text-right whitespace-nowrap">
                   <button onClick={() => setActive(c)} title="View certificate" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 mr-2"><Eye size={18} /></button>

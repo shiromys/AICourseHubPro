@@ -2521,6 +2521,7 @@ def admin_list_certificates():
     rows = query.order_by(Enrollment.completion_date.desc().nullslast(), Enrollment.id.desc())\
         .offset((page - 1) * per_page).limit(per_page).all()
 
+    upgraded_to = {r[0] for r in db.session.query(Course.replaced_by_id).filter(Course.replaced_by_id.isnot(None)).all()}
     items = []
     for e, u, c in rows:
         items.append({
@@ -2531,6 +2532,7 @@ def admin_list_certificates():
             "score": e.score or 100,
             "user_id": u.id, "user_email": u.email, "user_name_now": u.name,
             "course_id": c.id, "snapshot": bool(e.certificate_name),
+            "course_version": "previous" if c.is_legacy else ("new" if c.id in upgraded_to else None),
         })
     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page}), 200
 
