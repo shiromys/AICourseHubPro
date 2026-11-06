@@ -1,0 +1,55 @@
+From b09cd88d6b6eea344ec12cbc5c24fe2441ea6ca2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 3 Nov 2026 10:24:49 +0000
+Subject: [PATCH] Admin Certificates: label each certificate as previous or new
+ version of its course
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                                      | 2 ++
+ frontend/src/components/admin/CertificatesPanel.jsx | 8 +++++++-
+ 2 files changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/backend/app.py b/backend/app.py
+index 36292433..0669867a 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -2521,6 +2521,7 @@ def admin_list_certificates():
+     rows = query.order_by(Enrollment.completion_date.desc().nullslast(), Enrollment.id.desc())\
+         .offset((page - 1) * per_page).limit(per_page).all()
+ 
++    upgraded_to = {r[0] for r in db.session.query(Course.replaced_by_id).filter(Course.replaced_by_id.isnot(None)).all()}
+     items = []
+     for e, u, c in rows:
+         items.append({
+@@ -2531,6 +2532,7 @@ def admin_list_certificates():
+             "score": e.score or 100,
+             "user_id": u.id, "user_email": u.email, "user_name_now": u.name,
+             "course_id": c.id, "snapshot": bool(e.certificate_name),
++            "course_version": "previous" if c.is_legacy else ("new" if c.id in upgraded_to else None),
+         })
+     return jsonify({"items": items, "total": total, "page": page, "per_page": per_page}), 200
+ 
+diff --git a/frontend/src/components/admin/CertificatesPanel.jsx b/frontend/src/components/admin/CertificatesPanel.jsx
+index c8629a49..d45a37db 100644
+--- a/frontend/src/components/admin/CertificatesPanel.jsx
++++ b/frontend/src/components/admin/CertificatesPanel.jsx
+@@ -86,7 +86,13 @@ const CertificatesPanel = () => {
+                 <td className="px-6 py-4 font-mono text-xs text-gray-700">{c.certificate_id}</td>
+                 <td className="px-6 py-4"><div className="font-bold text-gray-900">{c.name}</div><div className="text-xs text-gray-500">{c.user_email}</div>
+                   {c.name !== c.user_name_now && <div className="text-xs text-gray-400">Account name now: {c.user_name_now}</div>}</td>
+-                <td className="px-6 py-4 text-gray-700">{c.course_title}</td>
++                <td className="px-6 py-4 text-gray-700">{c.course_title}{' '}
++                  {c.course_version === 'previous'
++                    ? <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 whitespace-nowrap">Previous version</span>
++                    : c.course_version === 'new'
++                      ? <span className="ml-1 text-xs font-bold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200 whitespace-nowrap">New version</span>
++                      : null}
++                </td>
+                 <td className="px-6 py-4 text-gray-500">{c.completion_date || '—'}</td>
+                 <td className="px-6 py-4 text-right whitespace-nowrap">
+                   <button onClick={() => setActive(c)} title="View certificate" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100 mr-2"><Eye size={18} /></button>
+-- 
+2.43.0
+

@@ -1,0 +1,98 @@
+From 34df957c1db27cacbda01e5aeff4f1c296cebdd2 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 29 Oct 2026 15:34:59 +0000
+Subject: [PATCH] Analytics: fix funnel over 100% and negative action counts
+
+Purchased/bundle/never-started counts included admin and deleted accounts that hold
+enrollments, while Registered excluded them, so Purchased could exceed Registered
+(125%, "never purchased" -1) and the bar overflowed its card.
+
+- All enrollment-based user counts now use the same population as Registered
+  (non-admin, non-deleted users; live courses only).
+- "Purchased, never started" now means no progress in ANY course.
+- Percentages capped at 100 and "never purchased" floored at 0; bar width clamped.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                        | 34 +++++++++++++++++----------
+ frontend/src/pages/AdminDashboard.jsx |  2 +-
+ 2 files changed, 23 insertions(+), 13 deletions(-)
+
+diff --git a/backend/app.py b/backend/app.py
+index e211b846..94eede58 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -773,22 +773,28 @@ def get_admin_analytics():
+     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+ 
+     # --- CONVERSION FUNNEL ---
+-    total_registered = User.query.filter_by(is_admin=False, is_deleted=False).count()
+-    enrolled_user_ids = db.session.query(Enrollment.user_id).distinct().all()
+-    total_paid = len(enrolled_user_ids)
+-    # Count users enrolled in all 6 courses (bundle equivalent)
++    # Every stage is counted over the SAME population (real learners: not admins, not
++    # deleted accounts). Previously "Purchased" also counted admin/deleted accounts that
++    # hold enrollments, which pushed it past 100% of "Registered" (and "never purchased" negative).
++    real_users = db.select(User.id).where(User.is_admin == False, User.is_deleted == False)
++    total_registered = db.session.execute(db.select(func.count()).select_from(real_users.subquery())).scalar()
++    live_enrollments = db.session.query(Enrollment.user_id, Enrollment.course_id)\
++        .join(Course, Course.id == Enrollment.course_id)\
++        .filter(Course.is_deleted == False, Enrollment.user_id.in_(real_users))
++    total_paid = live_enrollments.with_entities(Enrollment.user_id).distinct().count()
++    # Count users enrolled in every live course (bundle equivalent)
+     total_courses = Course.query.filter_by(is_deleted=False).count()
+-    bundle_buyers = db.session.query(Enrollment.user_id)\
++    bundle_buyers = live_enrollments.with_entities(Enrollment.user_id)\
+         .group_by(Enrollment.user_id)\
+-        .having(func.count(Enrollment.course_id) >= total_courses).count()
++        .having(func.count(Enrollment.course_id) >= total_courses).count() if total_courses else 0
+ 
+     conversion_rate = round((total_paid / total_registered * 100), 1) if total_registered > 0 else 0
+     bundle_rate = round((bundle_buyers / total_paid * 100), 1) if total_paid > 0 else 0
+ 
+     funnel = [
+         { "stage": "Registered", "count": total_registered, "pct": 100 },
+-        { "stage": "Purchased", "count": total_paid, "pct": round(total_paid / total_registered * 100, 1) if total_registered > 0 else 0 },
+-        { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": round(bundle_buyers / total_registered * 100, 1) if total_registered > 0 else 0 },
++        { "stage": "Purchased", "count": total_paid, "pct": min(100, round(total_paid / total_registered * 100, 1)) if total_registered > 0 else 0 },
++        { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": min(100, round(bundle_buyers / total_registered * 100, 1)) if total_registered > 0 else 0 },
+     ]
+ 
+     # --- USER GROWTH (last 30 days) ---
+@@ -831,11 +837,15 @@ def get_admin_analytics():
+     course_performance.sort(key=lambda x: x['enrolled'], reverse=True)
+ 
+     # --- KEY METRICS ---
+-    never_purchased = total_registered - total_paid
+-    purchased_never_started = db.session.query(Enrollment.user_id).filter(Enrollment.progress == 0).distinct().count()
+-    started_never_completed = db.session.query(Enrollment.user_id).filter(
++    never_purchased = max(0, total_registered - total_paid)
++    # A buyer is "never started" only if NONE of their courses has any progress
++    # (a bundle buyer who started course 1 has started).
++    started_ids = live_enrollments.filter(Enrollment.progress > 0).with_entities(Enrollment.user_id).distinct().scalar_subquery()
++    purchased_never_started = live_enrollments.with_entities(Enrollment.user_id)\
++        .filter(~Enrollment.user_id.in_(started_ids)).distinct().count()
++    started_never_completed = live_enrollments.filter(
+         Enrollment.progress > 0, Enrollment.status != 'completed'
+-    ).distinct().count()
++    ).with_entities(Enrollment.user_id).distinct().count()
+ 
+     total_revenue = db.session.query(func.sum(Course.price))\
+         .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0
+diff --git a/frontend/src/pages/AdminDashboard.jsx b/frontend/src/pages/AdminDashboard.jsx
+index 696de8c7..3891987a 100644
+--- a/frontend/src/pages/AdminDashboard.jsx
++++ b/frontend/src/pages/AdminDashboard.jsx
+@@ -765,7 +765,7 @@ const AdminDashboard = () => {
+                             <span className="font-bold text-gray-900">{f.count} <span className="text-gray-400 font-normal">({f.pct}%)</span></span>
+                           </div>
+                           <div className="w-full bg-gray-100 rounded-full h-2.5">
+-                            <div className="bg-red-600 h-2.5 rounded-full transition-all" style={{ width: `${f.pct}%` }}></div>
++                            <div className="bg-red-600 h-2.5 rounded-full transition-all" style={{ width: `${Math.min(100, Math.max(0, f.pct))}%` }}></div>
+                           </div>
+                         </div>
+                       ))}
+-- 
+2.43.0
+

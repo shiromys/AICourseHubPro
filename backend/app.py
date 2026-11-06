@@ -1496,6 +1496,26 @@ def _course_price_id(course):
     return STRIPE_COURSE_PRICE_IDS.get(course.title)
 
 
+
+UTM_KEYS = ('utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term')
+
+
+def _utm_metadata(data):
+    """Campaign tags the browser remembered (only for visitors who accepted analytics cookies),
+    cleaned up for Stripe metadata so every payment can be traced to its source. Lowercase,
+    letters/numbers/_-. and spaces only, 100 characters max; anything else is dropped."""
+    raw = (data or {}).get('utm')
+    out = {}
+    if not isinstance(raw, dict):
+        return out
+    for k in UTM_KEYS:
+        v = raw.get(k)
+        if isinstance(v, str):
+            v = re.sub(r'[^a-z0-9_.\- ]', '', v.strip().lower())[:100].strip()
+            if v:
+                out[k] = v
+    return out
+
 @app.route('/api/create-checkout-session', methods=['POST'])
 def create_checkout_session():
     # Auth is OPTIONAL here: logged-in users check out as themselves;
@@ -1563,7 +1583,7 @@ def create_checkout_session():
             mode='payment',
             success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={price_id or ''}&guest={'false' if user_id else 'true'}",
             cancel_url=f"{DOMAIN}/courses",
-            metadata={"course_id": str(course.id)},
+            metadata={"course_id": str(course.id), **_utm_metadata(data)},
         )
 
         if user_id:
@@ -1634,7 +1654,7 @@ def create_bundle_checkout():
             cancel_url=f"{DOMAIN}/pricing",
             client_reference_id=str(user_id),
             # NEW: Tag this as a bundle purchase!
-            metadata={"user_id": str(user_id), "is_bundle": "true"}
+            metadata={"user_id": str(user_id), "is_bundle": "true", **_utm_metadata(request.get_json(silent=True))}
         )
         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
     except Exception as e:

@@ -8,6 +8,7 @@ import { CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-rea
 import TextCoursePlayer from '../components/TextCoursePlayer'; 
 import { Helmet } from 'react-helmet-async'; // <-- 1. IMPORT HELMET HERE
 import useCheckout from '../hooks/useCheckout';
+import { track, courseItem } from '../utils/analytics';
 
 const CourseView = () => {
   const { id } = useParams();
@@ -56,6 +57,14 @@ const CourseView = () => {
   };
 
   const handleBuy = () => startCheckout(course);
+
+  // Analytics: a visitor is looking at a course's sales page (not an enrolled learner in the player).
+  useEffect(() => {
+    if (!loading && course && !isEnrolled) {
+      const item = courseItem(course);
+      track('view_item', { currency: 'USD', value: item.price, items: [item] });
+    }
+  }, [loading, course?.id, isEnrolled]);
 
   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
   if (!course) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Course not found.</div>;

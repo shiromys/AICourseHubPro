@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import axios from 'axios';
 import API_BASE_URL from '../config';
+import { captureUtm } from '../utils/analytics';
 
 // Fires a GA4 page_view and a Meta Pixel PageView on every client-side
 // route change. This app is a single-page app, so React Router swaps
@@ -20,6 +21,9 @@ const RouteTracker = () => {
     axios.post(`${API_BASE_URL}/api/track`, { path: location.pathname, title: document.title },
       { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
   }, [location.pathname]);
+
+  // Remember ?utm_... campaign tags (accepted-cookies visitors only) so checkout can pass them on.
+  useEffect(() => { captureUtm(); }, [location.search]);
 
   useEffect(() => {
     // Skip the first mount: GA4 and Meta Pixel already log this initial

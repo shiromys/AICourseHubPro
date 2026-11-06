@@ -1,0 +1,467 @@
+diff --git a/backend/app.py b/backend/app.py
+index 303a0ba1..d1cc2a51 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -1496,6 +1496,26 @@ def _course_price_id(course):
+     return STRIPE_COURSE_PRICE_IDS.get(course.title)
+ 
+ 
++
++UTM_KEYS = ('utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term')
++
++
++def _utm_metadata(data):
++    """Campaign tags the browser remembered (only for visitors who accepted analytics cookies),
++    cleaned up for Stripe metadata so every payment can be traced to its source. Lowercase,
++    letters/numbers/_-. and spaces only, 100 characters max; anything else is dropped."""
++    raw = (data or {}).get('utm')
++    out = {}
++    if not isinstance(raw, dict):
++        return out
++    for k in UTM_KEYS:
++        v = raw.get(k)
++        if isinstance(v, str):
++            v = re.sub(r'[^a-z0-9_.\- ]', '', v.strip().lower())[:100].strip()
++            if v:
++                out[k] = v
++    return out
++
+ @app.route('/api/create-checkout-session', methods=['POST'])
+ def create_checkout_session():
+     # Auth is OPTIONAL here: logged-in users check out as themselves;
+@@ -1563,7 +1583,7 @@ def create_checkout_session():
+             mode='payment',
+             success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={price_id or ''}&guest={'false' if user_id else 'true'}",
+             cancel_url=f"{DOMAIN}/courses",
+-            metadata={"course_id": str(course.id)},
++            metadata={"course_id": str(course.id), **_utm_metadata(data)},
+         )
+ 
+         if user_id:
+@@ -1634,7 +1654,7 @@ def create_bundle_checkout():
+             cancel_url=f"{DOMAIN}/pricing",
+             client_reference_id=str(user_id),
+             # NEW: Tag this as a bundle purchase!
+-            metadata={"user_id": str(user_id), "is_bundle": "true"}
++            metadata={"user_id": str(user_id), "is_bundle": "true", **_utm_metadata(request.get_json(silent=True))}
+         )
+         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
+     except Exception as e:
+diff --git a/frontend/index.html b/frontend/index.html
+index cb4af772..e944b5a2 100644
+--- a/frontend/index.html
++++ b/frontend/index.html
+@@ -1,6 +1,31 @@
+ <!doctype html>
+ <html lang="en">
+   <head>
++    <!-- Google Consent Mode v2: everything starts DENIED; the cookie banner (and a saved earlier
++         choice) switches it on. Must run before the Google tags below. -->
++    <script>
++      window.dataLayer = window.dataLayer || [];
++      function gtag(){dataLayer.push(arguments);}
++      (function () {
++        var accepted = false;
++        try { accepted = localStorage.getItem('user_cookie_consent') === 'accepted'; } catch (e) {}
++        gtag('consent', 'default', {
++          ad_storage: 'denied', analytics_storage: 'denied',
++          ad_user_data: 'denied', ad_personalization: 'denied',
++          wait_for_update: 500
++        });
++        gtag('set', 'ads_data_redaction', true);
++        if (accepted) {
++          gtag('consent', 'update', {
++            ad_storage: 'granted', analytics_storage: 'granted',
++            ad_user_data: 'granted', ad_personalization: 'granted'
++          });
++        }
++        window.__achConsentAccepted = accepted;
++      })();
++    </script>
++    <!-- End Consent Mode -->
++
+     <!-- Google Tag Manager -->
+     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+@@ -39,6 +64,7 @@
+       t.src=v;s=b.getElementsByTagName(e)[0];
+       s.parentNode.insertBefore(t,s)}(window, document,'script',
+       'https://connect.facebook.net/en_US/fbevents.js');
++      fbq('consent', window.__achConsentAccepted ? 'grant' : 'revoke');
+       fbq('init', '2259649971242079');
+       fbq('track', 'PageView');
+     </script>
+diff --git a/frontend/src/components/CookieConsent.jsx b/frontend/src/components/CookieConsent.jsx
+index 45eb93c4..cc41b47d 100644
+--- a/frontend/src/components/CookieConsent.jsx
++++ b/frontend/src/components/CookieConsent.jsx
+@@ -1,4 +1,5 @@
+ import React, { useState, useEffect } from 'react';
++import { applyConsent, captureUtm } from '../utils/analytics';
+ 
+ const CookieConsent = () => {
+   const [showBanner, setShowBanner] = useState(false);
+@@ -8,19 +9,21 @@ const CookieConsent = () => {
+     if (!consent) {
+       setShowBanner(true);
+     }
+-    // GA4 and Meta Pixel now load unconditionally from index.html,
+-    // so no conditional script-loading happens here anymore.
++    // Google tags and the Meta Pixel load from index.html in a "denied" state;
++    // the buttons below switch them on or leave them off (Consent Mode).
+   }, []);
+ 
+   const handleAccept = () => {
+     localStorage.setItem('user_cookie_consent', 'accepted');
++    applyConsent(true);   // tell Google and Meta they may now use cookies
++    captureUtm();         // remember the campaign tags of this visit, if any
+     setShowBanner(false);
+   };
+ 
+   const handleReject = () => {
+     localStorage.setItem('user_cookie_consent', 'rejected');
++    applyConsent(false);  // stays denied: no advertising cookies, cookie-less measurement only
+     setShowBanner(false);
+-    // Scripts remain blocked
+   };
+ 
+   if (!showBanner) return null;
+diff --git a/frontend/src/components/RouteTracker.jsx b/frontend/src/components/RouteTracker.jsx
+index 9c33743c..607f9d5a 100644
+--- a/frontend/src/components/RouteTracker.jsx
++++ b/frontend/src/components/RouteTracker.jsx
+@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
+ import { useLocation } from 'react-router-dom';
+ import axios from 'axios';
+ import API_BASE_URL from '../config';
++import { captureUtm } from '../utils/analytics';
+ 
+ // Fires a GA4 page_view and a Meta Pixel PageView on every client-side
+ // route change. This app is a single-page app, so React Router swaps
+@@ -21,6 +22,9 @@ const RouteTracker = () => {
+       { headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
+   }, [location.pathname]);
+ 
++  // Remember ?utm_... campaign tags (accepted-cookies visitors only) so checkout can pass them on.
++  useEffect(() => { captureUtm(); }, [location.search]);
++
+   useEffect(() => {
+     // Skip the first mount: GA4 and Meta Pixel already log this initial
+     // pageview themselves via the base scripts in index.html. Firing here
+diff --git a/frontend/src/hooks/useCheckout.jsx b/frontend/src/hooks/useCheckout.jsx
+index cd75e88a..4c8b7973 100644
+--- a/frontend/src/hooks/useCheckout.jsx
++++ b/frontend/src/hooks/useCheckout.jsx
+@@ -3,6 +3,7 @@ import axios from 'axios';
+ import { useNavigate } from 'react-router-dom';
+ import API_BASE_URL from '../config';
+ import GuestCheckoutModal from '../components/GuestCheckoutModal';
++import { track, courseItem, getUtm, rememberCheckoutItem } from '../utils/analytics';
+ 
+ // One place for "buy this course", used by CourseView, Courses and the dashboard.
+ //
+@@ -23,7 +24,7 @@ export default function useCheckout() {
+     try {
+       const res = await axios.post(
+         `${API_BASE_URL}/api/create-checkout-session`,
+-        email ? { course_id: courseId, email } : { course_id: courseId },
++        { course_id: courseId, ...(email ? { email } : {}), utm: getUtm() },
+         token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+       );
+       if (res.data?.url) {
+@@ -44,6 +45,11 @@ export default function useCheckout() {
+     if (!course) return;
+     const token = localStorage.getItem('token');
+ 
++    // Analytics: the visitor clicked Enroll (before leaving for Stripe, or before the email box for guests).
++    const item = courseItem(course);
++    rememberCheckoutItem({ ...item, item_id: String(course.id) });
++    track('begin_checkout', { currency: 'USD', value: item.price, items: [item] });
++
+     if (!token) {
+       setGuestCourse({ id: course.id, title: course.title });
+       return;
+diff --git a/frontend/src/pages/Contact.jsx b/frontend/src/pages/Contact.jsx
+index 542df344..9b26f377 100644
+--- a/frontend/src/pages/Contact.jsx
++++ b/frontend/src/pages/Contact.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState } from 'react';
+ import Navbar from '../components/Navbar';
+ import axios from 'axios';
++import { track } from '../utils/analytics';
+ import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
+ import Footer from '../components/Footer';
+ import API_BASE_URL from '../config';
+@@ -20,6 +21,7 @@ const Contact = () => {
+       await axios.post(`${API_BASE_URL}/api/contact`, formData, {
+         headers: token ? { Authorization: `Bearer ${token}` } : {}
+       });
++      track('contact_submit');
+       setSuccess(true);
+       setFormData({ firstName: '', email: '', subject: 'General Inquiry', message: '' });
+     } catch (error) {
+diff --git a/frontend/src/pages/CourseView.jsx b/frontend/src/pages/CourseView.jsx
+index 35a8f3ae..a953d8e3 100644
+--- a/frontend/src/pages/CourseView.jsx
++++ b/frontend/src/pages/CourseView.jsx
+@@ -8,6 +8,7 @@ import { CheckCircle, Clock, BarChart, Shield, BookOpen, Lock } from 'lucide-rea
+ import TextCoursePlayer from '../components/TextCoursePlayer'; 
+ import { Helmet } from 'react-helmet-async'; // <-- 1. IMPORT HELMET HERE
+ import useCheckout from '../hooks/useCheckout';
++import { track, courseItem } from '../utils/analytics';
+ 
+ const CourseView = () => {
+   const { id } = useParams();
+@@ -57,6 +58,14 @@ const CourseView = () => {
+ 
+   const handleBuy = () => startCheckout(course);
+ 
++  // Analytics: a visitor is looking at a course's sales page (not an enrolled learner in the player).
++  useEffect(() => {
++    if (!loading && course && !isEnrolled) {
++      const item = courseItem(course);
++      track('view_item', { currency: 'USD', value: item.price, items: [item] });
++    }
++  }, [loading, course?.id, isEnrolled]);
++
+   if (loading) return <div className="min-h-screen bg-black flex items-center justify-center text-white"><div className="animate-spin rounded-full h-8 w-8 border-t-2 border-red-600"></div></div>;
+   if (!course) return <div className="min-h-screen bg-black text-white flex items-center justify-center">Course not found.</div>;
+ 
+diff --git a/frontend/src/pages/PaymentSuccess.jsx b/frontend/src/pages/PaymentSuccess.jsx
+index 4a3be163..33cf6edf 100644
+--- a/frontend/src/pages/PaymentSuccess.jsx
++++ b/frontend/src/pages/PaymentSuccess.jsx
+@@ -4,6 +4,7 @@ import axios from 'axios';
+ import { CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+ import Navbar from '../components/Navbar';
+ import API_BASE_URL from '../config';
++import { trackOnce, recallCheckoutItem } from '../utils/analytics';
+ 
+ const PaymentSuccess = () => {
+   document.title = 'Payment Successful | AICourseHubPro';
+@@ -46,25 +47,34 @@ const PaymentSuccess = () => {
+         // Fire GTM purchase conversion event for real purchases only - a flagged
+         // duplicate payment is going to be refunded, so it must not count as a sale.
+         const isDuplicate = res.data.status === 'already_owned_flagged' || res.data.status === 'already_owned_flagged_guest';
+-        if (!isDuplicate && typeof window.gtag === 'function') {
+-          window.gtag('event', 'conversion', {
+-            'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
+-            'value': amount,
+-            'currency': 'USD',
+-            'transaction_id': sessionId,
+-          });
+-
+-          window.gtag('event', 'purchase', {
++        if (!isDuplicate) {
++          const itemId = isBundle ? 'bundle' : courseId;
++          const remembered = recallCheckoutItem(itemId);
++          const item = {
++            item_id: String(itemId),
++            item_name: isBundle ? 'Pro Bundle' : (remembered?.item_name || 'Course ' + courseId),
++            price: amount,
++            quantity: 1,
++          };
++          // Once per Stripe session: reloading this page must not count the sale again.
++          const fired = trackOnce(`purchase_${sessionId}`, 'purchase', {
+             transaction_id: sessionId,
+             value: amount,
+             currency: 'USD',
+-            items: [{
+-              item_id: courseId || 'bundle',
+-              item_name: isBundle ? 'Full Bundle' : 'Course ' + courseId,
+-              price: amount,
+-              quantity: 1
+-            }]
++            items: [item],
+           });
++          if (fired && typeof window.gtag === 'function') {
++            window.gtag('event', 'conversion', {
++              'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
++              'value': amount,
++              'currency': 'USD',
++              'transaction_id': sessionId,
++            });
++          }
++          // A brand-new account was created by this purchase (guest checkout).
++          if (res.data.status === 'guest_enrolled') {
++            trackOnce(`signup_${sessionId}`, 'sign_up', { method: 'checkout' });
++          }
+         }
+ 
+         const resultStatus = res.data.status;
+diff --git a/frontend/src/pages/Pricing.jsx b/frontend/src/pages/Pricing.jsx
+index 92d1a603..36064923 100644
+--- a/frontend/src/pages/Pricing.jsx
++++ b/frontend/src/pages/Pricing.jsx
+@@ -5,6 +5,7 @@ import axios from 'axios';
+ import Footer from '../components/Footer';
+ import { Check, HelpCircle, Loader2, Zap } from 'lucide-react';
+ import API_BASE_URL from '../config';
++import { track, getUtm, rememberCheckoutItem } from '../utils/analytics';
+ 
+ const Pricing = () => {
+   document.title = 'Pricing | AICourseHubPro';
+@@ -61,10 +62,15 @@ const Pricing = () => {
+     setLoading(true);
+     try {
+       const token = localStorage.getItem('token');
++
++      // Analytics: the visitor clicked to buy the bundle.
++      const bundleItem = { item_id: 'bundle', item_name: 'Pro Bundle', price: finalPrice, quantity: 1 };
++      rememberCheckoutItem(bundleItem);
++      track('begin_checkout', { currency: 'USD', value: finalPrice, items: [bundleItem] });
+       
+       // Call the NEW bundle checkout route
+       const res = await axios.post(`${API_BASE_URL}/api/create-bundle-checkout`, 
+-        {}, // No specific course_id needed, the backend handles it
++        { utm: getUtm() }, // campaign tags (accepted-cookies visitors only); the backend handles the rest
+         { headers: { Authorization: `Bearer ${token}` } }
+       );
+ 
+diff --git a/frontend/src/pages/Register.jsx b/frontend/src/pages/Register.jsx
+index 070b8c4f..bcc34b2a 100644
+--- a/frontend/src/pages/Register.jsx
++++ b/frontend/src/pages/Register.jsx
+@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
+ import { useNavigate, Link } from 'react-router-dom';
+ import Navbar from '../components/Navbar';
+ import axios from 'axios';
++import { track } from '../utils/analytics';
+ import { Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+ import API_BASE_URL from '../config';
+ 
+@@ -41,6 +42,8 @@ const Register = () => {
+       // If we get here, it worked (Status 201)
+       setSuccess("Account created successfully! Redirecting to login...");
+ 
++      track('sign_up', { method: 'email' });
++
+       // Fire GTM signup conversion event
+       if (window.dataLayer) {
+         window.dataLayer.push({ event: 'signup_complete' });
+diff --git a/frontend/src/pages/login.jsx b/frontend/src/pages/login.jsx
+index f268bcb3..011846cf 100644
+--- a/frontend/src/pages/login.jsx
++++ b/frontend/src/pages/login.jsx
+@@ -1,6 +1,7 @@
+ import React, { useState, useEffect } from 'react';
+ import { useNavigate, Link } from 'react-router-dom';
+ import axios from 'axios';
++import { track } from '../utils/analytics';
+ import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
+ import Navbar from '../components/Navbar';
+ import API_BASE_URL from '../config';
+@@ -49,6 +50,8 @@ const Login = () => {
+         password: formData.password 
+       });
+       
++      track('login', { method: 'email' });
++
+       // 1. Save Token & User Info
+       localStorage.setItem('token', res.data.token);
+       localStorage.setItem('user_role', res.data.user_role);
+diff --git a/frontend/src/utils/analytics.js b/frontend/src/utils/analytics.js
+new file mode 100644
+index 00000000..ff9740c1
+--- /dev/null
++++ b/frontend/src/utils/analytics.js
+@@ -0,0 +1,98 @@
++// One place for everything that talks to Google Analytics / Ads from the app.
++// Every call is safe: if the tag has not loaded (ad blocker, offline) nothing happens and
++// nothing throws. Events are sent even when the visitor rejected optional cookies; Google's
++// Consent Mode (set up in index.html) then keeps them cookie-less. Never put an email address
++// or other personal detail in an event.
++
++const CONSENT_KEY = 'user_cookie_consent';
++const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
++const UTM_STORE = 'ach_utm';
++const UTM_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // remember a campaign for 30 days
++
++export const hasAnalyticsConsent = () => {
++  try { return localStorage.getItem(CONSENT_KEY) === 'accepted'; } catch (e) { return false; }
++};
++
++// Tell Google (and Meta) what the visitor chose. Called by the cookie banner.
++export const applyConsent = (accepted) => {
++  const state = accepted ? 'granted' : 'denied';
++  if (typeof window.gtag === 'function') {
++    window.gtag('consent', 'update', {
++      ad_storage: state, analytics_storage: state, ad_user_data: state, ad_personalization: state,
++    });
++  }
++  if (typeof window.fbq === 'function') {
++    window.fbq('consent', accepted ? 'grant' : 'revoke');
++  }
++};
++
++export const track = (name, params = {}) => {
++  try {
++    if (typeof window.gtag === 'function') window.gtag('event', name, params);
++  } catch (e) { /* tracking must never break the page */ }
++};
++
++// Fire an event at most once per key (e.g. one purchase per Stripe session, even if the page reloads).
++export const trackOnce = (key, name, params = {}) => {
++  const storeKey = `ach_sent_${key}`;
++  try {
++    if (localStorage.getItem(storeKey)) return false;
++  } catch (e) { /* storage blocked: fall through and send once */ }
++  track(name, params);
++  try { localStorage.setItem(storeKey, '1'); } catch (e) { /* ignore */ }
++  return true;
++};
++
++// Describe a course the way Google expects. Uses the readable address (slug) once courses have one.
++export const courseItem = (course) => {
++  if (!course) return {};
++  const item = {
++    item_id: String(course.slug || course.id),
++    item_name: course.title || `Course ${course.id}`,
++    quantity: 1,
++  };
++  if (course.price !== undefined && course.price !== null && !Number.isNaN(Number(course.price))) {
++    item.price = Number(course.price);
++  }
++  return item;
++};
++
++const clean = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9_.\- ]/g, '').slice(0, 100).trim();
++
++// Remember campaign tags from the address bar (?utm_source=...). Only for visitors who accepted
++// analytics cookies; if they rejected, nothing is stored.
++export const captureUtm = () => {
++  if (!hasAnalyticsConsent()) return;
++  try {
++    const params = new URLSearchParams(window.location.search);
++    const found = {};
++    UTM_KEYS.forEach((k) => { const v = clean(params.get(k)); if (v) found[k] = v; });
++    if (Object.keys(found).length) {
++      localStorage.setItem(UTM_STORE, JSON.stringify({ ...found, ts: Date.now() }));
++    }
++  } catch (e) { /* ignore */ }
++};
++
++// The remembered campaign tags, ready to send to checkout. {} when none or no consent.
++export const getUtm = () => {
++  if (!hasAnalyticsConsent()) return {};
++  try {
++    const saved = JSON.parse(localStorage.getItem(UTM_STORE) || 'null');
++    if (!saved || !saved.ts || Date.now() - saved.ts > UTM_MAX_AGE_MS) return {};
++    const out = {};
++    UTM_KEYS.forEach((k) => { if (saved[k]) out[k] = saved[k]; });
++    return out;
++  } catch (e) { return {}; }
++};
++
++// Remember which item the visitor was buying when they left for Stripe, so the purchase event
++// on the confirmation page can name it properly (same tab, so sessionStorage is enough).
++export const rememberCheckoutItem = (item) => {
++  try { sessionStorage.setItem('ach_checkout_item', JSON.stringify(item)); } catch (e) { /* ignore */ }
++};
++export const recallCheckoutItem = (itemId) => {
++  try {
++    const it = JSON.parse(sessionStorage.getItem('ach_checkout_item') || 'null');
++    return it && String(it.item_id) === String(itemId) ? it : null;
++  } catch (e) { return null; }
++};

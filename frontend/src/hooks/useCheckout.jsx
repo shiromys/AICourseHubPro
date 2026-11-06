@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import API_BASE_URL from '../config';
 import GuestCheckoutModal from '../components/GuestCheckoutModal';
+import { track, courseItem, getUtm, rememberCheckoutItem } from '../utils/analytics';
 
 // One place for "buy this course", used by CourseView, Courses and the dashboard.
 //
@@ -23,7 +24,7 @@ export default function useCheckout() {
     try {
       const res = await axios.post(
         `${API_BASE_URL}/api/create-checkout-session`,
-        email ? { course_id: courseId, email } : { course_id: courseId },
+        { course_id: courseId, ...(email ? { email } : {}), utm: getUtm() },
         token ? { headers: { Authorization: `Bearer ${token}` } } : {}
       );
       if (res.data?.url) {
@@ -43,6 +44,11 @@ export default function useCheckout() {
   const startCheckout = useCallback(async (course) => {
     if (!course) return;
     const token = localStorage.getItem('token');
+
+    // Analytics: the visitor clicked Enroll (before leaving for Stripe, or before the email box for guests).
+    const item = courseItem(course);
+    rememberCheckoutItem({ ...item, item_id: String(course.id) });
+    track('begin_checkout', { currency: 'USD', value: item.price, items: [item] });
 
     if (!token) {
       setGuestCourse({ id: course.id, title: course.title });

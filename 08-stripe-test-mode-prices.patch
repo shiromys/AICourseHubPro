@@ -1,0 +1,89 @@
+From a9c691f729aa16c30636a7a352ac581f3b66900e Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 3 Nov 2026 15:17:07 +0000
+Subject: [PATCH] Checkout: never use live Stripe Price IDs with a test key;
+ fall back to the course price if Stripe does not know a Price ID
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py | 39 +++++++++++++++++++++++++++++++++------
+ 1 file changed, 33 insertions(+), 6 deletions(-)
+
+diff --git a/backend/app.py b/backend/app.py
+index 70e4f7ef..303a0ba1 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -1480,6 +1480,22 @@ def request_access_link():
+     return generic
+ 
+ 
++def _course_price_id(course):
++    """The stable Stripe Price ID for a course, or None to charge the course's own price instead.
++    The built-in IDs belong to the LIVE Stripe account, so they are never used with a test key
++    (that is the "No such price" error on staging). Set STRIPE_COURSE_PRICE_IDS on a server as JSON,
++    for example {"Course title": "price_..."}, to use that server's own IDs."""
++    try:
++        override = json.loads(os.getenv('STRIPE_COURSE_PRICE_IDS') or '{}')
++    except ValueError:
++        override = {}
++    if isinstance(override, dict) and override.get(course.title):
++        return override[course.title]
++    if (os.getenv('STRIPE_SECRET_KEY') or '').startswith('sk_test'):
++        return None
++    return STRIPE_COURSE_PRICE_IDS.get(course.title)
++
++
+ @app.route('/api/create-checkout-session', methods=['POST'])
+ def create_checkout_session():
+     # Auth is OPTIONAL here: logged-in users check out as themselves;
+@@ -1526,13 +1542,14 @@ def create_checkout_session():
+                 }), 409
+ 
+     try:
++        price_id = _course_price_id(course)
+         session_kwargs = dict(
+             line_items=[{
+-                # Use stable Stripe Price ID if available for this course (enables GTM tracking).
+-                # Falls back to dynamic price_data if course title not in the map.
++                # Use the stable Stripe Price ID if this server has one for the course (enables GTM tracking).
++                # Otherwise charge the course's own price with dynamic price_data.
+                 **(
+-                    {'price': STRIPE_COURSE_PRICE_IDS[course.title], 'quantity': 1}
+-                    if course.title in STRIPE_COURSE_PRICE_IDS
++                    {'price': price_id, 'quantity': 1}
++                    if price_id
+                     else {
+                         'price_data': {
+                             'currency': 'usd',
+@@ -1544,7 +1561,7 @@ def create_checkout_session():
+                 ),
+             }],
+             mode='payment',
+-            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={STRIPE_COURSE_PRICE_IDS.get(course.title, '')}&guest={'false' if user_id else 'true'}",
++            success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={price_id or ''}&guest={'false' if user_id else 'true'}",
+             cancel_url=f"{DOMAIN}/courses",
+             metadata={"course_id": str(course.id)},
+         )
+@@ -1558,7 +1575,17 @@ def create_checkout_session():
+             # account that gets the course is the one we just ownership-checked.
+             session_kwargs['customer_email'] = guest_email
+ 
+-        checkout_session = stripe.checkout.Session.create(**session_kwargs)
++        try:
++            checkout_session = stripe.checkout.Session.create(**session_kwargs)
++        except Exception as e:
++            # A Price ID that this Stripe account does not know must never stop a sale: charge the course's own price.
++            if not price_id or 'No such price' not in str(e):
++                raise
++            print(f"CHECKOUT: Stripe does not know price {price_id}; charging the course price instead", flush=True)
++            session_kwargs['line_items'] = [{'price_data': {'currency': 'usd', 'product_data': {'name': course.title},
++                                                            'unit_amount': int(course.price * 100)}, 'quantity': 1}]
++            session_kwargs['success_url'] = session_kwargs['success_url'].replace(f"price_id={price_id}", "price_id=")
++            checkout_session = stripe.checkout.Session.create(**session_kwargs)
+         return jsonify({'id': checkout_session.id, 'url': checkout_session.url})
+     except Exception as e:
+         import traceback
+-- 
+2.43.0
+

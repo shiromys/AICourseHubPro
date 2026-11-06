@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { applyConsent, captureUtm } from '../utils/analytics';
 
 const CookieConsent = () => {
   const [showBanner, setShowBanner] = useState(false);
@@ -8,19 +9,21 @@ const CookieConsent = () => {
     if (!consent) {
       setShowBanner(true);
     }
-    // GA4 and Meta Pixel now load unconditionally from index.html,
-    // so no conditional script-loading happens here anymore.
+    // Google tags and the Meta Pixel load from index.html in a "denied" state;
+    // the buttons below switch them on or leave them off (Consent Mode).
   }, []);
 
   const handleAccept = () => {
     localStorage.setItem('user_cookie_consent', 'accepted');
+    applyConsent(true);   // tell Google and Meta they may now use cookies
+    captureUtm();         // remember the campaign tags of this visit, if any
     setShowBanner(false);
   };
 
   const handleReject = () => {
     localStorage.setItem('user_cookie_consent', 'rejected');
+    applyConsent(false);  // stays denied: no advertising cookies, cookie-less measurement only
     setShowBanner(false);
-    // Scripts remain blocked
   };
 
   if (!showBanner) return null;

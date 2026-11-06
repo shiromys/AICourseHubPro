@@ -4,6 +4,7 @@ import axios from 'axios';
 import { CheckCircle, Loader2, AlertCircle } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import API_BASE_URL from '../config';
+import { trackOnce, recallCheckoutItem } from '../utils/analytics';
 
 const PaymentSuccess = () => {
   document.title = 'Payment Successful | AICourseHubPro';
@@ -46,25 +47,34 @@ const PaymentSuccess = () => {
         // Fire GTM purchase conversion event for real purchases only - a flagged
         // duplicate payment is going to be refunded, so it must not count as a sale.
         const isDuplicate = res.data.status === 'already_owned_flagged' || res.data.status === 'already_owned_flagged_guest';
-        if (!isDuplicate && typeof window.gtag === 'function') {
-          window.gtag('event', 'conversion', {
-            'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
-            'value': amount,
-            'currency': 'USD',
-            'transaction_id': sessionId,
-          });
-
-          window.gtag('event', 'purchase', {
+        if (!isDuplicate) {
+          const itemId = isBundle ? 'bundle' : courseId;
+          const remembered = recallCheckoutItem(itemId);
+          const item = {
+            item_id: String(itemId),
+            item_name: isBundle ? 'Pro Bundle' : (remembered?.item_name || 'Course ' + courseId),
+            price: amount,
+            quantity: 1,
+          };
+          // Once per Stripe session: reloading this page must not count the sale again.
+          const fired = trackOnce(`purchase_${sessionId}`, 'purchase', {
             transaction_id: sessionId,
             value: amount,
             currency: 'USD',
-            items: [{
-              item_id: courseId || 'bundle',
-              item_name: isBundle ? 'Full Bundle' : 'Course ' + courseId,
-              price: amount,
-              quantity: 1
-            }]
+            items: [item],
           });
+          if (fired && typeof window.gtag === 'function') {
+            window.gtag('event', 'conversion', {
+              'send_to': 'AW-983761479/06XFCKqwyNMcEMeEjNUD',
+              'value': amount,
+              'currency': 'USD',
+              'transaction_id': sessionId,
+            });
+          }
+          // A brand-new account was created by this purchase (guest checkout).
+          if (res.data.status === 'guest_enrolled') {
+            trackOnce(`signup_${sessionId}`, 'sign_up', { method: 'checkout' });
+          }
         }
 
         const resultStatus = res.data.status;

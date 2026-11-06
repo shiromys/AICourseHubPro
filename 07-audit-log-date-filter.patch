@@ -1,0 +1,227 @@
+From 34c777ebdd98854989a7eab9dbf684faa45c3f8a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 3 Nov 2026 12:58:41 +0000
+Subject: [PATCH] Admin Audit Logs: date range, quick presets, search and
+ pagination
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                                |  44 ++++++-
+ .../src/components/admin/AuditLogsPanel.jsx   | 108 ++++++++++++++++++
+ frontend/src/pages/AdminDashboard.jsx         |   8 +-
+ 3 files changed, 152 insertions(+), 8 deletions(-)
+ create mode 100644 frontend/src/components/admin/AuditLogsPanel.jsx
+
+diff --git a/backend/app.py b/backend/app.py
+index 0669867a..70e4f7ef 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -3347,9 +3347,47 @@ def mark_message_read(id):
+ @app.route('/api/admin/logs', methods=['GET'])
+ @jwt_required()
+ def get_audit_logs():
+-    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
+-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
+-    return jsonify([{"action": l.action, "admin": l.admin_email, "details": l.details, "date": l.timestamp.strftime('%Y-%m-%d %H:%M')} for l in logs])
++    """Audit log with a date filter. `from` / `to` are calendar dates (YYYY-MM-DD, both inclusive) in the
++    admin's own time zone, given by `tz_offset` (minutes, as JavaScript's getTimezoneOffset reports it)."""
++    admin, err = _require_admin()
++    if err: return err
++    args = request.args
++
++    def day(name):
++        raw = (args.get(name) or '').strip()
++        if not raw:
++            return None
++        try:
++            return datetime.strptime(raw[:10], '%Y-%m-%d')
++        except ValueError:
++            raise ValueError(f"{name} must look like 2026-11-03")
++    try:
++        d_from, d_to = day('from'), day('to')
++        tz_offset = int(args.get('tz_offset', 0))
++        page = max(int(args.get('page', 1)), 1)
++        per_page = min(max(int(args.get('per_page', 25)), 1), 100)
++    except ValueError as e:
++        return jsonify({"msg": str(e) if 'must look' in str(e) else "page, per_page and tz_offset must be numbers"}), 400
++    if d_from and d_to and d_from > d_to:
++        d_from, d_to = d_to, d_from
++    tz_offset = max(-840, min(840, tz_offset))
++    query = AuditLog.query
++    if d_from:   # local midnight, converted to UTC (getTimezoneOffset is UTC minus local, in minutes)
++        query = query.filter(AuditLog.timestamp >= d_from + timedelta(minutes=tz_offset))
++    if d_to:
++        query = query.filter(AuditLog.timestamp < d_to + timedelta(days=1, minutes=tz_offset))
++    q = (args.get('q') or '').strip().lower()
++    if q:
++        like = f"%{q}%"
++        query = query.filter(db.or_(func.lower(func.coalesce(AuditLog.action, '')).like(like),
++                                    func.lower(func.coalesce(AuditLog.admin_email, '')).like(like),
++                                    func.lower(func.coalesce(AuditLog.details, '')).like(like)))
++    total = query.count()
++    logs = query.order_by(AuditLog.timestamp.desc(), AuditLog.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
++    return jsonify({"items": [{"action": l.action, "admin": l.admin_email, "details": l.details,
++                               "date": l.timestamp.strftime('%Y-%m-%d %H:%M') if l.timestamp else '',
++                               "timestamp": (l.timestamp.isoformat() + 'Z') if l.timestamp else None} for l in logs],
++                    "total": total, "page": page, "per_page": per_page}), 200
+ 
+ SOURCE_LABELS = {
+     'stripe': 'Stripe - single course', 'stripe_bundle': 'Stripe - All-Access bundle',
+diff --git a/frontend/src/components/admin/AuditLogsPanel.jsx b/frontend/src/components/admin/AuditLogsPanel.jsx
+new file mode 100644
+index 00000000..e1457799
+--- /dev/null
++++ b/frontend/src/components/admin/AuditLogsPanel.jsx
+@@ -0,0 +1,108 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import axios from 'axios';
++import API_BASE_URL from '../../config';
++import { Loader2, Search, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
++
++const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
++const pad = (n) => String(n).padStart(2, '0');
++const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;   // the admin's own calendar day
++const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
++const fmt = (iso, fallback) => iso ? new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : fallback;
++
++const PRESETS = [
++  { id: 'today', label: 'Today', range: () => [daysAgo(0), daysAgo(0)] },
++  { id: 'yesterday', label: 'Yesterday', range: () => [daysAgo(1), daysAgo(1)] },
++  { id: '7', label: 'Last 7 days', range: () => [daysAgo(6), daysAgo(0)] },
++  { id: '30', label: 'Last 30 days', range: () => [daysAgo(29), daysAgo(0)] },
++  { id: 'all', label: 'All time', range: () => ['', ''] },
++];
++const PER_PAGE = 25;
++
++const AuditLogsPanel = () => {
++  const [preset, setPreset] = useState('7');
++  const [from, setFrom] = useState(daysAgo(6));
++  const [to, setTo] = useState(daysAgo(0));
++  const [search, setSearch] = useState('');
++  const [q, setQ] = useState('');
++  const [page, setPage] = useState(1);
++  const [data, setData] = useState({ items: [], total: 0 });
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++
++  const load = useCallback(async () => {
++    setLoading(true); setError('');
++    try {
++      const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, {
++        headers: authHeaders(),
++        params: { from: from || undefined, to: to || undefined, q: q || undefined, page, per_page: PER_PAGE, tz_offset: new Date().getTimezoneOffset() },
++      });
++      setData(r.data);
++    } catch (e) { setError(e.response?.data?.msg || 'Could not load the audit logs.'); }
++    finally { setLoading(false); }
++  }, [from, to, q, page]);
++  useEffect(() => { load(); }, [load]);
++  useEffect(() => { const t = setTimeout(() => { setQ(search.trim()); setPage(1); }, 350); return () => clearTimeout(t); }, [search]);
++
++  const pick = (p) => { const [f, t] = p.range(); setPreset(p.id); setFrom(f); setTo(t); setPage(1); };
++  const custom = (f, t) => { setPreset('custom'); setFrom(f); setTo(t); setPage(1); };
++  const pages = Math.max(1, Math.ceil((data.total || 0) / PER_PAGE));
++  const rangeText = !from && !to ? 'all time' : from === to ? from : `${from || 'the beginning'} to ${to || 'today'}`;
++
++  return (
++    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
++      <div className="p-5 border-b border-gray-200 space-y-4">
++        <div className="flex flex-wrap items-center gap-2">
++          {PRESETS.map(p => (
++            <button key={p.id} onClick={() => pick(p)}
++              className={`px-3 py-1.5 rounded-full text-sm font-bold border transition ${preset === p.id ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}>{p.label}</button>
++          ))}
++        </div>
++        <div className="flex flex-wrap items-end gap-3">
++          <label className="text-xs font-bold text-gray-500 flex flex-col gap-1"><span className="flex items-center gap-1"><Calendar size={12} /> From</span>
++            <input type="date" value={from} max={to || undefined} onChange={e => custom(e.target.value, to)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" /></label>
++          <label className="text-xs font-bold text-gray-500 flex flex-col gap-1"><span className="flex items-center gap-1"><Calendar size={12} /> To</span>
++            <input type="date" value={to} min={from || undefined} onChange={e => custom(from, e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" /></label>
++          <div className="relative flex-1 min-w-[200px] max-w-sm">
++            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
++            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search action, admin or details" className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm" />
++          </div>
++        </div>
++        <p className="text-xs text-gray-500">{loading ? 'Loading…' : `${data.total} ${data.total === 1 ? 'entry' : 'entries'} for ${rangeText}${q ? ` matching “${q}”` : ''}`}. Dates use your local time.</p>
++      </div>
++
++      {error && <div className="m-5 p-3 rounded-lg bg-red-50 text-red-700 text-sm font-semibold border border-red-200">{error}</div>}
++
++      <div className="overflow-x-auto">
++        <table className="w-full text-left min-w-[800px]">
++          <thead className="bg-gray-100 text-gray-600 text-xs uppercase font-bold tracking-wider">
++            <tr><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></tr>
++          </thead>
++          <tbody className="divide-y divide-gray-100 text-sm">
++            {loading && <tr><td colSpan={4} className="px-6 py-10 text-center"><Loader2 className="animate-spin inline text-red-600" /></td></tr>}
++            {!loading && data.items.length === 0 && <tr><td colSpan={4} className="px-6 py-10 text-center text-gray-500">No audit entries for this selection.</td></tr>}
++            {!loading && data.items.map((l, i) => (
++              <tr key={`${l.timestamp}-${i}`} className="hover:bg-gray-50 transition">
++                <td className="px-6 py-4 font-bold text-gray-900">{l.action}</td>
++                <td className="px-6 py-4 text-gray-500">{l.admin}</td>
++                <td className="px-6 py-4 italic text-gray-600">{l.details}</td>
++                <td className="px-6 py-4 text-gray-500 whitespace-nowrap">{fmt(l.timestamp, l.date)}</td>
++              </tr>
++            ))}
++          </tbody>
++        </table>
++      </div>
++
++      {data.total > PER_PAGE && (
++        <div className="flex items-center justify-between p-4 border-t border-gray-200 text-sm">
++          <span className="text-gray-500">Page {page} of {pages}</span>
++          <div className="flex gap-2">
++            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1.5 border border-gray-200 rounded disabled:opacity-40 flex items-center gap-1"><ChevronLeft size={14} /> Previous</button>
++            <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="px-3 py-1.5 border border-gray-200 rounded disabled:opacity-40 flex items-center gap-1">Next <ChevronRight size={14} /></button>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++};
++
++export default AuditLogsPanel;
+diff --git a/frontend/src/pages/AdminDashboard.jsx b/frontend/src/pages/AdminDashboard.jsx
+index cc4a4aaf..0b6bb402 100644
+--- a/frontend/src/pages/AdminDashboard.jsx
++++ b/frontend/src/pages/AdminDashboard.jsx
+@@ -17,6 +17,7 @@ import FootprintModal from '../components/admin/FootprintModal';
+ import CertificatesPanel from '../components/admin/CertificatesPanel';
+ import NewsletterPanel from '../components/admin/NewsletterPanel';
+ import CourseUpgradePanel from '../components/admin/CourseUpgradePanel';
++import AuditLogsPanel from '../components/admin/AuditLogsPanel';
+ import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
+ import RevenuePanel from '../components/admin/RevenuePanel';
+ 
+@@ -128,10 +129,6 @@ const AdminDashboard = () => {
+               const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
+               setMessages(r.data);
+             }
+-            else if (activeTab === 'audit') { 
+-              const r = await axios.get(`${API_BASE_URL}/api/admin/logs`, { headers: { Authorization: `Bearer ${token}` } });
+-              setLogs(r.data);
+-            }
+             else if (activeTab === 'settings') { 
+               const r = await axios.get(`${API_BASE_URL}/api/settings`); 
+               setSettings(r.data); 
+@@ -506,7 +503,7 @@ const AdminDashboard = () => {
+         )}
+ 
+         {/* --- TABLES --- */}
+-        {['courses', 'users', 'deleted_users', 'audit'].includes(activeTab) && (
++        {['courses', 'users', 'deleted_users'].includes(activeTab) && (
+             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
+                     <div className="w-full flex justify-between items-center md:block">
+@@ -551,6 +548,7 @@ const AdminDashboard = () => {
+         {/* NEWSLETTER TAB */}
+         {activeTab === 'newsletter' && <NewsletterPanel />}
+         {activeTab === 'course_upgrade' && <CourseUpgradePanel />}
++        {activeTab === 'audit' && <AuditLogsPanel />}
+ 
+         {/* SUPPORT TAB */}
+         {activeTab === 'support' && (
+-- 
+2.43.0
+

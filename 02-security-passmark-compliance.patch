@@ -1,0 +1,159 @@
+From 91b6b911127fa9db1cbb1e0230f22b4927b20f45 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 29 Oct 2026 16:58:50 +0000
+Subject: [PATCH] Security fixes, 70% pass mark, newsletter postal address,
+ privacy policy sections
+
+- /api/enroll no longer unlocks paid courses for free (402 unless the course is free).
+- /api/update-progress validates progress/score/indexes (junk values 500'd) and only
+  certifies on the final lesson with a score of at least 70.
+- Quiz pass mark is 70% in the player and on the server (PASS_PERCENT), matching the
+  published "70% or higher".
+- Newsletter footer shows NEWSLETTER_POSTAL_ADDRESS when set (CAN-SPAM).
+- Privacy Policy: account activity and weekly digest sections.
+
+No database migration.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                               | 41 +++++++++++++++++---
+ frontend/src/components/TextCoursePlayer.jsx |  2 +-
+ frontend/src/pages/PrivacyPolicy.jsx         | 14 +++++++
+ 3 files changed, 50 insertions(+), 7 deletions(-)
+
+diff --git a/backend/app.py b/backend/app.py
+index 94eede58..33b431fc 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -18,6 +18,7 @@ import threading
+ import resend 
+ import os
+ import uuid
++import html as html_lib
+ import stripe
+ import time
+ import psutil
+@@ -1154,6 +1155,7 @@ def log_activity(user_id, event_type, detail=None, path=None, course_id=None):
+         print(f"log_activity failed ({event_type}): {e}", flush=True)
+ 
+ 
++PASS_PERCENT = 70   # keep in sync with the quiz pass mark in TextCoursePlayer.jsx
+ DUPLICATE_REVIEW_WINDOW = "5 business days"   # shown to customers whose payment was flagged
+ def session_money(session):
+     """(amount_cents, currency) from a Stripe session as kwargs for flag_duplicate_payment.
+@@ -1713,8 +1715,15 @@ def verify_payment():
+ @jwt_required()
+ def enroll_free():
+     user_id = get_jwt_identity()
+-    course_id = request.json.get('course_id')
+-    
++    course_id = (request.get_json(silent=True) or {}).get('course_id')
++    course = db.session.get(Course, course_id) if course_id else None
++    if not course or course.is_deleted:
++        return jsonify({"msg": "Course not found"}), 404
++    # Paid courses are only unlocked through a verified Stripe payment (or an admin grant).
++    # Without this check any logged-in user could POST here and unlock any course for free.
++    if (course.price or 0) > 0:
++        return jsonify({"msg": "This course requires payment."}), 402
++
+     if not Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
+         enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0)
+         db.session.add(enr)
+@@ -1733,8 +1742,21 @@ def update_progress():
+     module_idx = data.get('module_idx')
+     lesson_idx = data.get('lesson_idx')
+ 
+-    if 'progress' in data: enr.progress = data['progress']
+-    if 'score' in data: enr.score = data['score']
++    # Validate before touching the row: junk values used to reach the database and 500.
++    try:
++        if data.get('progress') is not None:
++            new_progress = int(max(0, min(100, float(data['progress']))))
++        else:
++            new_progress = None
++        new_score = float(data['score']) if data.get('score') is not None else None
++        if module_idx is not None: module_idx = int(module_idx)
++        if lesson_idx is not None: lesson_idx = int(lesson_idx)
++    except (TypeError, ValueError):
++        return jsonify({"msg": "progress, score and indexes must be numbers"}), 400
++    if new_score is not None and not (0 <= new_score <= 100):
++        return jsonify({"msg": "score must be between 0 and 100"}), 400
++    if new_progress is not None: enr.progress = new_progress
++    if new_score is not None: enr.score = new_score
+     if module_idx is not None: enr.last_module_index = module_idx
+     if lesson_idx is not None: enr.last_lesson_index = lesson_idx
+ 
+@@ -1753,7 +1775,11 @@ def update_progress():
+             last_lesson_idx = len(last_module_lessons) - 1
+             is_final_lesson = (module_idx == last_module_idx and lesson_idx == last_lesson_idx)
+ 
+-        if is_final_lesson:
++        # Same pass mark as the player. The client reports the score, so this isn't a full
++        # server-side grade, but a bare {"status": "completed"} call no longer works.
++        passed = new_score is not None and new_score >= PASS_PERCENT
++
++        if is_final_lesson and passed:
+             enr.status = 'completed'
+         else:
+             # Real progress on an intermediate assessment - keep it moving,
+@@ -2277,6 +2303,9 @@ def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
+         unsub_url = f"{DOMAIN}/newsletter?unsubscribe=preview"
+     pre = (f'<div style="display:none;max-height:0;overflow:hidden;opacity:0">{issue.preheader}</div>' if issue.preheader else '')
+     body = (issue.body_html or '').replace('{{unsubscribe_url}}', unsub_url)
++    # CAN-SPAM requires a valid postal address in marketing email: set NEWSLETTER_POSTAL_ADDRESS on Railway.
++    postal = html_lib.escape((os.getenv('NEWSLETTER_POSTAL_ADDRESS') or '').strip())
++    postal_html = f"<br>{postal}" if postal else ""
+     return f"""{pre}
+     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+         <div style="background-color: #000000; padding: 20px; text-align: center;">
+@@ -2288,7 +2317,7 @@ def render_newsletter_html(issue, sub=None, preview=False, api_base=''):
+         </div>
+         <div style="padding:18px 30px;background:#f9fafb;border-top:1px solid #e5e7eb;font-size:12px;color:#6b7280;text-align:center;">
+             You're receiving this because you subscribed at aicoursehubpro.com.<br>
+-            <a href="{unsub_url}" style="color:#6b7280;">Unsubscribe</a> &middot; Shiro Technologies
++            <a href="{unsub_url}" style="color:#6b7280;">Unsubscribe</a> &middot; Shiro Technologies{postal_html}
+         </div>
+     </div>"""
+ 
+diff --git a/frontend/src/components/TextCoursePlayer.jsx b/frontend/src/components/TextCoursePlayer.jsx
+index 5b847b7d..b60264ed 100644
+--- a/frontend/src/components/TextCoursePlayer.jsx
++++ b/frontend/src/components/TextCoursePlayer.jsx
+@@ -211,7 +211,7 @@ const TextCoursePlayer = () => {
+ 
+     setScore(calculatedScore);
+     const percentage = (calculatedScore / totalQuestions) * 100;
+-    const isPassed = percentage >= 60;
++    const isPassed = percentage >= 70;
+     
+     setPassed(isPassed);
+     setShowResults(true);
+diff --git a/frontend/src/pages/PrivacyPolicy.jsx b/frontend/src/pages/PrivacyPolicy.jsx
+index 7f0ad5bf..934778b0 100644
+--- a/frontend/src/pages/PrivacyPolicy.jsx
++++ b/frontend/src/pages/PrivacyPolicy.jsx
+@@ -54,6 +54,20 @@ const PrivacyPolicy = () => {
+                 </p>
+             </section>
+ 
++            <section>
++                <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><CheckCircle size={18} className="text-green-500"/> Activity on Your Account</h3>
++                <p className="text-gray-400">
++                  When you are signed in, we keep a record of your activity on AICourseHubPro (pages you visit, sign-ins, purchases, lesson progress, certificates, and the device and approximate network address used). We use it to run your account, provide support, keep the platform secure and detect fraud or abuse. This record is visible only to our administrators, is separate from the optional marketing trackers above, and is not sold or shared for advertising. You can ask for a copy or for deletion at any time by emailing info@aicoursehubpro.com.
++                </p>
++            </section>
++
++            <section>
++                <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2"><CheckCircle size={18} className="text-green-500"/> Weekly Digest Newsletter</h3>
++                <p className="text-gray-400">
++                  If you subscribe to our weekly digest, we store your email address and the date you confirmed. We only email you after you confirm your subscription, every email contains a one-click unsubscribe link, and you will not receive digests after you unsubscribe. We use our email provider solely to deliver these messages.
++                </p>
++            </section>
++
+           </div>
+         </div>
+       </div>
+-- 
+2.43.0
+

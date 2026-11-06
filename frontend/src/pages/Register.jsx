@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
+import { track } from '../utils/analytics';
 import { Eye, EyeOff, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import API_BASE_URL from '../config';
 
@@ -40,6 +41,8 @@ const Register = () => {
       
       // If we get here, it worked (Status 201)
       setSuccess("Account created successfully! Redirecting to login...");
+
+      track('sign_up', { method: 'email' });
 
       // Fire GTM signup conversion event
       if (window.dataLayer) {

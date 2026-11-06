@@ -1,0 +1,1361 @@
+From 4540ac906c32a42c50967da1c9ecce841d762907 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 29 Oct 2026 16:59:33 +0000
+Subject: [PATCH] Revenue accuracy and admin panels: Revenue & Sales, System
+ Health, Analytics range
+
+Migration c3e5a7b9d1f2: enrollments record the amount actually paid, currency, source and an
+estimate flag (old rows backfilled and marked estimated; rows with no Stripe receipt are
+"unverified" and count as $0 until corrected). Bundle charges are split so parts equal the
+Stripe charge. Stripe webhook bundle unlock is idempotent per session.
+
+Overview, Analytics and the new Revenue & Sales panel use recorded amounts instead of list
+price x enrollments. Revenue & Sales: summary, monthly chart, filters, pagination, server CSV,
+correct-a-row. Grants can record a real payment. /api/enroll records free enrollments.
+
+System Health: real configuration checks (Stripe mode vs environment, webhook, email, cron,
+postal address), migration status, release, real uptime, items needing attention; header
+database status is real. Analytics: date range, started/completion columns, certificates and
+subscriber metrics. Clear Test Data needs typed confirmation.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                                | 467 ++++++++++++++----
+ ...c3e5a7b9d1f2_enrollment_payment_amounts.py |  60 +++
+ backend/models.py                             |   8 +
+ .../src/components/admin/RevenuePanel.jsx     | 226 +++++++++
+ frontend/src/pages/AdminDashboard.jsx         | 153 ++++--
+ 5 files changed, 784 insertions(+), 130 deletions(-)
+ create mode 100644 backend/migrations/versions/c3e5a7b9d1f2_enrollment_payment_amounts.py
+ create mode 100644 frontend/src/components/admin/RevenuePanel.jsx
+
+diff --git a/backend/app.py b/backend/app.py
+index 33b431fc..fbdc871b 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -152,6 +152,59 @@ os.makedirs(app.config['COURSES_FOLDER'], exist_ok=True)
+ def health():
+     return jsonify({"status": "awake"}), 200
+ 
++APP_STARTED_AT = time.time()
++
++
++def _fmt_uptime(seconds):
++    seconds = int(seconds)
++    d, r = divmod(seconds, 86400); h, r = divmod(r, 3600); m, _ = divmod(r, 60)
++    return (f"{d}d " if d else "") + (f"{h}h " if (d or h) else "") + f"{m}m"
++
++
++def _db_revision_status():
++    """(current_revision, head_revision) - so the admin can see at a glance whether the
++    deployed code is ahead of the database (a pending migration)."""
++    current = head = None
++    try:
++        row = db.session.execute(db.text("SELECT version_num FROM alembic_version LIMIT 1")).first()
++        current = row[0] if row else None
++    except Exception:
++        db.session.rollback()
++    try:
++        from alembic.script import ScriptDirectory
++        head = ScriptDirectory(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'migrations')).get_current_head()
++    except Exception:
++        pass
++    return current, head
++
++
++def _config_checks():
++    """Real configuration checks shown in Admin > System Health. ok=False items are
++    problems; level 'warn' = works but needs attention."""
++    key = os.getenv('STRIPE_SECRET_KEY', '')
++    mode = ('live' if key.startswith(('sk_live', 'rk_live')) else 'test' if key.startswith(('sk_test', 'rk_test'))
++            else ('unrecognised' if key else 'missing'))
++    env = (os.getenv('RAILWAY_ENVIRONMENT_NAME') or os.getenv('RAILWAY_ENVIRONMENT') or '').strip()
++    prod = env.lower() in ('production', 'prod')
++    mismatch = (prod and mode == 'test') or (env and not prod and mode == 'live')
++    checks = [
++        {"id": "stripe_key", "label": "Stripe API key", "ok": mode in ('live', 'test') and not mismatch,
++         "detail": (f"{mode.upper()} mode" + (f" - environment is '{env}': is this the right key?" if mismatch else "")) if mode != 'missing' else "STRIPE_SECRET_KEY is not set",
++         "level": "error"},
++        {"id": "stripe_webhook", "label": "Stripe webhook secret", "ok": bool(os.getenv('STRIPE_WEBHOOK_SECRET')),
++         "detail": "Set" if os.getenv('STRIPE_WEBHOOK_SECRET') else "STRIPE_WEBHOOK_SECRET is not set - payments only unlock via the browser, not the safety-net webhook", "level": "error"},
++        {"id": "email", "label": "Email sending (Resend)", "ok": bool(os.getenv('RESEND_API_KEY')),
++         "detail": "Set" if os.getenv('RESEND_API_KEY') else "RESEND_API_KEY is not set - no emails can be sent", "level": "error"},
++        {"id": "cron", "label": "Weekly digest scheduler", "ok": bool(os.getenv('CRON_SECRET')),
++         "detail": "CRON_SECRET is set" if os.getenv('CRON_SECRET') else "CRON_SECRET is not set - queued digests will not be released automatically", "level": "warn"},
++        {"id": "postal", "label": "Newsletter postal address", "ok": bool(os.getenv('NEWSLETTER_POSTAL_ADDRESS')),
++         "detail": "Set" if os.getenv('NEWSLETTER_POSTAL_ADDRESS') else "NEWSLETTER_POSTAL_ADDRESS is not set - US law (CAN-SPAM) requires a postal address in marketing emails", "level": "warn"},
++        {"id": "openai", "label": "Nova chat assistant (OpenAI)", "ok": bool(os.getenv('OPENAI_API_KEY')),
++         "detail": "Set" if os.getenv('OPENAI_API_KEY') else "OPENAI_API_KEY is not set - the chat widget will answer 'Chat unavailable'", "level": "warn"},
++    ]
++    return checks, mode, env
++
++
+ @app.route('/api/admin/system-health', methods=['GET'])
+ @jwt_required()
+ def get_system_health():
+@@ -166,41 +219,56 @@ def get_system_health():
+         db.session.execute(db.text('SELECT 1'))
+         db_ok = True
+     except Exception:
++        db.session.rollback()
+         db_ok = False
+     db_ms = round((time.time() - db_start) * 1000, 1)
+ 
+-    # API response time (self-measured from this request start)
+-    api_ms = round((time.time() - db_start) * 1000 + db_ms, 1)
+-
+     # System metrics
+     try:
+         cpu = psutil.cpu_percent(interval=0.1)
+-        mem = psutil.virtual_memory()
+-        disk = psutil.disk_usage('/')
+-        memory_pct = mem.percent
+-        disk_pct = disk.percent
++        memory_pct = psutil.virtual_memory().percent
++        disk_pct = psutil.disk_usage('/').percent
+     except Exception:
+         cpu = 0
+         memory_pct = 0
+         disk_pct = 0
+ 
+-    # Total users and enrollments
+-    total_users = User.query.filter_by(is_deleted=False).count()
+-    total_enrollments = Enrollment.query.count()
++    checks, stripe_mode, env = _config_checks()
++    current_rev, head_rev = _db_revision_status() if db_ok else (None, None)
+ 
+-    # Stripe check - just verify key is set
+-    stripe_ok = bool(os.getenv('STRIPE_SECRET_KEY'))
++    ops = {}
++    if db_ok:
++        try:
++            ops = {
++                "pending_flagged_payments": FlaggedPayment.query.filter_by(resolved=False).count(),
++                "unread_messages": ContactMessage.query.filter_by(is_read=False).count(),
++                "newsletter_subscribers": NewsletterSubscriber.query.filter_by(status='active').count(),
++                "queued_digests": NewsletterIssue.query.filter_by(status='queued').count(),
++                "unverified_enrollments": Enrollment.query.filter_by(payment_source='unverified').count(),
++            }
++            last = NewsletterIssue.query.filter_by(status='sent').order_by(NewsletterIssue.sent_at.desc()).first()
++            ops["last_digest_sent_at"] = last.sent_at.isoformat() if last and last.sent_at else None
++        except Exception:
++            db.session.rollback()
+ 
+     return jsonify({
+         "db_connected": db_ok,
+         "db_response_ms": db_ms,
+-        "api_response_ms": api_ms,
+         "cpu_percent": cpu,
+         "memory_percent": memory_pct,
+         "disk_percent": disk_pct,
+-        "stripe_active": stripe_ok,
+-        "total_users": total_users,
+-        "total_enrollments": total_enrollments,
++        "stripe_active": any(c["id"] == "stripe_key" and c["ok"] for c in checks),
++        "stripe_mode": stripe_mode,
++        "environment": env or None,
++        "checks": checks,
++        "db_revision": current_rev,
++        "db_head_revision": head_rev,
++        "db_up_to_date": (current_rev == head_rev) if (current_rev and head_rev) else None,
++        "release": (os.getenv('RAILWAY_GIT_COMMIT_SHA') or '')[:7] or None,
++        "process_uptime": _fmt_uptime(time.time() - APP_STARTED_AT),
++        "ops": ops,
++        "total_users": User.query.filter_by(is_deleted=False).count() if db_ok else 0,
++        "total_enrollments": Enrollment.query.count() if db_ok else 0,
+         "timestamp": datetime.utcnow().isoformat()
+     })
+     try:
+@@ -492,11 +560,25 @@ def admin_grant_course(user_id):
+     if Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
+         return jsonify({"msg": f"{target_user.name} already has access to {course.title}"}), 200
+ 
++    # Optional: the admin can record that real money was received outside the normal checkout
++    # (e.g. the customer paid but never got unlocked). Otherwise it is a free grant.
++    amount_cents = None
++    try:
++        if data.get('amount') not in (None, ''):
++            amount_cents = int(round(float(data['amount']) * 100))
++            if amount_cents < 0:
++                return jsonify({"msg": "Amount can't be negative"}), 400
++    except (TypeError, ValueError):
++        return jsonify({"msg": "Amount must be a number"}), 400
+     db.session.add(Enrollment(
+         user_id=user_id, course_id=course_id,
+         status='in-progress', progress=0,
+-        enrolled_at=datetime.utcnow()
++        enrolled_at=datetime.utcnow(),
++        payment_source='admin_grant', amount_paid_cents=amount_cents or 0, currency='USD'
+     ))
++    db.session.add(AuditLog(admin_email=admin.email, action="Course Access Granted",
++                            details=f"{course.title} -> {target_user.email}" + (f" (recorded payment ${amount_cents/100:.2f})" if amount_cents else " (free)"),
++                            timestamp=datetime.utcnow()))
+     db.session.commit()
+     log_activity(user_id, 'course_granted', detail=f"Admin {admin.email} granted access to {course.title}", course_id=course.id)
+ 
+@@ -727,6 +809,21 @@ def ban_user(user_id):
+     log_activity(user_id, 'ban_change', detail=f"{msg} (by {admin.email})")
+     return jsonify({"msg": msg})
+ 
++def revenue_dollars(*conditions):
++    """Money actually recorded on enrollments (amount_paid_cents), in dollars.
++    Unverified / free / zero-amount rows contribute nothing."""
++    cents = db.session.query(func.coalesce(func.sum(Enrollment.amount_paid_cents), 0)).filter(*conditions).scalar() or 0
++    return float(cents) / 100.0
++
++
++def revenue_by_day(days):
++    """{date: dollars} for the last `days` days in ONE query."""
++    since = (datetime.utcnow() - timedelta(days=days - 1)).date()
++    rows = db.session.query(func.date(Enrollment.enrolled_at), func.coalesce(func.sum(Enrollment.amount_paid_cents), 0))\
++        .filter(func.date(Enrollment.enrolled_at) >= since).group_by(func.date(Enrollment.enrolled_at)).all()
++    return {r[0]: float(r[1]) / 100.0 for r in rows}
++
++
+ @app.route('/api/admin/stats', methods=['GET'])
+ @jwt_required()
+ def get_admin_stats():
+@@ -734,21 +831,16 @@ def get_admin_stats():
+     user = db.session.get(User, current_user_id) # FIXED
+     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+ 
+-    total_revenue = db.session.query(func.sum(Course.price))\
+-        .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0.0
+-
++    total_revenue = revenue_dollars()
+     total_students = User.query.filter_by(is_admin=False, is_deleted=False).count()
+     total_courses = Course.query.filter_by(is_deleted=False).count()
+ 
++    by_day = revenue_by_day(7)
+     chart_data = []
+     end_date = datetime.utcnow()
+     for i in range(6, -1, -1):
+         day = end_date - timedelta(days=i)
+-        day_revenue = db.session.query(func.sum(Course.price))\
+-            .join(Enrollment, Course.id == Enrollment.course_id)\
+-            .filter(func.date(Enrollment.enrolled_at) == day.date())\
+-            .scalar() or 0
+-        chart_data.append({ "name": day.strftime('%b %d'), "revenue": float(day_revenue) })
++        chart_data.append({ "name": day.strftime('%b %d'), "revenue": by_day.get(day.date(), 0.0) })
+ 
+     recent_msgs = ContactMessage.query.filter_by(is_read=False)\
+         .order_by(ContactMessage.created_at.desc()).limit(5).all()
+@@ -761,7 +853,7 @@ def get_admin_stats():
+         "revenue": total_revenue,
+         "students": total_students,
+         "courses": total_courses,
+-        "uptime": "99.9%",
++        "uptime": _fmt_uptime(time.time() - APP_STARTED_AT),   # real: time since this server process started
+         "chart_data": chart_data,       
+         "recent_messages": messages_preview 
+     })
+@@ -773,6 +865,12 @@ def get_admin_analytics():
+     user = db.session.get(User, current_user_id)
+     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
+ 
++    try:
++        days = int(request.args.get('days', 30))
++    except ValueError:
++        days = 30
++    days = days if days in (7, 30, 90, 365) else 30
++
+     # --- CONVERSION FUNNEL ---
+     # Every stage is counted over the SAME population (real learners: not admins, not
+     # deleted accounts). Previously "Purchased" also counted admin/deleted accounts that
+@@ -798,42 +896,35 @@ def get_admin_analytics():
+         { "stage": "Bundle Buyers", "count": bundle_buyers, "pct": min(100, round(bundle_buyers / total_registered * 100, 1)) if total_registered > 0 else 0 },
+     ]
+ 
+-    # --- USER GROWTH (last 30 days) ---
+-    growth = []
+-    for i in range(29, -1, -1):
++    # --- USER GROWTH (selected range) ---
++    since = (datetime.utcnow() - timedelta(days=days - 1)).date()
++    g_rows = db.session.query(func.date(User.created_at), func.count(User.id))\
++        .filter(User.is_admin == False, User.is_deleted == False, func.date(User.created_at) >= since)\
++        .group_by(func.date(User.created_at)).all()
++    g_map = {r[0]: r[1] for r in g_rows}
++    by_day = revenue_by_day(days)
++    growth, revenue_chart = [], []
++    for i in range(days - 1, -1, -1):
+         day = datetime.utcnow() - timedelta(days=i)
+-        count = User.query.filter(
+-            User.is_admin == False,
+-            User.is_deleted == False,
+-            func.date(User.created_at) == day.date()
+-        ).count()
+-        growth.append({ "date": day.strftime('%b %d'), "users": count })
+-
+-    # --- REVENUE CHART (last 30 days, real data) ---
+-    revenue_chart = []
+-    for i in range(29, -1, -1):
+-        day = datetime.utcnow() - timedelta(days=i)
+-        day_revenue = db.session.query(func.sum(Course.price))\
+-            .join(Enrollment, Course.id == Enrollment.course_id)\
+-            .filter(func.date(Enrollment.enrolled_at) == day.date())\
+-            .scalar() or 0
+-        revenue_chart.append({ "date": day.strftime('%b %d'), "revenue": float(day_revenue) })
+-
+-    # --- COURSE PERFORMANCE ---
+-    courses = Course.query.filter_by(is_deleted=False).all()
++        label = day.strftime('%b %d')
++        growth.append({ "date": label, "users": g_map.get(day.date(), 0) })
++        revenue_chart.append({ "date": label, "revenue": by_day.get(day.date(), 0.0) })
++
++    # --- COURSE PERFORMANCE (revenue = what was actually recorded, not list price x enrollments) ---
+     course_performance = []
+-    for c in courses:
++    for c in Course.query.filter_by(is_deleted=False).all():
+         enrollments = Enrollment.query.filter_by(course_id=c.id).all()
+         total_enr = len(enrollments)
++        started = len([e for e in enrollments if (e.progress or 0) > 0])
+         completed = len([e for e in enrollments if e.status == 'completed'])
+-        completion_rate = round(completed / total_enr * 100, 1) if total_enr > 0 else 0
+-        revenue = total_enr * c.price
+         course_performance.append({
+             "title": c.title,
+             "enrolled": total_enr,
++            "started": started,
+             "completed": completed,
+-            "completion_rate": completion_rate,
+-            "revenue": revenue
++            "start_rate": round(started / total_enr * 100, 1) if total_enr else 0,
++            "completion_rate": round(completed / total_enr * 100, 1) if total_enr else 0,
++            "revenue": sum((e.amount_paid_cents or 0) for e in enrollments) / 100.0,
+         })
+     course_performance.sort(key=lambda x: x['enrolled'], reverse=True)
+ 
+@@ -848,10 +939,12 @@ def get_admin_analytics():
+         Enrollment.progress > 0, Enrollment.status != 'completed'
+     ).with_entities(Enrollment.user_id).distinct().count()
+ 
+-    total_revenue = db.session.query(func.sum(Course.price))\
+-        .join(Enrollment, Course.id == Enrollment.course_id).scalar() or 0
++    total_revenue = revenue_dollars()
++    period_revenue = sum(r["revenue"] for r in revenue_chart)
++    period_signups = sum(g["users"] for g in growth)
+ 
+     return jsonify({
++        "days": days,
+         "funnel": funnel,
+         "conversion_rate": conversion_rate,
+         "bundle_rate": bundle_rate,
+@@ -862,8 +955,12 @@ def get_admin_analytics():
+             "never_purchased": never_purchased,
+             "purchased_never_started": purchased_never_started,
+             "started_never_completed": started_never_completed,
+-            "total_revenue": float(total_revenue),
+-            "avg_revenue_per_user": round(float(total_revenue) / total_paid, 2) if total_paid > 0 else 0
++            "total_revenue": total_revenue,
++            "period_revenue": period_revenue,
++            "period_signups": period_signups,
++            "avg_revenue_per_user": round(total_revenue / total_paid, 2) if total_paid > 0 else 0,
++            "certificates_issued": Enrollment.query.filter(Enrollment.certificate_id.isnot(None)).count(),
++            "newsletter_subscribers": NewsletterSubscriber.query.filter_by(status='active').count(),
+         }
+     })
+ 
+@@ -1166,6 +1263,27 @@ def session_money(session):
+         return {}
+ 
+ 
++def payment_fields(session, course=None, n=1, index=0, bundle=False):
++    """Enrollment kwargs recording what a Stripe checkout actually brought in.
++    A bundle charge is split across the n enrollments it creates (cents; the remainder
++    goes to the first one) so the parts always add up to what Stripe charged.
++    Falls back to the list price, marked as an estimate, if the session has no amount.
++    Never raises - recording must not break an unlock."""
++    try:
++        total = session['amount_total']
++        cur = (session['currency'] or 'usd').upper()
++    except Exception:
++        total, cur = None, 'USD'
++    estimated = False
++    if total is None:
++        estimated = True
++        total = 15900 if bundle else int(round(((course.price if course else 0) or 0) * 100))
++    n = max(1, n)
++    base, rem = divmod(int(total), n)
++    return dict(amount_paid_cents=base + (rem if index == 0 else 0), currency=cur,
++                payment_source='stripe_bundle' if bundle else 'stripe', amount_estimated=estimated)
++
++
+ FLAG_OUTCOMES = {'refunded': 'Refunded', 'credit_given': 'Credit given', 'declined': 'Declined'}
+ 
+ 
+@@ -1419,6 +1537,16 @@ def create_bundle_checkout():
+ 
+ 
+ 
++def _paid_fields(amount_cents, currency, course_id):
++    """payment_fields() for callers that only have the amount (guest checkout helper)."""
++    if amount_cents is None:
++        course = db.session.get(Course, course_id)
++        return dict(amount_paid_cents=int(round((course.price if course else 0) * 100)), currency='USD',
++                    payment_source='stripe', amount_estimated=True)
++    return dict(amount_paid_cents=int(amount_cents), currency=(currency or 'usd').upper(),
++                payment_source='stripe', amount_estimated=False)
++
++
+ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payment_intent_id=None,
+                            amount_cents=None, currency=None):
+     """Shared by /api/verify-payment (browser) and the Stripe webhook (server-side
+@@ -1480,7 +1608,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
+             db.session.add(Enrollment(
+                 user_id=existing_user.id, course_id=course_id,
+                 status='in-progress', progress=0,
+-                enrolled_at=datetime.utcnow(), stripe_session_id=session_id
++                enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++                **_paid_fields(amount_cents, currency, course_id)
+             ))
+             db.session.commit()
+ 
+@@ -1519,7 +1648,8 @@ def resolve_guest_checkout(course_id, session_id, guest_email, guest_name, payme
+         db.session.add(Enrollment(
+             user_id=guest_user.id, course_id=course_id,
+             status='in-progress', progress=0,
+-            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
++            enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++            **_paid_fields(amount_cents, currency, course_id)
+         ))
+         db.session.commit()
+ 
+@@ -1653,15 +1783,15 @@ def verify_payment():
+                 owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
+ 
+                 enrolled_count = 0
+-                for course in all_courses:
+-                    if course.id not in owned:
+-                        new_enr = Enrollment(
+-                            user_id=user_id, course_id=course.id,
+-                            status='in-progress', progress=0,
+-                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+-                        )
+-                        db.session.add(new_enr)
+-                        enrolled_count += 1
++                to_add = [c for c in all_courses if c.id not in owned]
++                for course in to_add:
++                    db.session.add(Enrollment(
++                        user_id=user_id, course_id=course.id,
++                        status='in-progress', progress=0,
++                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++                        **payment_fields(session, course, n=len(to_add), index=enrolled_count, bundle=True)
++                    ))
++                    enrolled_count += 1
+ 
+                 db.session.commit()
+ 
+@@ -1689,7 +1819,8 @@ def verify_payment():
+                     new_enrollment = Enrollment(
+                         user_id=user_id, course_id=course_id,
+                         status='in-progress', progress=0,
+-                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id
++                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++                        **payment_fields(session, db.session.get(Course, course_id))
+                     )
+                     db.session.add(new_enrollment)
+                     db.session.commit()
+@@ -1725,7 +1856,8 @@ def enroll_free():
+         return jsonify({"msg": "This course requires payment."}), 402
+ 
+     if not Enrollment.query.filter_by(user_id=user_id, course_id=course_id).first():
+-        enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0)
++        enr = Enrollment(user_id=user_id, course_id=course_id, status='in-progress', progress=0, score=0,
++                         payment_source='free', amount_paid_cents=0, currency='USD')
+         db.session.add(enr)
+         db.session.commit()
+     return jsonify({"msg": "Enrolled"}), 201
+@@ -1977,18 +2109,22 @@ def stripe_webhook():
+             owned = [e.course_id for e in Enrollment.query.filter_by(user_id=user_id).all()]
+             
+             enrolled_count = 0
+-            for course in all_courses:
+-                if course.id not in owned:
+-                    # Double check to prevent race conditions with the frontend verify route
+-                    existing = Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first()
+-                    if not existing:
+-                        new_enr = Enrollment(
+-                            user_id=user_id, course_id=course.id, 
+-                            status='in-progress', progress=0, 
+-                            enrolled_at=datetime.utcnow(), stripe_session_id=session_id
+-                        )
+-                        db.session.add(new_enr)
+-                        enrolled_count += 1
++            # Same guard as /api/verify-payment: a bundle session unlocks courses only once.
++            if Enrollment.query.filter_by(stripe_session_id=session_id).first():
++                to_add = []
++            else:
++                to_add = [c for c in all_courses if c.id not in owned]
++            for course in to_add:
++                # Double check to prevent race conditions with the frontend verify route
++                existing = Enrollment.query.filter_by(user_id=user_id, course_id=course.id).first()
++                if not existing:
++                    db.session.add(Enrollment(
++                        user_id=user_id, course_id=course.id,
++                        status='in-progress', progress=0,
++                        enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++                        **payment_fields(session, course, n=len(to_add), index=enrolled_count, bundle=True)
++                    ))
++                    enrolled_count += 1
+             
+             db.session.commit()
+             
+@@ -2011,7 +2147,8 @@ def stripe_webhook():
+                 new_enrollment = Enrollment(
+                     user_id=user_id, course_id=course_id, 
+                     status='in-progress', progress=0, 
+-                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id
++                    enrolled_at=datetime.utcnow(), stripe_session_id=session_id,
++                    **payment_fields(session, db.session.get(Course, course_id))
+                 )
+                 db.session.add(new_enrollment)
+                 db.session.commit()
+@@ -2627,18 +2764,164 @@ def get_audit_logs():
+     logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).limit(50).all()
+     return jsonify([{"action": l.action, "admin": l.admin_email, "details": l.details, "date": l.timestamp.strftime('%Y-%m-%d %H:%M')} for l in logs])
+ 
++SOURCE_LABELS = {
++    'stripe': 'Stripe - single course', 'stripe_bundle': 'Stripe - All-Access bundle',
++    'admin_grant': 'Admin grant', 'free': 'Free course', 'unverified': 'Unverified (no receipt)',
++}
++
++
++def _tx_query(args):
++    q = db.session.query(Enrollment, User, Course)\
++        .join(User, User.id == Enrollment.user_id).join(Course, Course.id == Enrollment.course_id)
++    src = args.get('source')
++    if src == 'paid':
++        q = q.filter(Enrollment.payment_source.in_(['stripe', 'stripe_bundle']) | (Enrollment.amount_paid_cents > 0))
++    elif src in SOURCE_LABELS:
++        q = q.filter(Enrollment.payment_source == src)
++    text = (args.get('q') or '').strip()
++    if text:
++        like = f"%{text}%"
++        q = q.filter(User.name.ilike(like) | User.email.ilike(like) | Course.title.ilike(like))
++    return q.order_by(Enrollment.enrolled_at.desc().nullslast(), Enrollment.id.desc())
++
++
++def _tx_dict(e, u, c):
++    src = e.payment_source or ('stripe' if e.stripe_session_id else 'unverified')
++    return {
++        "id": e.id, "user": u.name, "email": u.email, "course": c.title,
++        "date": e.enrolled_at.strftime('%Y-%m-%d') if e.enrolled_at else "N/A",
++        "source": src, "source_label": SOURCE_LABELS.get(src, src),
++        "amount": (e.amount_paid_cents / 100.0) if e.amount_paid_cents is not None else None,
++        "currency": e.currency, "estimated": bool(e.amount_estimated),
++        "stripe_session_id": e.stripe_session_id,
++    }
++
++
+ @app.route('/api/admin/transactions', methods=['GET'])
+ @jwt_required()
+ def get_transactions():
+-    if not db.session.get(User, get_jwt_identity()).is_admin: return jsonify({"msg": "Admin only"}), 403 # FIXED
+-    enrollments = Enrollment.query.order_by(Enrollment.id.desc()).all()
+-    data = []
+-    for e in enrollments:
+-        u = db.session.get(User, e.user_id) # FIXED
+-        c = db.session.get(Course, e.course_id) # FIXED
+-        if u and c:
+-            data.append({"id": e.id, "user": u.name, "email": u.email, "course": c.title, "date": e.enrolled_at.strftime('%Y-%m-%d') if e.enrolled_at else "N/A", "status": "Paid"})
+-    return jsonify(data)
++    admin, err = _require_admin()
++    if err: return err
++    try:
++        page = max(1, int(request.args.get('page', 1))); per_page = min(200, max(1, int(request.args.get('per_page', 50))))
++    except ValueError:
++        page, per_page = 1, 50
++    q = _tx_query(request.args)
++    total = q.count()
++    rows = q.offset((page - 1) * per_page).limit(per_page).all()
++    return jsonify({"items": [_tx_dict(*r) for r in rows], "total": total, "page": page, "per_page": per_page})
++
++
++@app.route('/api/admin/transactions.csv', methods=['GET'])
++@jwt_required()
++def transactions_csv():
++    admin, err = _require_admin()
++    if err: return err
++    import csv, io
++    from flask import Response
++    def safe(v):  # block spreadsheet formula injection from user-controlled text
++        v = '' if v is None else str(v)
++        return "'" + v if v[:1] in ('=', '+', '-', '@') else v
++    buf = io.StringIO(); w = csv.writer(buf)
++    w.writerow(["Enrollment ID", "Date", "Customer", "Email", "Course", "Source", "Amount", "Currency", "Amount is an estimate", "Stripe session"])
++    for e, u, c in _tx_query(request.args).all():
++        d = _tx_dict(e, u, c)
++        w.writerow([d["id"], d["date"], safe(d["user"]), safe(d["email"]), safe(d["course"]), d["source_label"],
++                    "" if d["amount"] is None else f"{d['amount']:.2f}", d["currency"] or "", "yes" if d["estimated"] else "", d["stripe_session_id"] or ""])
++    return Response(buf.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment; filename=transactions.csv"})
++
++
++@app.route('/api/admin/revenue/summary', methods=['GET'])
++@jwt_required()
++def revenue_summary():
++    """Everything the Revenue & Sales cards need, computed from recorded amounts."""
++    admin, err = _require_admin()
++    if err: return err
++    now = datetime.utcnow()
++    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
++    prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
++    E = Enrollment
++    gross = revenue_dollars()
++    single_rev = revenue_dollars(E.payment_source == 'stripe')
++    bundle_rev = revenue_dollars(E.payment_source == 'stripe_bundle')
++    grant_rev = revenue_dollars(E.payment_source == 'admin_grant')
++    est_rev = revenue_dollars(E.amount_estimated == True)
++    bundle_sales = db.session.query(func.count(func.distinct(E.stripe_session_id))).filter(E.payment_source == 'stripe_bundle').scalar() or 0
++    single_sales = E.query.filter(E.payment_source == 'stripe').count()
++
++    # Duplicate charges: money that came in through Stripe but is not on any enrollment.
++    def flag_sum(*cond):
++        c = db.session.query(func.coalesce(func.sum(FlaggedPayment.amount_cents), 0)).filter(*cond).scalar() or 0
++        return float(c) / 100.0
++    dup_pending = flag_sum(FlaggedPayment.resolved == False)
++    dup_pending_n = FlaggedPayment.query.filter_by(resolved=False).count()
++    dup_refunded = flag_sum(FlaggedPayment.outcome == 'refunded')
++    dup_kept = flag_sum(FlaggedPayment.outcome.in_(['credit_given', 'declined']))
++
++    # last 12 months
++    months = []
++    for i in range(11, -1, -1):
++        y, m = now.year, now.month - i
++        while m <= 0: m += 12; y -= 1
++        start = datetime(y, m, 1); end = datetime(y + (m == 12), (m % 12) + 1, 1)
++        months.append({"month": start.strftime('%b %Y'), "revenue": revenue_dollars(E.enrolled_at >= start, E.enrolled_at < end)})
++
++    by_course = []
++    for c in Course.query.filter_by(is_deleted=False).all():
++        by_course.append({"title": c.title, "revenue": revenue_dollars(E.course_id == c.id),
++                          "sales": E.query.filter(E.course_id == c.id, E.amount_paid_cents > 0).count()})
++    by_course.sort(key=lambda x: x["revenue"], reverse=True)
++
++    return jsonify({
++        "gross_sales": gross,
++        "net_revenue": gross + dup_kept,   # course sales + duplicate charges that were kept
++        "this_month": revenue_dollars(E.enrolled_at >= month_start),
++        "last_month": revenue_dollars(E.enrolled_at >= prev_month_start, E.enrolled_at < month_start),
++        "last_30_days": revenue_dollars(E.enrolled_at >= now - timedelta(days=30)),
++        "single": {"revenue": single_rev, "sales": single_sales},
++        "bundle": {"revenue": bundle_rev, "sales": bundle_sales},
++        "admin_recorded": grant_rev,
++        "estimated_revenue": est_rev,
++        "grants": E.query.filter(E.payment_source == 'admin_grant').count(),
++        "free": E.query.filter(E.payment_source == 'free').count(),
++        "unverified": E.query.filter(E.payment_source == 'unverified').count(),
++        "duplicates": {"pending": dup_pending, "pending_count": dup_pending_n, "refunded": dup_refunded, "kept": dup_kept},
++        "months": months,
++        "by_course": by_course,
++    })
++
++
++@app.route('/api/admin/enrollments/<int:enrollment_id>/payment', methods=['POST'])
++@jwt_required()
++def set_enrollment_payment(enrollment_id):
++    """Correct how an enrollment was paid (e.g. an older row with no receipt, or an estimate).
++    Body: {"source": "stripe" | "admin_grant" | "free", "amount": 29.00}"""
++    admin, err = _require_admin()
++    if err: return err
++    e = db.session.get(Enrollment, enrollment_id)
++    if not e:
++        return jsonify({"msg": "Enrollment not found"}), 404
++    data = request.get_json(silent=True) or {}
++    source = data.get('source')
++    if source not in ('stripe', 'admin_grant', 'free'):
++        return jsonify({"msg": "source must be stripe, admin_grant or free"}), 400
++    try:
++        amount = 0.0 if source == 'free' else float(data.get('amount'))
++    except (TypeError, ValueError):
++        return jsonify({"msg": "Enter the amount paid as a number"}), 400
++    if amount < 0 or amount > 100000:
++        return jsonify({"msg": "Amount is out of range"}), 400
++    before = f"{e.payment_source or 'unset'} / {('$%.2f' % (e.amount_paid_cents / 100)) if e.amount_paid_cents is not None else 'no amount'}"
++    e.payment_source = source
++    e.amount_paid_cents = int(round(amount * 100))
++    e.currency = e.currency or 'USD'
++    e.amount_estimated = False
++    user = db.session.get(User, e.user_id); course = db.session.get(Course, e.course_id)
++    db.session.add(AuditLog(admin_email=admin.email, action="Enrollment Payment Corrected",
++                            details=f"#{e.id} {user.email if user else ''} / {course.title if course else e.course_id}: {before} -> {source} / ${amount:.2f}",
++                            timestamp=datetime.utcnow()))
++    db.session.commit()
++    return jsonify({"msg": "Saved", "item": _tx_dict(e, user, course)}), 200
+ 
+ @app.route('/api/chat', methods=['POST'])
+ def chat_support():
+diff --git a/backend/migrations/versions/c3e5a7b9d1f2_enrollment_payment_amounts.py b/backend/migrations/versions/c3e5a7b9d1f2_enrollment_payment_amounts.py
+new file mode 100644
+index 00000000..dabdfdc7
+--- /dev/null
++++ b/backend/migrations/versions/c3e5a7b9d1f2_enrollment_payment_amounts.py
+@@ -0,0 +1,60 @@
++"""Enrollments: record what was actually paid
++
++Revision ID: c3e5a7b9d1f2
++Revises: b2d4f6a8c0e1
++Create Date: 2026-10-29 00:00:00.000000
++
++Adds nullable columns only (plus one boolean with a default) - safe on a live table.
++Backfill for rows that already exist (clearly marked amount_estimated = true):
++  * stripe_session_id shared by 2+ enrollments  -> 'stripe_bundle', $159 split evenly
++  * stripe_session_id on a single enrollment    -> 'stripe', the course's list price
++  * no stripe_session_id                        -> 'unverified', amount left empty
++Unverified rows are NOT counted as revenue until an admin sets the amount in
++Admin > Revenue & Sales (they could be admin grants or purchases made before receipts were stored).
++"""
++from alembic import op
++import sqlalchemy as sa
++
++
++revision = 'c3e5a7b9d1f2'
++down_revision = 'b2d4f6a8c0e1'
++branch_labels = None
++depends_on = None
++
++BUNDLE_PRICE_CENTS = 15900
++
++
++def upgrade():
++    op.add_column('enrollments', sa.Column('amount_paid_cents', sa.Integer(), nullable=True))
++    op.add_column('enrollments', sa.Column('currency', sa.String(length=10), nullable=True))
++    op.add_column('enrollments', sa.Column('payment_source', sa.String(length=20), nullable=True))
++    op.add_column('enrollments', sa.Column('amount_estimated', sa.Boolean(), nullable=False, server_default=sa.text('false')))
++
++    # Bundles: several enrollments share one Stripe session.
++    op.execute(f"""
++        UPDATE enrollments e SET
++            payment_source = 'stripe_bundle',
++            currency = 'USD',
++            amount_estimated = true,
++            amount_paid_cents = ROUND({BUNDLE_PRICE_CENTS}::numeric / g.cnt)::int
++        FROM (SELECT stripe_session_id, COUNT(*) AS cnt FROM enrollments
++              WHERE stripe_session_id IS NOT NULL GROUP BY stripe_session_id HAVING COUNT(*) > 1) g
++        WHERE e.stripe_session_id = g.stripe_session_id
++    """)
++    # Single-course purchases.
++    op.execute("""
++        UPDATE enrollments e SET
++            payment_source = 'stripe',
++            currency = 'USD',
++            amount_estimated = true,
++            amount_paid_cents = ROUND(COALESCE(c.price, 0) * 100)::int
++        FROM courses c
++        WHERE c.id = e.course_id AND e.stripe_session_id IS NOT NULL AND e.payment_source IS NULL
++    """)
++    # No receipt on file.
++    op.execute("UPDATE enrollments SET payment_source = 'unverified' WHERE payment_source IS NULL")
++
++
++def downgrade():
++    for c in ('amount_estimated', 'payment_source', 'currency', 'amount_paid_cents'):
++        op.drop_column('enrollments', c)
+diff --git a/backend/models.py b/backend/models.py
+index 2654acec..3f441889 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -94,6 +94,14 @@ class Enrollment(db.Model):
+     completion_date = db.Column(db.DateTime, nullable=True)
+     enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+ 
++    # What this enrollment actually brought in (cents). Bundles are split across their
++    # courses so the parts add up to the amount Stripe charged. payment_source:
++    #   stripe | stripe_bundle | admin_grant | free | unverified (older rows with no receipt)
++    amount_paid_cents = db.Column(db.Integer, nullable=True)
++    currency = db.Column(db.String(10), nullable=True)
++    payment_source = db.Column(db.String(20), nullable=True)
++    amount_estimated = db.Column(db.Boolean, default=False, nullable=False, server_default=db.text('false'))
++
+     # Certificate snapshot, frozen at the moment the certificate is issued so the
+     # admin copy (and /verify) keeps showing what was actually awarded even if the
+     # learner later renames their profile or the course is retitled/restructured.
+diff --git a/frontend/src/components/admin/RevenuePanel.jsx b/frontend/src/components/admin/RevenuePanel.jsx
+new file mode 100644
+index 00000000..a7a7a24d
+--- /dev/null
++++ b/frontend/src/components/admin/RevenuePanel.jsx
+@@ -0,0 +1,226 @@
++import React, { useCallback, useEffect, useState } from 'react';
++import axios from 'axios';
++import API_BASE_URL from '../../config';
++import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
++import { Download, Search, Loader2, Pencil, X, AlertTriangle } from 'lucide-react';
++
++const PER_PAGE = 25;
++const usd = (n) => `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
++const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
++const SOURCE_FILTERS = [
++  ['', 'All sources'], ['paid', 'Paid (Stripe)'], ['stripe', 'Single course'], ['stripe_bundle', 'All-Access bundle'],
++  ['admin_grant', 'Admin grants'], ['free', 'Free'], ['unverified', 'Unverified'],
++];
++const SOURCE_STYLE = {
++  stripe: 'bg-green-50 text-green-700 border-green-200', stripe_bundle: 'bg-purple-50 text-purple-700 border-purple-200',
++  admin_grant: 'bg-blue-50 text-blue-700 border-blue-200', free: 'bg-gray-100 text-gray-600 border-gray-200',
++  unverified: 'bg-yellow-50 text-yellow-700 border-yellow-200',
++};
++
++const Card = ({ label, value, sub, tone = 'text-gray-900' }) => (
++  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
++    <p className="text-xs font-bold text-gray-400 uppercase mb-1">{label}</p>
++    <p className={`text-2xl font-black ${tone}`}>{value}</p>
++    {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
++  </div>
++);
++
++// Revenue & Sales: every figure comes from the amount actually recorded on each enrollment
++// (what Stripe charged), not from list price x number of enrollments.
++const RevenuePanel = () => {
++  const [summary, setSummary] = useState(null);
++  const [items, setItems] = useState([]);
++  const [total, setTotal] = useState(0);
++  const [page, setPage] = useState(1);
++  const [source, setSource] = useState('');
++  const [query, setQuery] = useState('');
++  const [debounced, setDebounced] = useState('');
++  const [loading, setLoading] = useState(true);
++  const [error, setError] = useState('');
++  const [edit, setEdit] = useState(null);       // enrollment row being corrected
++  const [editSource, setEditSource] = useState('stripe');
++  const [editAmount, setEditAmount] = useState('');
++  const [saving, setSaving] = useState(false);
++  const [editError, setEditError] = useState('');
++
++  useEffect(() => { const t = setTimeout(() => { setDebounced(query.trim()); setPage(1); }, 300); return () => clearTimeout(t); }, [query]);
++
++  const loadSummary = useCallback(async () => {
++    try { setSummary((await axios.get(`${API_BASE_URL}/api/admin/revenue/summary`, { headers: headers() })).data); }
++    catch { setError('Could not load the revenue summary.'); }
++  }, []);
++  const loadRows = useCallback(async () => {
++    setLoading(true);
++    try {
++      const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { params: { q: debounced, source, page, per_page: PER_PAGE }, headers: headers() });
++      setItems(r.data.items); setTotal(r.data.total); setError('');
++    } catch { setError('Could not load transactions.'); }
++    finally { setLoading(false); }
++  }, [debounced, source, page]);
++  useEffect(() => { loadSummary(); }, [loadSummary]);
++  useEffect(() => { loadRows(); }, [loadRows]);
++
++  const exportCsv = async () => {
++    try {
++      const r = await axios.get(`${API_BASE_URL}/api/admin/transactions.csv`, { params: { q: debounced, source }, headers: headers(), responseType: 'blob' });
++      const url = URL.createObjectURL(r.data); const a = document.createElement('a');
++      a.href = url; a.download = 'transactions.csv'; a.click(); URL.revokeObjectURL(url);
++    } catch { setError('Could not export the CSV.'); }
++  };
++
++  const openEdit = (row) => { setEdit(row); setEditSource(row.source === 'unverified' ? 'stripe' : row.source === 'free' ? 'free' : row.source === 'admin_grant' ? 'admin_grant' : 'stripe'); setEditAmount(row.amount != null ? String(row.amount) : ''); setEditError(''); };
++  const saveEdit = async () => {
++    if (editSource !== 'free' && (editAmount === '' || isNaN(Number(editAmount)) || Number(editAmount) < 0)) { setEditError('Enter the amount that was paid, e.g. 29.00'); return; }
++    setSaving(true); setEditError('');
++    try {
++      await axios.post(`${API_BASE_URL}/api/admin/enrollments/${edit.id}/payment`, { source: editSource, amount: editSource === 'free' ? 0 : Number(editAmount) }, { headers: headers() });
++      setEdit(null); loadRows(); loadSummary();
++    } catch (e) { setEditError(e.response?.data?.msg || 'Could not save. Please try again.'); }
++    finally { setSaving(false); }
++  };
++
++  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
++  const s = summary;
++  const dup = s?.duplicates;
++
++  return (
++    <div className="space-y-6 animate-fade-in">
++      {error && <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>}
++
++      {!s ? <div className="text-center py-10 text-gray-400"><Loader2 className="inline animate-spin mr-2" size={16} />Loading revenue…</div> : (
++        <>
++          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
++            <Card label="Net revenue" value={usd(s.net_revenue)} sub="Course sales + duplicate charges kept" tone="text-green-600" />
++            <Card label="This month" value={usd(s.this_month)} sub={`Last month ${usd(s.last_month)}`} />
++            <Card label="Last 30 days" value={usd(s.last_30_days)} />
++            <Card label="Course sales (gross)" value={usd(s.gross_sales)} sub="Recorded on enrollments" />
++            <Card label="Single-course sales" value={usd(s.single.revenue)} sub={`${s.single.sales} purchase${s.single.sales === 1 ? '' : 's'}`} />
++            <Card label="All-Access bundles" value={usd(s.bundle.revenue)} sub={`${s.bundle.sales} purchase${s.bundle.sales === 1 ? '' : 's'}`} tone="text-purple-600" />
++            <Card label="Admin-recorded payments" value={usd(s.admin_recorded)} sub={`${s.grants} grants · ${s.free} free enrollments`} />
++            <Card label="Duplicate charges" value={usd(dup.kept)} sub={`kept · ${usd(dup.refunded)} refunded`} />
++          </div>
++
++          {(s.unverified > 0 || s.estimated_revenue > 0 || dup.pending_count > 0) && (
++            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-900 space-y-1">
++              <p className="font-bold flex items-center gap-2"><AlertTriangle size={16} /> Check before you rely on these totals</p>
++              {s.estimated_revenue > 0 && <p>{usd(s.estimated_revenue)} of the total is an <strong>estimate</strong> for enrollments created before payments were recorded (list price, or $159 split across a bundle). Correct any row with the pencil to make it exact, or compare with Stripe.</p>}
++              {s.unverified > 0 && <p><strong>{s.unverified}</strong> enrollment{s.unverified === 1 ? ' has' : 's have'} no payment receipt and count as $0. Use the pencil on those rows to record a Stripe payment or mark them free. Filter: “Unverified”.</p>}
++              {dup.pending_count > 0 && <p><strong>{dup.pending_count}</strong> duplicate charge{dup.pending_count === 1 ? '' : 's'} ({usd(dup.pending)}) awaiting a decision in Flagged Payments. Not counted until decided.</p>}
++            </div>
++          )}
++
++          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
++            <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
++              <h3 className="font-bold text-gray-900 mb-4">Revenue by month</h3>
++              <div className="h-64">
++                <ResponsiveContainer width="100%" height="100%">
++                  <BarChart data={s.months}>
++                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
++                    <XAxis dataKey="month" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={1} />
++                    <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={v => `$${v}`} />
++                    <Tooltip formatter={v => [usd(v), 'Revenue']} contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} />
++                    <Bar dataKey="revenue" fill="#dc2626" radius={[4, 4, 0, 0]} />
++                  </BarChart>
++                </ResponsiveContainer>
++              </div>
++            </div>
++            <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
++              <h3 className="font-bold text-gray-900 mb-4">By course</h3>
++              <ul className="space-y-3">
++                {s.by_course.map(c => (
++                  <li key={c.title} className="flex justify-between gap-3 text-sm">
++                    <span className="text-gray-700 truncate" title={c.title}>{c.title}</span>
++                    <span className="font-bold text-gray-900 whitespace-nowrap">{usd(c.revenue)} <span className="text-gray-400 font-normal">· {c.sales}</span></span>
++                  </li>
++                ))}
++              </ul>
++            </div>
++          </div>
++        </>
++      )}
++
++      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
++        <div className="p-4 border-b border-gray-100 flex flex-wrap gap-3 items-center justify-between">
++          <div className="flex flex-wrap gap-3 items-center">
++            <div className="relative">
++              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
++              <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search name, email or course" className="pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg w-64 focus:outline-none focus:border-black" />
++            </div>
++            <select value={source} onChange={e => { setSource(e.target.value); setPage(1); }} className="py-2 px-3 text-sm border border-gray-200 rounded-lg bg-white text-gray-700">
++              {SOURCE_FILTERS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
++            </select>
++          </div>
++          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-gray-900 text-white hover:bg-black"><Download size={14} /> Export CSV</button>
++        </div>
++        <div className="overflow-x-auto">
++          <table className="w-full text-left text-sm min-w-[800px]">
++            <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
++              <tr><th className="px-6 py-3">Customer</th><th className="px-6 py-3">Course</th><th className="px-6 py-3">Date</th><th className="px-6 py-3">Source</th><th className="px-6 py-3 text-right">Amount</th><th className="px-6 py-3"></th></tr>
++            </thead>
++            <tbody className="divide-y divide-gray-100">
++              {loading && <tr><td colSpan="6" className="px-6 py-10 text-center text-gray-400"><Loader2 className="inline animate-spin mr-2" size={16} />Loading…</td></tr>}
++              {!loading && items.length === 0 && <tr><td colSpan="6" className="px-6 py-10 text-center text-gray-400">No transactions match.</td></tr>}
++              {!loading && items.map(t => (
++                <tr key={t.id} className="hover:bg-gray-50">
++                  <td className="px-6 py-3"><div className="font-bold text-gray-900">{t.user}</div><div className="text-xs text-gray-500">{t.email}</div></td>
++                  <td className="px-6 py-3 text-gray-700">{t.course}</td>
++                  <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{t.date}</td>
++                  <td className="px-6 py-3"><span className={`inline-block px-2 py-0.5 rounded border text-xs font-bold ${SOURCE_STYLE[t.source] || ''}`}>{t.source_label}</span></td>
++                  <td className="px-6 py-3 text-right font-bold text-gray-900 whitespace-nowrap">
++                    {t.amount == null ? <span className="text-gray-400 font-normal">—</span> : usd(t.amount)}
++                    {t.estimated && <span title="Estimated: recorded before exact amounts were stored" className="ml-1 text-xs font-normal text-yellow-600">est.</span>}
++                  </td>
++                  <td className="px-6 py-3 text-right">
++                    {(t.source === 'unverified' || t.estimated) && (
++                      <button onClick={() => openEdit(t)} title="Set the amount actually paid" className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"><Pencil size={14} /></button>
++                    )}
++                  </td>
++                </tr>
++              ))}
++            </tbody>
++          </table>
++        </div>
++        <div className="p-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
++          <span>{total} transaction{total === 1 ? '' : 's'}</span>
++          <div className="flex items-center gap-2">
++            <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 border border-gray-200 rounded disabled:opacity-40">Previous</button>
++            <span>Page {page} of {pages}</span>
++            <button disabled={page >= pages} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border border-gray-200 rounded disabled:opacity-40">Next</button>
++          </div>
++        </div>
++      </div>
++
++      {edit && (
++        <div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4" onClick={() => !saving && setEdit(null)}>
++          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
++            <div className="flex justify-between items-start mb-4">
++              <div><h3 className="text-lg font-bold text-gray-900">Set payment</h3><p className="text-sm text-gray-500 mt-1">{edit.user} · {edit.course}</p></div>
++              <button onClick={() => setEdit(null)} disabled={saving} className="text-gray-400 hover:text-black"><X size={18} /></button>
++            </div>
++            <div className="space-y-2 mb-4">
++              {[['stripe', 'Paid through Stripe', 'Check the amount in your Stripe Dashboard.'], ['admin_grant', 'Payment received another way', 'Recorded as an admin-recorded payment.'], ['free', 'Free / no payment', 'Counts as $0.']].map(([id, l, h]) => (
++                <label key={id} className={`flex gap-3 p-3 rounded-lg border cursor-pointer ${editSource === id ? 'border-black bg-gray-50' : 'border-gray-200 hover:bg-gray-50'}`}>
++                  <input type="radio" className="mt-1" checked={editSource === id} onChange={() => { setEditSource(id); setEditError(''); }} />
++                  <span><span className="font-bold text-gray-900 text-sm">{l}</span><span className="block text-xs text-gray-500">{h}</span></span>
++                </label>
++              ))}
++            </div>
++            {editSource !== 'free' && (
++              <div className="mb-2">
++                <label className="block text-xs font-bold text-gray-600 mb-1">Amount paid (USD)</label>
++                <input value={editAmount} onChange={e => setEditAmount(e.target.value)} inputMode="decimal" placeholder="29.00" className="w-full border border-gray-200 rounded-lg p-2 text-sm text-gray-900 focus:outline-none focus:border-black" />
++              </div>
++            )}
++            {editError && <div className="mt-2 p-2 bg-red-50 text-red-700 text-sm rounded">{editError}</div>}
++            <div className="flex justify-end gap-2 mt-5">
++              <button onClick={() => setEdit(null)} disabled={saving} className="px-4 py-2 text-sm font-bold text-gray-600 hover:text-black">Cancel</button>
++              <button onClick={saveEdit} disabled={saving} className="px-5 py-2 bg-black text-white rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50">{saving ? 'Saving…' : 'Save'}</button>
++            </div>
++          </div>
++        </div>
++      )}
++    </div>
++  );
++};
++
++export default RevenuePanel;
+diff --git a/frontend/src/pages/AdminDashboard.jsx b/frontend/src/pages/AdminDashboard.jsx
+index 3891987a..f731e910 100644
+--- a/frontend/src/pages/AdminDashboard.jsx
++++ b/frontend/src/pages/AdminDashboard.jsx
+@@ -17,6 +17,7 @@ import FootprintModal from '../components/admin/FootprintModal';
+ import CertificatesPanel from '../components/admin/CertificatesPanel';
+ import NewsletterPanel from '../components/admin/NewsletterPanel';
+ import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
++import RevenuePanel from '../components/admin/RevenuePanel';
+ 
+ // --- MOCK DATA ---
+ const MOCK_REVENUE_DATA = [
+@@ -52,7 +53,10 @@ const AdminDashboard = () => {
+   const [courses, setCourses] = useState([]); 
+   const [users, setUsers] = useState([]); 
+   const [stats, setStats] = useState({ revenue: 0, students: 0, courses: 0, uptime: "99.9%", chart_data: [], recent_messages: [] });
+-  const [transactions, setTransactions] = useState([]);
++  const [headerDb, setHeaderDb] = useState(null);       // null = checking, true/false = real database status
++  const [analyticsDays, setAnalyticsDays] = useState(30);
++  const [grantAmount, setGrantAmount] = useState('');
++  const [resetConfirm, setResetConfirm] = useState('');
+   const [messages, setMessages] = useState([]);
+   const [logs, setLogs] = useState([]);
+   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
+@@ -119,10 +123,6 @@ const AdminDashboard = () => {
+               const r = await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${token}` } });
+               setUsers(r.data);
+             }
+-            else if (activeTab === 'revenue') { 
+-              const r = await axios.get(`${API_BASE_URL}/api/admin/transactions`, { headers: { Authorization: `Bearer ${token}` } });
+-              setTransactions(r.data);
+-            }
+             else if (activeTab === 'support') { 
+               const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
+               setMessages(r.data);
+@@ -136,7 +136,7 @@ const AdminDashboard = () => {
+               setSettings(r.data); 
+             }
+             else if (activeTab === 'analytics') {
+-              const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${token}` } });
++              const r = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { params: { days: analyticsDays }, headers: { Authorization: `Bearer ${token}` } });
+               setAnalytics(r.data);
+             }
+             else if (activeTab === 'system') {
+@@ -147,10 +147,12 @@ const AdminDashboard = () => {
+         setLoading(false);
+       };
+       loadTabData();
++      axios.get(`${API_BASE_URL}/api/admin/system-health`, { headers: { Authorization: `Bearer ${token}` } })
++        .then(r => setHeaderDb(!!r.data.db_connected)).catch(() => setHeaderDb(false));
+     } else {
+         navigate('/login');
+     }
+-  }, [activeTab, navigate]);
++  }, [activeTab, navigate, analyticsDays]);
+ 
+   // Seed the chart when systemHealth first loads
+   useEffect(() => {
+@@ -198,7 +200,8 @@ const AdminDashboard = () => {
+         data: { cutoff_date: resetDate }
+       });
+       alert(`Done! Deleted ${r.data.deleted_enrollments} test enrollments and ${r.data.deleted_users} test users.`);
+-      const s = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { headers: { Authorization: `Bearer ${t}` } });
++      setResetConfirm('');
++      const s = await axios.get(`${API_BASE_URL}/api/admin/analytics`, { params: { days: analyticsDays }, headers: { Authorization: `Bearer ${t}` } });
+       setAnalytics(s.data);
+     } catch(e) { console.error("Reset failed:", e); alert("Failed to reset test data. Please try again."); }
+     finally { setResetLoading(false); }
+@@ -260,8 +263,9 @@ const AdminDashboard = () => {
+     if (!grantAccessCourseId) { alert("Please select a course."); return; }
+     try {
+       const t = localStorage.getItem('token');
+-      const r = await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/grant-course`, { course_id: grantAccessCourseId }, { headers: { Authorization: `Bearer ${t}` } });
++      const r = await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/grant-course`, { course_id: grantAccessCourseId, amount: grantAmount }, { headers: { Authorization: `Bearer ${t}` } });
+       alert(r.data.msg);
++      setGrantAmount('');
+       setIsGrantAccessModalOpen(false);
+     } catch (e) { console.error("Grant access failed:", e); alert("Failed to grant access. Please try again."); }
+   };
+@@ -315,18 +319,6 @@ const AdminDashboard = () => {
+   const initiateCloseTicket = (id) => { setMessageToClose(id); setIsCloseTicketModalOpen(true); };
+   const confirmCloseTicket = async () => { const t=localStorage.getItem('token'); await axios.put(`${API_BASE_URL}/api/admin/messages/${messageToClose}/read`, {}, { headers: { Authorization: `Bearer ${t}` } }); setMessages(prev => prev.filter(msg => msg.id !== messageToClose)); setIsCloseTicketModalOpen(false); };
+ 
+-  const handleExportCSV = () => {
+-    if (transactions.length === 0) return alert("No data");
+-    const headers = ["User,Email,Course,Date,Status"];
+-    const rows = transactions.map(tx => `${tx.user},${tx.email},"${tx.course}",${tx.date},Paid`);
+-    const csvContent = [headers, ...rows].join("\n");
+-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+-    const link = document.createElement("a");
+-    link.setAttribute("href", URL.createObjectURL(blob));
+-    link.setAttribute("download", "transactions.csv");
+-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+-  };
+-
+   const handleAddModule = (isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = {...t, modules: [...t.modules, {title: "New Module", lessons: []}]}; isEdit ? setEditingCourse(u) : setNewCourse(u); };
+   const handleAddLesson = (mIdx, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[mIdx].lessons.push({title: "New Lesson", type: "text", content: ""}); isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
+   const handleModuleTitleChange = (i, v, isEdit) => { const t = isEdit ? editingCourse : newCourse; const u = [...t.modules]; u[i].title = v; isEdit ? setEditingCourse({...t, modules: u}) : setNewCourse({...t, modules: u}); };
+@@ -452,8 +444,8 @@ const AdminDashboard = () => {
+               <Menu size={24} />
+             </button>
+             <div>
+-              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h1>
+-              <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500"></span> Connected to PostgreSQL</p>
++              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox' })[activeTab] || activeTab.replace('_', ' ')}</h1>
++              <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className={`w-2 h-2 rounded-full ${headerDb === null ? 'bg-gray-300' : headerDb ? 'bg-green-500' : 'bg-red-500'}`}></span> {headerDb === null ? 'Checking database…' : headerDb ? 'Database connected' : 'Database or API unreachable'}</p>
+             </div>
+           </div>
+ 
+@@ -497,10 +489,10 @@ const AdminDashboard = () => {
+         {activeTab === 'overview' && (
+           <div className="space-y-6 animate-fade-in">
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600"><DollarSign size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">${stats.revenue}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Revenue</p></div>
++              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-green-50 text-green-600"><DollarSign size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">${Number(stats.revenue || 0).toFixed(2)}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Revenue</p></div>
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-blue-50 text-blue-600"><Users size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.students}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Students</p></div>
+               <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-purple-50 text-purple-600"><BookOpen size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.courses}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Total Courses</p></div>
+-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600"><Activity size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">System Uptime</p></div>
++              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm"><div className="flex justify-between items-start mb-4"><div className="p-3 rounded-lg bg-orange-50 text-orange-600"><Activity size={24}/></div></div><h3 className="text-3xl font-black text-gray-900">{stats.uptime}</h3><p className="text-gray-500 text-xs font-bold uppercase mt-1">Server Uptime</p></div>
+             </div>
+             <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+                 <h3 className="text-lg font-bold mb-6 text-gray-900">Revenue Overview</h3>
+@@ -512,7 +504,7 @@ const AdminDashboard = () => {
+         )}
+ 
+         {/* --- TABLES --- */}
+-        {['courses', 'users', 'deleted_users', 'revenue', 'audit'].includes(activeTab) && (
++        {['courses', 'users', 'deleted_users', 'audit'].includes(activeTab) && (
+             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+                 <div className="p-6 border-b border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
+                     <div className="w-full flex justify-between items-center md:block">
+@@ -527,7 +519,6 @@ const AdminDashboard = () => {
+                             <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200 w-full md:w-auto"><Plus size={18} /> Add</button>
+                         </div>
+                     )}
+-                    {activeTab === 'revenue' && <button onClick={handleExportCSV} className="text-xs bg-gray-900 hover:bg-black text-white px-3 py-1 rounded transition border border-gray-900">Export CSV</button>}
+                 </div>
+                 
+                 <div className="overflow-x-auto">
+@@ -536,7 +527,6 @@ const AdminDashboard = () => {
+                             <tr>
+                                 {activeTab === 'courses' && <><th className="px-6 py-4">Title</th><th className="px-6 py-4">Price</th><th className="px-6 py-4">Category</th><th className="px-6 py-4">Modules</th><th className="px-6 py-4 text-right">Actions</th></>}
+                                 {(activeTab === 'users' || activeTab === 'deleted_users') && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Role</th><th className="px-6 py-4">Status</th><th className="px-6 py-4 text-right">Actions</th></>}
+-                                {activeTab === 'revenue' && <><th className="px-6 py-4">User</th><th className="px-6 py-4">Course</th><th className="px-6 py-4">Date</th><th className="px-6 py-4">Status</th></>}
+                                 {activeTab === 'audit' && <><th className="px-6 py-4">Action</th><th className="px-6 py-4">Admin</th><th className="px-6 py-4">Details</th><th className="px-6 py-4">Time</th></>}
+                             </tr>
+                         </thead>
+@@ -544,7 +534,6 @@ const AdminDashboard = () => {
+                             {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setUploadedCurriculum(null);setLearnerMode('clamp');setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
+                             {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
+                             {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
+-                            {activeTab === 'revenue' && transactions.map((t,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{t.user}</td><td className="px-6 py-4 text-gray-700">{t.course}</td><td className="px-6 py-4 text-gray-500">{t.date}</td><td className="px-6 py-4 text-green-700 font-bold">Paid</td></tr>))}
+                             {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
+                         </tbody>
+                     </table>
+@@ -555,6 +544,7 @@ const AdminDashboard = () => {
+         {/* CERTIFICATES TAB */}
+         {activeTab === 'certificates' && <CertificatesPanel />}
+         {activeTab === 'flagged' && <FlaggedPaymentsPanel />}
++        {activeTab === 'revenue' && <RevenuePanel />}
+ 
+         {/* NEWSLETTER TAB */}
+         {activeTab === 'newsletter' && <NewsletterPanel />}
+@@ -615,8 +605,8 @@ const AdminDashboard = () => {
+                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                 <span className="text-gray-700 font-medium">Stripe Integration</span>
+                                 {systemHealth.stripe_active
+-                                  ? <span className="text-green-700 text-sm font-bold flex items-center gap-2"><div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div> Active</span>
+-                                  : <span className="text-red-600 text-sm font-bold">Key Missing</span>
++                                  ? <span className={`text-sm font-bold flex items-center gap-2 ${systemHealth.stripe_mode === 'live' ? 'text-green-700' : 'text-yellow-700'}`}><div className={`w-2 h-2 rounded-full animate-pulse ${systemHealth.stripe_mode === 'live' ? 'bg-green-500' : 'bg-yellow-500'}`}></div> {systemHealth.stripe_mode === 'live' ? 'Live mode' : 'Test mode'}</span>
++                                  : <span className="text-red-600 text-sm font-bold">{systemHealth.stripe_mode === 'missing' ? 'Key Missing' : 'Check key / environment'}</span>
+                                 }
+                             </div>
+                             <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border border-gray-200">
+@@ -674,6 +664,54 @@ const AdminDashboard = () => {
+                     </div>
+                 </div>
+ 
++                {/* Configuration + operations */}
++                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
++                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
++                        <h3 className="font-bold mb-4 text-gray-900">Configuration checks</h3>
++                        <ul className="space-y-3">
++                            {(systemHealth.checks || []).map(c => (
++                                <li key={c.id} className="flex items-start gap-3 text-sm">
++                                    <span className={`mt-0.5 shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${c.ok ? 'bg-green-100 text-green-700' : c.level === 'warn' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{c.ok ? '✓' : '!'}</span>
++                                    <span><span className="font-bold text-gray-900">{c.label}</span><span className={`block text-xs ${c.ok ? 'text-gray-500' : c.level === 'warn' ? 'text-yellow-700' : 'text-red-600'}`}>{c.detail}</span></span>
++                                </li>
++                            ))}
++                        </ul>
++                    </div>
++                    <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
++                        <div>
++                            <h3 className="font-bold mb-3 text-gray-900">Deployment</h3>
++                            <div className="space-y-2 text-sm">
++                                <div className="flex justify-between"><span className="text-gray-500">Environment</span><span className="font-mono text-gray-800">{systemHealth.environment || 'not reported'}</span></div>
++                                <div className="flex justify-between"><span className="text-gray-500">Release</span><span className="font-mono text-gray-800">{systemHealth.release || 'not reported'}</span></div>
++                                <div className="flex justify-between"><span className="text-gray-500">Server running for</span><span className="font-mono text-gray-800">{systemHealth.process_uptime}</span></div>
++                                <div className="flex justify-between items-center"><span className="text-gray-500">Database migration</span>
++                                    {systemHealth.db_up_to_date === null || systemHealth.db_up_to_date === undefined
++                                      ? <span className="font-mono text-gray-500">{systemHealth.db_revision || 'unknown'}</span>
++                                      : systemHealth.db_up_to_date
++                                        ? <span className="text-green-700 font-bold text-xs bg-green-100 px-2 py-0.5 rounded-full border border-green-200">Up to date</span>
++                                        : <span className="text-red-700 font-bold text-xs bg-red-100 px-2 py-0.5 rounded-full border border-red-200" title={`database ${systemHealth.db_revision} / code ${systemHealth.db_head_revision}`}>Migration pending</span>}
++                                </div>
++                            </div>
++                        </div>
++                        <div>
++                            <h3 className="font-bold mb-3 text-gray-900">Needs attention</h3>
++                            <div className="grid grid-cols-2 gap-3 text-center">
++                                {[
++                                  ['Flagged payments', systemHealth.ops?.pending_flagged_payments, 'flagged'],
++                                  ['Unread messages', systemHealth.ops?.unread_messages, 'support'],
++                                  ['Unverified enrollments', systemHealth.ops?.unverified_enrollments, 'revenue'],
++                                  ['Newsletter subscribers', systemHealth.ops?.newsletter_subscribers, 'newsletter'],
++                                ].map(([label, n, tab]) => (
++                                  <button key={label} onClick={() => setActiveTab(tab)} className={`p-3 rounded-lg border text-left hover:bg-gray-50 ${label !== 'Newsletter subscribers' && n > 0 ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200'}`}>
++                                    <p className="text-2xl font-black text-gray-900">{n ?? '—'}</p><p className="text-xs text-gray-500">{label}</p>
++                                  </button>
++                                ))}
++                            </div>
++                            <p className="text-xs text-gray-400 mt-3">Last weekly digest sent: {systemHealth.ops?.last_digest_sent_at ? new Date(systemHealth.ops.last_digest_sent_at + 'Z').toLocaleString() : 'never'}{systemHealth.ops?.queued_digests ? ` · ${systemHealth.ops.queued_digests} queued` : ''}</p>
++                        </div>
++                    </div>
++                </div>
++
+                 {/* Full-width CPU chart */}
+                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                     <div className="flex justify-between items-center mb-4">
+@@ -731,6 +769,16 @@ const AdminDashboard = () => {
+               <div className="text-center py-20 text-gray-400">Loading analytics...</div>
+             ) : (
+               <>
++                {/* Range selector */}
++                <div className="flex items-center justify-between flex-wrap gap-3">
++                  <p className="text-sm text-gray-500">Charts and period figures cover the selected range. Funnel and totals are all-time.</p>
++                  <div className="flex gap-2">
++                    {[[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']].map(([d, l]) => (
++                      <button key={d} onClick={() => setAnalyticsDays(d)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition ${analyticsDays === d ? 'bg-black text-white border-black' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>{l}</button>
++                    ))}
++                  </div>
++                </div>
++
+                 {/* Key Metrics Row */}
+                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+@@ -744,7 +792,7 @@ const AdminDashboard = () => {
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                     <p className="text-xs font-bold text-gray-400 uppercase mb-1">Avg Revenue / User</p>
+-                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.avg_revenue_per_user}</p>
++                    <p className="text-2xl font-black text-gray-900">${Number(analytics.key_metrics.avg_revenue_per_user).toFixed(2)}</p>
+                   </div>
+                   <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                     <p className="text-xs font-bold text-gray-400 uppercase mb-1">Bundle Rate</p>
+@@ -753,6 +801,25 @@ const AdminDashboard = () => {
+                   </div>
+                 </div>
+ 
++                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
++                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
++                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Revenue ({analyticsDays === 365 ? '1 year' : `${analyticsDays} days`})</p>
++                    <p className="text-2xl font-black text-gray-900">${analytics.key_metrics.period_revenue.toFixed(2)}</p>
++                  </div>
++                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
++                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">New sign-ups ({analyticsDays === 365 ? '1 year' : `${analyticsDays} days`})</p>
++                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.period_signups}</p>
++                  </div>
++                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
++                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Certificates issued</p>
++                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.certificates_issued}</p>
++                  </div>
++                  <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
++                    <p className="text-xs font-bold text-gray-400 uppercase mb-1">Newsletter subscribers</p>
++                    <p className="text-2xl font-black text-gray-900">{analytics.key_metrics.newsletter_subscribers}</p>
++                  </div>
++                </div>
++
+                 {/* Funnel + Action Items */}
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+@@ -792,13 +859,13 @@ const AdminDashboard = () => {
+ 
+                 {/* Revenue Chart 30 days */}
+                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+-                  <h3 className="font-bold text-gray-900 mb-4">Revenue — Last 30 Days</h3>
++                  <h3 className="font-bold text-gray-900 mb-4">Revenue — Last {analyticsDays === 365 ? 'Year' : `${analyticsDays} Days`}</h3>
+                   <div className="h-64 min-w-[600px]">
+                     <ResponsiveContainer width="100%" height="100%">
+                       <AreaChart data={analytics.revenue_chart}>
+                         <defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#dc2626" stopOpacity={0.3}/><stop offset="95%" stopColor="#dc2626" stopOpacity={0}/></linearGradient></defs>
+                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
+-                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
++                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={analyticsDays > 30 ? Math.floor(analyticsDays / 8) : 4}/>
+                         <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={v => `$${v}`}/>
+                         <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [`$${v}`, 'Revenue']}/>
+                         <Area type="monotone" dataKey="revenue" stroke="#dc2626" strokeWidth={2} fillOpacity={1} fill="url(#revGrad)"/>
+@@ -809,13 +876,13 @@ const AdminDashboard = () => {
+ 
+                 {/* User Growth Chart */}
+                 <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+-                  <h3 className="font-bold text-gray-900 mb-4">User Registrations — Last 30 Days</h3>
++                  <h3 className="font-bold text-gray-900 mb-4">User Registrations — Last {analyticsDays === 365 ? 'Year' : `${analyticsDays} Days`}</h3>
+                   <div className="h-64 min-w-[600px]">
+                     <ResponsiveContainer width="100%" height="100%">
+                       <AreaChart data={analytics.growth}>
+                         <defs><linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/><stop offset="95%" stopColor="#6366f1" stopOpacity={0}/></linearGradient></defs>
+                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false}/>
+-                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={4}/>
++                        <XAxis dataKey="date" stroke="#9ca3af" axisLine={false} tickLine={false} tick={{ fontSize: 11 }} interval={analyticsDays > 30 ? Math.floor(analyticsDays / 8) : 4}/>
+                         <YAxis stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false}/>
+                         <Tooltip contentStyle={{ backgroundColor: '#fff', border: '1px solid #e5e7eb', borderRadius: '8px' }} formatter={v => [v, 'New Users']}/>
+                         <Area type="monotone" dataKey="users" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#growthGrad)"/>
+@@ -830,13 +897,14 @@ const AdminDashboard = () => {
+                   <div className="overflow-x-auto">
+                     <table className="w-full text-left min-w-[700px]">
+                       <thead className="bg-gray-50 text-gray-500 text-xs uppercase font-bold tracking-wider">
+-                        <tr><th className="px-6 py-3">Course</th><th className="px-6 py-3">Enrolled</th><th className="px-6 py-3">Completed</th><th className="px-6 py-3">Completion Rate</th><th className="px-6 py-3">Revenue</th></tr>
++                        <tr><th className="px-6 py-3">Course</th><th className="px-6 py-3">Enrolled</th><th className="px-6 py-3">Started</th><th className="px-6 py-3">Completed</th><th className="px-6 py-3">Completion Rate</th><th className="px-6 py-3">Revenue</th></tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100 text-sm">
+                         {analytics.course_performance.map((c, i) => (
+                           <tr key={i} className="hover:bg-gray-50 transition">
+                             <td className="px-6 py-4 font-medium text-gray-900">{c.title}</td>
+                             <td className="px-6 py-4 text-gray-700">{c.enrolled}</td>
++                            <td className="px-6 py-4 text-gray-700">{c.started} <span className="text-gray-400 text-xs">({c.start_rate}%)</span></td>
+                             <td className="px-6 py-4 text-gray-700">{c.completed}</td>
+                             <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-24 bg-gray-100 rounded-full h-2"><div className="bg-green-500 h-2 rounded-full" style={{ width: `${c.completion_rate}%` }}></div></div><span className="text-xs font-bold text-gray-600">{c.completion_rate}%</span></div></td>
+                             <td className="px-6 py-4 font-bold text-green-600">${c.revenue.toFixed(2)}</td>
+@@ -856,7 +924,11 @@ const AdminDashboard = () => {
+                       <label className="text-xs font-bold text-gray-500 mb-1 block">Cutoff Date (delete data before this date)</label>
+                       <input type="date" value={resetDate} onChange={e => setResetDate(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-red-500"/>
+                     </div>
+-                    <button onClick={handleResetTestData} disabled={resetLoading || !resetDate} className="mt-4 sm:mt-5 px-5 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
++                    <div>
++                      <label className="text-xs font-bold text-gray-500 mb-1 block">Type DELETE to confirm</label>
++                      <input value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} placeholder="DELETE" className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-32 focus:outline-none focus:border-red-500"/>
++                    </div>
++                    <button onClick={handleResetTestData} disabled={resetLoading || !resetDate || resetConfirm !== 'DELETE'} className="mt-4 sm:mt-5 px-5 py-2 bg-red-600 text-white text-sm font-bold rounded-lg hover:bg-red-700 disabled:opacity-50 transition">
+                       {resetLoading ? 'Clearing...' : 'Clear Test Data'}
+                     </button>
+                   </div>
+@@ -897,6 +969,11 @@ const AdminDashboard = () => {
+                       {courses.map(c => (<option key={c.id} value={c.id}>{c.title}</option>))}
+                     </select>
+                 </div>
++                <div className="mb-4">
++                    <label className="text-sm text-gray-600 font-bold">Payment received (optional)</label>
++                    <input type="number" min="0" step="0.01" value={grantAmount} onChange={(e) => setGrantAmount(e.target.value)} placeholder="Leave empty for a free grant" className="w-full bg-white border border-gray-300 p-2 rounded mt-1 text-gray-900 focus:outline-none focus:border-red-600"/>
++                    <p className="text-xs text-gray-400 mt-1">Only fill this if the customer really paid (e.g. paid but never got unlocked). It is then counted as revenue.</p>
++                </div>
+                 <button onClick={handleConfirmGrantAccess} className="bg-green-600 w-full py-2 rounded font-bold text-white hover:bg-green-700 transition">Grant Access</button>
+                 <button onClick={() => setIsGrantAccessModalOpen(false)} className="mt-2 w-full py-2 text-gray-500 hover:text-black font-medium transition">Cancel</button>
+             </div>
+-- 
+2.43.0
+

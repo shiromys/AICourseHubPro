@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
+import { track } from '../utils/analytics';
 import { Mail, Lock, LogIn, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import API_BASE_URL from '../config';
@@ -49,6 +50,8 @@ const Login = () => {
         password: formData.password 
       });
       
+      track('login', { method: 'email' });
+
       // 1. Save Token & User Info
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user_role', res.data.user_role);

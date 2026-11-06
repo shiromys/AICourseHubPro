@@ -1,0 +1,62 @@
+From 0acf0ef2abe02783d9c06d4476c50f76f01c36bb Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 2 Nov 2026 18:19:00 +0000
+Subject: [PATCH] Certificates: never show today's date when no issue date was
+ recorded
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01URtjpUpUbYyjhc8gMGou4L
+---
+ backend/app.py                                | 2 +-
+ frontend/src/components/CertificateCanvas.jsx | 8 +++++---
+ frontend/src/pages/Certificate.jsx            | 2 +-
+ 3 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/backend/app.py b/backend/app.py
+index ba6ea729..0df1bf34 100644
+--- a/backend/app.py
++++ b/backend/app.py
+@@ -3582,7 +3582,7 @@ def verify_cert(cert_id):
+         "valid": True, 
+         "student_name": enr.certificate_name or u.name, 
+         "course_title": enr.certificate_course_title or c.title, 
+-        "completion_date": enr.completion_date.strftime('%Y-%m-%d')
++        "completion_date": enr.completion_date.strftime('%Y-%m-%d') if enr.completion_date else None
+     })
+ 
+ @app.route('/api/forgot-password', methods=['POST'])
+diff --git a/frontend/src/components/CertificateCanvas.jsx b/frontend/src/components/CertificateCanvas.jsx
+index 53eff51b..6fedc0e2 100644
+--- a/frontend/src/components/CertificateCanvas.jsx
++++ b/frontend/src/components/CertificateCanvas.jsx
+@@ -81,9 +81,11 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
+                           <CheckCircle size={16} className="text-green-600"/>
+                           <span className="text-gray-700 font-bold text-sm">Score: {score}%</span>
+                       </div>
+-                      <div className="bg-gray-100 px-4 py-2 rounded-md">
+-                          <span className="text-gray-700 font-bold text-sm">Issued: {completionDate}</span>
+-                      </div>
++                      {completionDate ? (
++                        <div className="bg-gray-100 px-4 py-2 rounded-md">
++                            <span className="text-gray-700 font-bold text-sm">Issued: {completionDate}</span>
++                        </div>
++                      ) : null}
+                   </div>
+               </div>
+   
+diff --git a/frontend/src/pages/Certificate.jsx b/frontend/src/pages/Certificate.jsx
+index 3fff4b9b..57b6e2b9 100644
+--- a/frontend/src/pages/Certificate.jsx
++++ b/frontend/src/pages/Certificate.jsx
+@@ -55,7 +55,7 @@ const Certificate = () => {
+ 
+         setData({
+             courseTitle: course?.title || "Unknown Course",
+-            completionDate: enrollRes.data.completion_date || new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
++            completionDate: enrollRes.data.completion_date || '',   // never invent a date: if none was recorded, the certificate shows none
+             score: enrollRes.data.score || 100,
+             certId: enrollRes.data.certificate_id || "PENDING"
+         });
+-- 
+2.43.0
+

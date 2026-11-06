@@ -1,6 +1,31 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- Google Consent Mode v2: everything starts DENIED; the cookie banner (and a saved earlier
+         choice) switches it on. Must run before the Google tags below. -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      (function () {
+        var accepted = false;
+        try { accepted = localStorage.getItem('user_cookie_consent') === 'accepted'; } catch (e) {}
+        gtag('consent', 'default', {
+          ad_storage: 'denied', analytics_storage: 'denied',
+          ad_user_data: 'denied', ad_personalization: 'denied',
+          wait_for_update: 500
+        });
+        gtag('set', 'ads_data_redaction', true);
+        if (accepted) {
+          gtag('consent', 'update', {
+            ad_storage: 'granted', analytics_storage: 'granted',
+            ad_user_data: 'granted', ad_personalization: 'granted'
+          });
+        }
+        window.__achConsentAccepted = accepted;
+      })();
+    </script>
+    <!-- End Consent Mode -->
+
     <!-- Google Tag Manager -->
     <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
     new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
@@ -39,6 +64,7 @@
       t.src=v;s=b.getElementsByTagName(e)[0];
       s.parentNode.insertBefore(t,s)}(window, document,'script',
       'https://connect.facebook.net/en_US/fbevents.js');
+      fbq('consent', window.__achConsentAccepted ? 'grant' : 'revoke');
       fbq('init', '2259649971242079');
       fbq('track', 'PageView');
     </script>

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import Navbar from '../components/Navbar';
 import axios from 'axios';
+import { track } from '../utils/analytics';
 import { Mail, Phone, MapPin, Send, Loader2, CheckCircle } from 'lucide-react';
 import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
@@ -20,6 +21,7 @@ const Contact = () => {
       await axios.post(`${API_BASE_URL}/api/contact`, formData, {
         headers: token ? { Authorization: `Bearer ${token}` } : {}
       });
+      track('contact_submit');
       setSuccess(true);
       setFormData({ firstName: '', email: '', subject: 'General Inquiry', message: '' });
     } catch (error) {

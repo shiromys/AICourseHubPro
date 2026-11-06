@@ -5,6 +5,7 @@ import axios from 'axios';
 import Footer from '../components/Footer';
 import { Check, HelpCircle, Loader2, Zap } from 'lucide-react';
 import API_BASE_URL from '../config';
+import { track, getUtm, rememberCheckoutItem } from '../utils/analytics';
 
 const Pricing = () => {
   document.title = 'Pricing | AICourseHubPro';
@@ -61,10 +62,15 @@ const Pricing = () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+
+      // Analytics: the visitor clicked to buy the bundle.
+      const bundleItem = { item_id: 'bundle', item_name: 'Pro Bundle', price: finalPrice, quantity: 1 };
+      rememberCheckoutItem(bundleItem);
+      track('begin_checkout', { currency: 'USD', value: finalPrice, items: [bundleItem] });
       
       // Call the NEW bundle checkout route
       const res = await axios.post(`${API_BASE_URL}/api/create-bundle-checkout`, 
-        {}, // No specific course_id needed, the backend handles it
+        { utm: getUtm() }, // campaign tags (accepted-cookies visitors only); the backend handles the rest
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
