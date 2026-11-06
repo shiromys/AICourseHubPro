@@ -5,7 +5,6 @@ import { Search, BookOpen, Clock, ChevronRight, Loader2, AlertCircle, ShoppingCa
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
-import useCheckout from '../hooks/useCheckout';
 
 const Courses = () => {
   document.title = 'Courses | AICourseHubPro';
@@ -17,7 +16,6 @@ const Courses = () => {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const { startCheckout, buyingId: buying, checkoutModal } = useCheckout();
 
   const navigate = useNavigate();
   const role = localStorage.getItem('user_role');
@@ -64,16 +62,14 @@ const Courses = () => {
     fetchData();
   }, [isAdmin]);
 
-  const handleCourseAction = async (courseId) => {
-    // NEW: If they are admin OR they already own the course, let them in!
-    if (isAdmin || enrolledCourseIds.includes(courseId)) {
-      navigate(`/courses/${courseId}`); 
-      return;
-    }
+  // Public address of a course's page: /courses/<readable-name> (falls back to the number).
+  const courseUrl = (course) => `/courses/${course.slug || course.id}`;
 
-    // Logged-in users go straight to Stripe; guests are asked for their email first
-    // so the server can refuse the payment if that email already owns the course.
-    startCheckout(courses.find(c => c.id === courseId) || { id: courseId });
+  const handleCourseAction = (courseId) => {
+    // Owners and admins go straight into the course; everyone else sees the course page first
+    // (what is inside, the certificate, the price) and enrols from there.
+    const course = courses.find(c => c.id === courseId);
+    navigate(course ? courseUrl(course) : `/courses/${courseId}`);
   };
 
   // Filter Logic
@@ -153,7 +149,6 @@ const Courses = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {filteredCourses.map(course => {
-              const isBuying = buying === course.id;
               
               // NEW: Determine button state based on enrollment
               const isEnrolled = enrolledCourseIds.includes(course.id);
@@ -172,14 +167,14 @@ const Courses = () => {
                     
                     <h3 
                       className="text-2xl font-bold text-black mb-3 group-hover:text-red-600 transition-colors line-clamp-2 cursor-pointer"
-                      onClick={() => navigate(`/courses/${course.id}`)}
+                      onClick={() => navigate(courseUrl(course))}
                     >
                       {course.title}
                     </h3>
                     
                     <p 
                       className="text-gray-600 text-sm leading-relaxed mb-6 line-clamp-3 cursor-pointer hover:text-gray-800"
-                      onClick={() => navigate(`/courses/${course.id}`)}
+                      onClick={() => navigate(courseUrl(course))}
                     >
                       {course.description || "Master the skills needed to excel in this field with our comprehensive curriculum."}
                     </p>
@@ -199,7 +194,6 @@ const Courses = () => {
                   <div className="p-4 bg-gray-50 border-t border-gray-100">
                      <button 
                        onClick={() => handleCourseAction(course.id)}
-                       disabled={isBuying && !canAccess}
                        className={`flex items-center justify-center gap-2 w-full font-bold py-3 rounded-xl transition-all shadow-md ${
                          canAccess 
                            ? "bg-green-600 hover:bg-green-700 text-white" 
@@ -209,7 +203,7 @@ const Courses = () => {
                        {canAccess ? (
                          <> <BookOpen size={16} /> {isAdmin ? "Review Course" : "Continue Course"} </>
                        ) : (
-                         isBuying ? <Loader2 className="animate-spin" size={16}/> : <> Enroll Now <ChevronRight size={16} /> </>
+                         <> View Course <ChevronRight size={16} /> </>
                        )}
                      </button>
                   </div>
@@ -221,7 +215,6 @@ const Courses = () => {
       </div>
       
       <Footer />
-      {checkoutModal}
     </div>
   );
 };

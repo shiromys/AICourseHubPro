@@ -17,3 +17,7 @@ body {
   background-color: var(--bg-light-red);
   color: var(--text-black);
 }
+/* On phones the course page has a sticky Enroll bar along the bottom; lift the chat bubble above it. */
+@media (max-width: 767px) {
+  body.has-sticky-cta .chat-widget { bottom: 5.5rem !important; }
+}

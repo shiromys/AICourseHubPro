@@ -1076,6 +1076,41 @@ def restore_user(user_id):
 # 6. COURSE ROUTES
 # ==========================================
 
+# Readable public addresses for the course pages (/courses/<slug>). Matched by title so the new
+# versions of the courses (same titles) keep the same address. Any other course gets a slug made
+# from its title.
+COURSE_SLUGS = {
+    'promptengineeringfornonprofitsandsocialimpact': 'ai-for-nonprofits',
+    'promptbasedaiforlocalgovernmentandpublicservices': 'ai-for-local-government',
+    'aiforhumanresourcestalentpeopleopsviaprompts': 'ai-for-hr',
+    'promptbasedanalyticsandreportsforbusiness': 'ai-for-business-analytics',
+    'promptingforautomationandworkflowefficiency': 'ai-for-workflow-automation',
+    'promptbasedtoolsforeducationandlearning': 'ai-for-education',
+}
+
+
+def _course_slug(course):
+    key = _norm_title(course.title)
+    if key in COURSE_SLUGS:
+        return COURSE_SLUGS[key]
+    slug = re.sub(r'[^a-z0-9]+', '-', str(course.title or '').lower().replace('&', 'and')).strip('-')[:60].strip('-')
+    return slug or f'course-{course.id}'
+
+
+def _course_slugs(courses):
+    """{course id: unique slug}. A retired version never takes the address of the course that
+    replaced it (it gets '-previous'); any other clash gets the course id added."""
+    out, used = {}, set()
+    for c in sorted(courses, key=lambda x: x.id):
+        base = _course_slug(c)
+        slug = base + '-previous' if c.is_legacy else base
+        if slug in used:
+            slug = f'{slug}-{c.id}'
+        used.add(slug)
+        out[c.id] = slug
+    return out
+
+
 def outline_modules(modules):
     """What the public may see: module and lesson titles only. No lesson text, no quiz, no answers."""
     return [{"title": m.get('title'),
@@ -1115,6 +1150,7 @@ def get_courses():
         courses = Course.query.filter((Course.is_deleted == False) | (Course.is_deleted == None)).all()
         # A retired course is shown only to the people who own it (and to admins).
         mine = {e.course_id: e for e in Enrollment.query.filter_by(user_id=viewer.id).all()} if viewer and not is_admin else {}
+        slugs = _course_slugs(courses)
         output = []
         for c in courses:
             legacy = bool(c.is_legacy)
@@ -1122,7 +1158,7 @@ def get_courses():
                 continue
             mods = c.course_data.get('modules', []) if c.course_data else []
             item = {
-                'id': c.id, 'title': c.title, 'description': c.description,
+                'id': c.id, 'slug': slugs.get(c.id), 'title': c.title, 'description': c.description,
                 'price': c.price, 'category': c.category,
                 'modules': mods if is_admin else outline_modules(mods),
                 'legacy': legacy,
@@ -1583,7 +1619,7 @@ def create_checkout_session():
             mode='payment',
             success_url=f"{DOMAIN}/payment-success?session_id={{CHECKOUT_SESSION_ID}}&course_id={course.id}&amount={course.price}&price_id={price_id or ''}&guest={'false' if user_id else 'true'}",
             cancel_url=f"{DOMAIN}/courses",
-            metadata={"course_id": str(course.id), **_utm_metadata(data)},
+            metadata={"course_id": str(course.id), "course_slug": _course_slug(course), **_utm_metadata(data)},
         )
 
         if user_id:

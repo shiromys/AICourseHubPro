@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import NewsletterSignup from '../components/NewsletterSignup';
+import { Helmet } from 'react-helmet-async';
 
 const Home = () => {
   document.title = 'AICourseHubPro | Master AI for Your Career';
@@ -57,7 +58,7 @@ const Home = () => {
     const keyword = Object.entries(nicheKeywords).find(([k]) => nicheTitle.includes(k))?.[1];
     if (!keyword) return '/courses';
     const match = courses.find(c => c.title?.toLowerCase().includes(keyword.toLowerCase()));
-    return match ? `/courses/${match.id}` : '/courses';
+    return match ? `/courses/${match.slug || match.id}` : '/courses';
   };
 
   const toggleFaq = (index) => {
@@ -91,7 +92,9 @@ const Home = () => {
   }, [charIndex, isDeleting, textIndex]);
 
   return (
-    <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">      <Navbar />
+    <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
+      <Helmet><link rel="canonical" href="https://www.aicoursehubpro.com/" /></Helmet>
+      <Navbar />
 
       {/* ================= 1. HERO SECTION (GREY TO BLACK GRADIENT) ================= */}
       <div className="relative bg-gradient-to-b from-gray-800 to-black text-white pt-36 pb-24 overflow-hidden">

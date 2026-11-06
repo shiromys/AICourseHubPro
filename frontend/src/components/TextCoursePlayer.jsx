@@ -5,8 +5,10 @@ import { ChevronLeft, CheckCircle, PlayCircle, FileText, Menu, BookOpen, Award, 
 import API_BASE_URL from '../config';
 import RoleplayLesson from './RoleplayLesson'; // <--- IMPORTED HERE
 
-const TextCoursePlayer = () => {
-  const { id } = useParams();
+const TextCoursePlayer = ({ courseId } = {}) => {
+  // The course page passes the numeric id (its address may be the readable name, e.g. /courses/ai-for-hr).
+  const params = useParams();
+  const id = courseId ?? params.id;
   const navigate = useNavigate();
   const [course, setCourse] = useState(null);
   const [loading, setLoading] = useState(true);

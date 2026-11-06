@@ -11,6 +11,7 @@ const PaymentSuccess = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [status, setStatus] = useState('verifying'); // verifying, success, error
+  const [boughtTitle, setBoughtTitle] = useState('');
   
   // Extract data from URL (sent by Backend during Stripe redirect)
   const sessionId = searchParams.get('session_id');
@@ -50,6 +51,7 @@ const PaymentSuccess = () => {
         if (!isDuplicate) {
           const itemId = isBundle ? 'bundle' : courseId;
           const remembered = recallCheckoutItem(itemId);
+          if (!isBundle && remembered?.item_name) setBoughtTitle(remembered.item_name);
           const item = {
             item_id: String(itemId),
             item_name: isBundle ? 'Pro Bundle' : (remembered?.item_name || 'Course ' + courseId),
@@ -75,6 +77,14 @@ const PaymentSuccess = () => {
           if (res.data.status === 'guest_enrolled') {
             trackOnce(`signup_${sessionId}`, 'sign_up', { method: 'checkout' });
           }
+        }
+
+        if (!isBundle && courseId) {
+          // If this browser did not remember the course name, look it up so the page can show it.
+          axios.get(`${API_BASE_URL}/api/courses`).then((r) => {
+            const c = (Array.isArray(r.data) ? r.data : []).find((x) => String(x.id) === String(courseId));
+            if (c?.title) setBoughtTitle((t) => t || c.title);
+          }).catch(() => {});
         }
 
         const resultStatus = res.data.status;
@@ -112,14 +122,12 @@ const PaymentSuccess = () => {
           localStorage.setItem('user_name', res.data.name);
           localStorage.setItem('user_role', 'student');
           localStorage.setItem('account_setup_complete', 'false');
-          setStatus('success');
-          setTimeout(() => navigate(courseId ? `/courses/${courseId}` : '/dashboard'), 2500);
+          setStatus('success');   // the confirmation page stays: what they bought + a link into the course
           return;
         }
 
         // Logged-in user, normal flow (existing behavior, unchanged)
-        setStatus('success');
-        setTimeout(() => navigate('/dashboard'), 3000);
+        setStatus('success');   // the confirmation page stays: what they bought + a link into the course
 
       } catch (error) {
         console.error("Payment verification failed:", error);
@@ -148,11 +156,24 @@ const PaymentSuccess = () => {
               <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-6" />
               <h2 className="text-2xl font-bold mb-2 text-green-500">Payment Successful!</h2>
               <p className="text-gray-400 mb-6">
-                {isBundle ? "You have unlocked all courses!" : "You have been enrolled in the course."}
+                {isBundle
+                  ? "You have unlocked all courses!"
+                  : <>You have been enrolled in <strong className="text-white">{boughtTitle || 'your course'}</strong>.</>}
               </p>
-              <button 
+              {!isBundle && courseId && (
+                <button
+                  onClick={() => navigate(`/courses/${courseId}`)}
+                  data-testid="start-course"
+                  className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full mb-3"
+                >
+                  Start the course
+                </button>
+              )}
+              <button
                 onClick={() => navigate('/dashboard')}
-                className="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
+                className={isBundle || !courseId
+                  ? "bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition-colors w-full"
+                  : "bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold py-3 px-6 rounded-lg transition-colors w-full"}
               >
                 Go to Dashboard
               </button>
