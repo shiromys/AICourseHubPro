@@ -1,0 +1,13 @@
+diff --git a/frontend/vite.config.js b/frontend/vite.config.js
+index 1a1af88b..8ac5b111 100644
+--- a/frontend/vite.config.js
++++ b/frontend/vite.config.js
+@@ -86,6 +86,8 @@ export default defineConfig(({ mode }) => {
+         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+         // the saved article pages are for search engines and first visits; do not make every visitor download them all
+         globIgnores: ['blog/*/index.html'],
++        // typing these addresses in the browser must show the real file, not the app's home page
++        navigateFallbackDenylist: [/^\/blog-data\//, /^\/sitemap\.xml$/, /^\/api\//],
+         // Network-first for API calls — never serve stale data
+         runtimeCaching: [
+           {
