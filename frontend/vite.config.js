@@ -84,6 +84,8 @@ export default defineConfig(({ mode }) => {
       workbox: {
         // Cache the app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        // the saved article pages are for search engines and first visits; do not make every visitor download them all
+        globIgnores: ['blog/*/index.html'],
         // Network-first for API calls — never serve stale data
         runtimeCaching: [
           {

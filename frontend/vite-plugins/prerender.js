@@ -9,12 +9,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { fetchHashnodePosts } from './hashnode.js';
 
 const escAttr = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const escText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const SNAPSHOT_CSS = '.seo-snapshot{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:46rem;margin:0 auto;padding:4rem 1.25rem;line-height:1.6;color:#e5e7eb;background:#000;min-height:100vh}.seo-snapshot a{color:#f87171}.seo-snapshot ul,.seo-snapshot ol{padding-left:1.25rem}.seo-snapshot nav ul{list-style:none;display:flex;gap:1rem;flex-wrap:wrap;padding:0}';
+
+// /<slug> -> /blog/<slug>; the blog home and anything else (tags, feeds...) -> /blog
+const oldBlogTarget = (url) => {
+  const p = String(url).split('?')[0].split('#')[0];
+  const m = /^\/([a-z0-9][a-z0-9-]*)\/?$/i.exec(p);
+  if (!m || ['rss.xml', 'sitemap.xml', 'series', 'badge', 'archive', 'newsletter', 'search'].includes(m[1].toLowerCase())) return '/blog';
+  return '/blog/' + m[1];
+};
 
 export default function prerender({ apiUrl } = {}) {
   let outDir = '';
@@ -26,6 +35,15 @@ export default function prerender({ apiUrl } = {}) {
     configurePreviewServer(server) {
       server.middlewares.use((req, res, next) => {
         try {
+          // The old blog address (blog.aicoursehubpro.com) forwards permanently to the same article on www.
+          const hostHeader = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim().toLowerCase().replace(/:\d+$/, '');
+          if (hostHeader === 'blog.aicoursehubpro.com') {
+            const dest = 'https://www.aicoursehubpro.com' + oldBlogTarget(req.url || '/');
+            res.statusCode = 301;
+            res.setHeader('Location', dest);
+            res.setHeader('Cache-Control', 'public, max-age=86400');
+            return res.end();
+          }
           if (req.method !== 'GET' && req.method !== 'HEAD') return next();
           const u = (req.url || '').split('?')[0];
           if (u === '/' || u.includes('..') || path.extname(u)) return next();
@@ -93,7 +111,9 @@ async function run(outDir, apiUrl) {
   const metaMod = await import(pathToFileURL(path.resolve('src/seo/meta.js')).href);
   const snapMod = await import(pathToFileURL(path.resolve('src/seo/snapshot.js')).href);
   const { PAGES, NOINDEX_PAGES, COURSE_SEO_TITLES, COURSE_PAGES_LASTMOD, SITE_URL, metaForStaticPath, metaForCourse, buildHead } = metaMod;
-  const { snapshotFor, courseSnapshot } = snapMod;
+  const { snapshotFor, courseSnapshot, postSnapshot } = snapMod;
+  const blogMod = await import(pathToFileURL(path.resolve('src/seo/blog.js')).href);
+  const { mergeBlogIndex, metaForPost, cleanPostHtml } = blogMod;
 
   const indexPath = path.join(outDir, 'index.html');
   const template = fs.readFileSync(indexPath, 'utf8');
@@ -104,6 +124,15 @@ async function run(outDir, apiUrl) {
   const withSlug = courses.filter((c) => c.slug);
   if (courses.length && withSlug.length !== courses.length) console.warn('[prerender] some courses have no slug (backend not updated yet?); they are skipped');
 
+  // the blog: article text comes from Hashnode while the site is built
+  let posts = [];
+  let blogSource = 'Hashnode';
+  try { posts = await fetchHashnodePosts(); if (!posts.length) throw new Error('Hashnode returned no posts'); } catch (e) { posts = []; blogSource = 'none'; console.warn(`[prerender] BLOG NOT SAVED: ${e.message}. /blog keeps linking to the old blog address until a build can read Hashnode.`); }
+  posts = posts.filter((p) => /^[a-z0-9][a-z0-9-]*$/i.test(p.slug)).map((p) => ({ ...p, html: cleanPostHtml(p.html) }));
+  const baked = posts.length > 0;
+  const blogEntries = mergeBlogIndex(baked ? posts : null);
+  if (baked) { const { BLOG_ARTICLES } = await import(pathToFileURL(path.resolve('src/content/blogPosts.js')).href); const have = new Set(posts.map((p) => p.slug)); const missing = BLOG_ARTICLES.filter((a) => !have.has(a.slug)).map((a) => a.slug); if (missing.length) console.warn(`[prerender] ${missing.length} article(s) listed in blogPosts.js were not found on Hashnode and are left out: ${missing.join(', ')}`); }
+
   const write = (urlPath, html) => {
     const file = urlPath === '/' ? indexPath : path.join(outDir, urlPath.replace(/^\//, ''), 'index.html');
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -112,7 +141,7 @@ async function run(outDir, apiUrl) {
 
   // public pages
   for (const p of Object.keys(PAGES)) {
-    write(p, render(template, metaForStaticPath(p), snapshotFor(p, withSlug), p, buildHead));
+    write(p, render(template, metaForStaticPath(p), snapshotFor(p, withSlug, { entries: blogEntries, baked }), p, buildHead));
   }
   // pages that must stay out of search: head only
   for (const p of Object.keys(NOINDEX_PAGES)) {
@@ -123,14 +152,34 @@ async function run(outDir, apiUrl) {
     write(`/courses/${c.slug}`, render(template, metaForCourse(c), courseSnapshot(c, withSlug), `/courses/${c.slug}`, buildHead));
   }
 
+  // blog articles: a saved page and a small data file each, plus the list
+  fs.mkdirSync(path.join(outDir, 'blog-data'), { recursive: true });
+  fs.writeFileSync(path.join(outDir, 'blog-data', 'index.json'), JSON.stringify({ baked, entries: blogEntries }));
+  if (baked) {
+    for (const post of posts) {
+      const entry = blogEntries.find((e) => e.slug === post.slug);
+      if (!entry) continue;
+      write(`/blog/${post.slug}`, render(template, metaForPost(entry, post), postSnapshot(entry, post, withSlug), `/blog/${post.slug}`, buildHead));
+      fs.writeFileSync(path.join(outDir, 'blog-data', `${post.slug}.json`), JSON.stringify({ ...post, date: entry.date, iso: entry.iso }));
+    }
+  }
+
   // sitemap
   const urls = Object.entries(PAGES).map(([p, v]) => ({ loc: SITE_URL + (p === '/' ? '/' : p), lastmod: v.lastmod, changefreq: v.changefreq, priority: v.priority }));
   const slugs = withSlug.length ? withSlug.map((c) => c.slug) : Object.keys(COURSE_SEO_TITLES);
   for (const s of slugs) urls.push({ loc: `${SITE_URL}/courses/${s}`, lastmod: COURSE_PAGES_LASTMOD, changefreq: 'monthly', priority: '0.8' });
+  if (baked) {
+    for (const post of posts) {
+      const e = blogEntries.find((x) => x.slug === post.slug);
+      if (!e) continue;
+      const lm = String(post.updatedAt || post.publishedAt || e.iso || '').slice(0, 10);
+      urls.push({ loc: `${SITE_URL}/blog/${post.slug}`, lastmod: /^\d{4}-\d{2}-\d{2}$/.test(lm) ? lm : COURSE_PAGES_LASTMOD, changefreq: 'monthly', priority: '0.6' });
+    }
+  }
   const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
     urls.map((u) => `  <url>\n    <loc>${xmlEsc(u.loc)}</loc>\n    <lastmod>${u.lastmod}</lastmod>\n    <changefreq>${u.changefreq}</changefreq>\n    <priority>${u.priority}</priority>\n  </url>`).join('\n') +
     `\n</urlset>\n`;
   fs.writeFileSync(path.join(outDir, 'sitemap.xml'), xml);
 
-  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses`);
+  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses; blog: ${baked ? posts.length + ' articles saved (source: ' + blogSource + ')' : 'not saved'}`);
 }

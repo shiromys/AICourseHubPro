@@ -1,210 +1,15 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { BLOG_ARTICLES, BLOG_CATEGORIES } from '../content/blogPosts.js';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { ArrowUpRight, Clock, Tag, Search, Rss } from 'lucide-react';
 
-// ─────────────────────────────────────────────
-//  ARTICLES — Add a new entry here every time
-//  you publish on Hashnode. Takes 2 minutes.
-// ─────────────────────────────────────────────
-const HASHNODE_BASE = 'https://blog.aicoursehubpro.com';
+// The article list lives in content/blogPosts.js. At build time the site also saves /blog-data/index.json
+// (the full list, including posts published on Hashnode that are not listed in that file).
+const OLD_BLOG = 'https://blog.aicoursehubpro.com';
 
-const articles = [
-  {
-    id: 1,
-    title: '5 AI Trends Shaping the Future of Work in 2026',
-    excerpt: 'AI is reshaping hiring, HR, and the workweek. Here are the 5 trends every professional in HR, business and beyond needs to understand right now.',
-    category: 'Industry News',
-    readTime: '6 min read',
-    date: 'May 7, 2026',
-    slug: '5-ai-trends-future-of-work-2026',
-    featured: true,
-  },
-  {
-    id: 2,
-    title: 'How to Use AI in Your Daily Workflow (Without Feeling Overwhelmed)',
-    excerpt: 'AI is most useful not in some distant future, but in the ordinary moments of your workday. A practical, no-fluff guide to getting started today.',
-    category: 'How-To',
-    readTime: '6 min read',
-    date: 'May 14, 2026',
-    slug: 'how-to-use-ai-in-your-daily-workflow-without-feeling-overwhelmed',
-    featured: false,
-  },
-  {
-    id: 3,
-    title: "We're Launching on Product Hunt — And Here's Why We Built AICourseHubPro",
-    excerpt: 'Today is a big day for us. AICourseHubPro is officially live on Product Hunt. Here is the story behind why we built it and what makes it different.',
-    category: 'Industry News',
-    readTime: '5 min read',
-    date: 'May 21, 2026',
-    slug: 'we-re-launching-on-product-hunt-and-here-s-why-we-built-aicoursehubpro',
-    featured: false,
-  },
-  {
-    id: 4,
-    title: 'How AI Is Changing the Way Businesses Use Data (And What You Need to Know)',
-    excerpt: 'AI is making business analytics accessible to every professional — not just data teams. Here is what is changing and the skill you need to keep up.',
-    category: 'Career Growth',
-    readTime: '7 min read',
-    date: 'Jun 3, 2026',
-    slug: 'how-ai-is-changing-business-data-analytics',
-    featured: false,
-  },
-  {
-    id: 5,
-    title: 'How Non-Profits and Social Impact Organisations Can Use AI to Do More With Less',
-    excerpt: 'AI tools are helping non-profits save hours on grant writing, donor communications, and reporting. Here is how social impact teams can put them to work.',
-    category: 'How-To',
-    readTime: '6 min read',
-    date: 'Jun 5, 2026',
-    slug: 'how-non-profits-can-use-ai-to-do-more-with-less',
-    featured: false,
-  },
-  {
-    id: 6,
-    title: 'How AI Is Helping Local Governments Do More With Limited Resources',
-    excerpt: 'AI tools are helping local governments save time on citizen communication, reporting, and grant writing — without compromising accountability.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Jun 9, 2026',
-    slug: 'how-ai-helps-local-governments-public-services',
-    featured: false,
-  },
-  {
-    id: 7,
-    title: 'How AI Prompting Is Transforming Workflow Automation for Modern Professionals',
-    excerpt: 'AI prompting is making workflow automation accessible to every professional — no coding needed. Here are 5 high-impact workflows you can automate today.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Jul 7, 2026',
-    slug: 'ai-prompting-workflow-automation-efficiency',
-    featured: false,
-  },
-  {
-    id: 8,
-    title: 'How HR Professionals Can Use AI to Transform Every Stage of the Employee Lifecycle',
-    excerpt: 'From recruitment to offboarding, AI is changing what is possible for HR teams of every size. Here is how to put it to work across the full employee journey.',
-    category: 'AI in HR',
-    readTime: '8 min read',
-    date: 'Jul 14, 2026',
-    slug: 'how-hr-professionals-can-use-ai-employee-lifecycle',
-    featured: false,
-  },
-  {
-    id: 9,
-    title: 'How Educators and L&D Professionals Can Use AI to Design Better Learning Experiences',
-    excerpt: 'AI is giving educators and learning designers tools that were previously out of reach. Here is how to use them to create learning that actually works.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Jul 21, 2026',
-    slug: 'how-educators-ld-professionals-use-ai-learning-design',
-    featured: false,
-  },
-  {
-    id: 10,
-    title: "The Business Professional's Guide to AI-Powered Reporting and Analysis",
-    excerpt: 'AI is making it possible for any business professional to produce the kind of analysis that used to require a data team. Here is where to start.',
-    category: 'Career Growth',
-    readTime: '7 min read',
-    date: 'Jul 28, 2026',
-    slug: 'business-guide-ai-powered-reporting-analysis',
-    featured: false,
-  },
-  {
-    id: 11,
-    title: 'How Non-Profits Can Use AI to Raise More Money and Build Stronger Donor Relationships',
-    excerpt: 'AI is helping non-profit fundraising teams work smarter — from donor research to personalised outreach to grant writing. Here is how to use it.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Aug 4, 2026',
-    slug: 'non-profits-ai-fundraising-donor-relationships',
-    featured: false,
-  },
-  {
-    id: 12,
-    title: 'How Local Government Teams Can Use AI to Improve Citizen Services and Public Communication',
-    excerpt: 'AI is helping local government teams respond faster, communicate more clearly, and deliver better services — without additional headcount.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Aug 11, 2026',
-    slug: 'local-government-ai-citizen-services-public-communication',
-    featured: false,
-  },
-  {
-    id: 13,
-    title: 'How AI Is Transforming Policy Research and Decision-Making in Local Government',
-    excerpt: 'AI tools are helping policy teams analyse more evidence, faster — and produce clearer recommendations. Here is what that looks like in practice.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Aug 18, 2026',
-    slug: 'ai-policy-research-decision-making-local-government',
-    featured: false,
-  },
-  {
-    id: 14,
-    title: 'How Non-Profits Can Use AI to Design Better Programmes and Measure Real Impact',
-    excerpt: 'AI is helping non-profit programme teams move from gut feel to evidence — in programme design, delivery, and impact reporting.',
-    category: 'How-To',
-    readTime: '7 min read',
-    date: 'Sep 1, 2026',
-    slug: 'non-profits-ai-program-design-impact-measurement',
-    featured: false,
-  },
-  {
-    id: 15,
-    title: 'How to Build a Personal Prompt System That Saves Hours Every Week',
-    excerpt: 'A well-designed personal prompt system is one of the highest-return productivity investments you can make. Here is how to build one that actually sticks.',
-    category: 'How-To',
-    readTime: '6 min read',
-    date: 'Sep 8, 2026',
-    slug: 'how-to-build-a-personal-prompt-system-that-saves-hours-every-week',
-    featured: false,
-  },
-  {
-    id: 16,
-    title: 'How AI Is Making Personalised Learning Possible for Every Student',
-    excerpt: 'Personalised learning has been the goal of education for decades. AI is finally making it achievable — and not just in well-resourced schools.',
-    category: 'Industry News',
-    readTime: '7 min read',
-    date: 'Sep 15, 2026',
-    slug: 'ai-personalized-learning-every-student',
-    featured: false,
-  },
-  {
-    id: 17,
-    title: 'Why Your AICourseHubPro Certificate Is More Than Just a PDF',
-    excerpt: 'A certificate is only as valuable as what it represents. Here is what goes into earning one at AICourseHubPro — and why employers are starting to take notice.',
-    category: 'Career Growth',
-    readTime: '5 min read',
-    date: 'Sep 22, 2026',
-    slug: 'why-your-aicoursehubpro-certificate-is-more-than-just-a-pdf',
-    featured: false,
-  },
-  {
-    id: 18,
-    title: 'How AI Is Transforming Recruitment — What HR Teams Need to Do Now',
-    excerpt: 'AI has moved from the periphery of recruitment to the centre of it. Here is what has changed across sourcing, screening, and interviewing — and five things HR teams should be doing now.',
-    category: 'AI in HR',
-    readTime: '8 min read',
-    date: 'Oct 13, 2026',
-    slug: 'how-ai-is-transforming-recruitment-what-hr-teams-need-to-do-now',
-    featured: false,
-  },
-  {
-    id: 19,
-    title: 'The AI Skills Employers Will Be Looking For in 2027',
-    excerpt: 'AI proficiency is becoming a hiring filter, not a differentiator. Here are the five skills employers will expect from every professional by 2027.',
-    category: 'Career Growth',
-    readTime: '7 min read',
-    date: 'Oct 20, 2026',
-    slug: 'ai-skills-employers-looking-for-2027',
-    featured: false,
-  },
-  // ── Add new articles below this line ──────
-];
-
-const CATEGORIES = ['All', 'Beginner Guide', 'AI in HR', 'Career Growth', 'How-To', 'Industry News'];
+const toCard = (a) => ({ ...a, excerpt: a.excerpt, readTime: a.readTime });
 
 const categoryColors = {
   'Beginner Guide': 'bg-blue-100 text-blue-700',
@@ -221,11 +26,15 @@ const Badge = ({ category }) => (
   </span>
 );
 
-const FeaturedCard = ({ article }) => (
-  <a
-    href={`${HASHNODE_BASE}/${article.slug}`}
-    target="_blank"
-    rel="noopener noreferrer"
+// Opens the article on this site; only if the saved articles are missing from this build does it fall back to the old address.
+const PostLink = ({ article, baked, className, children }) => (
+  baked
+    ? <Link to={`/blog/${article.slug}`} className={className}>{children}</Link>
+    : <a href={`${OLD_BLOG}/${article.slug}`} target="_blank" rel="noopener noreferrer" className={className}>{children}</a>
+);
+
+const FeaturedCard = ({ article, baked }) => (
+  <PostLink article={article} baked={baked}
     className="group block relative bg-gradient-to-br from-gray-900 via-gray-800 to-black rounded-2xl p-8 md:p-12 border border-gray-700 hover:border-red-600 transition-all duration-300 overflow-hidden"
   >
     <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-red-900/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 pointer-events-none" />
@@ -252,14 +61,11 @@ const FeaturedCard = ({ article }) => (
         </div>
       </div>
     </div>
-  </a>
+  </PostLink>
 );
 
-const ArticleCard = ({ article }) => (
-  <a
-    href={`${HASHNODE_BASE}/${article.slug}`}
-    target="_blank"
-    rel="noopener noreferrer"
+const ArticleCard = ({ article, baked }) => (
+  <PostLink article={article} baked={baked}
     className="group flex flex-col bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-red-600 hover:-translate-y-1 transition-all duration-300"
   >
     <div className="flex items-center justify-between mb-4">
@@ -273,7 +79,7 @@ const ArticleCard = ({ article }) => (
       <span className="w-1 h-1 bg-gray-300 rounded-full" />
       <span>{article.date}</span>
     </div>
-  </a>
+  </PostLink>
 );
 
 const EmptyState = ({ query }) => (
@@ -292,6 +98,23 @@ const Blog = () => {
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Start from the list in this file; replace it with the saved full list (newest first) once it loads.
+  const [articles, setArticles] = useState(BLOG_ARTICLES.map(toCard));
+  const [baked, setBaked] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/blog-data/index.json', { headers: { Accept: 'application/json' } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (cancelled || !d || !Array.isArray(d.entries) || !d.entries.length) return;
+        setBaked(!!d.baked);
+        setArticles(d.entries.map((e, i) => ({ id: i + 1, ...e })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const CATEGORIES = BLOG_CATEGORIES;
 
   const featured = articles.find(a => a.featured);
   const rest = articles.filter(a => !a.featured);
@@ -357,7 +180,7 @@ const Blog = () => {
 
       <div className="container mx-auto px-6 py-16">
         {featured && !searchQuery && activeCategory === 'All' && (
-          <div className="mb-16"><FeaturedCard article={featured} /></div>
+          <div className="mb-16"><FeaturedCard article={featured} baked={baked} /></div>
         )}
 
         <div className="flex flex-wrap gap-3 mb-10">
@@ -374,7 +197,7 @@ const Blog = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.length > 0
-            ? filtered.map(article => <ArticleCard key={article.id} article={article} />)
+            ? filtered.map(article => <ArticleCard key={article.slug} article={article} baked={baked} />)
             : (searchQuery || activeCategory !== 'All') && <EmptyState query={searchQuery} />
           }
         </div>

@@ -5,6 +5,7 @@
 // meta.js / courseMarketing.js.
 import { marketingFor } from '../content/courseMarketing.js';
 import { ORGANIZATION, SITE_URL, courseFaq, courseUrl, PAGES } from './meta.js';
+import { blogPath, relatedCourseSlug, COURSE_LABELS, cleanPostHtml } from './blog.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const a = (href, text) => `<a href="${esc(href)}">${esc(text)}</a>`;
@@ -26,7 +27,37 @@ ${main}
 
 const courseList = (courses, heading = 'h2') => `<ul>${courses.map((c) => li(`<${heading}>${a(courseUrl(c), c.title)}</${heading}><p>${esc(c.description)}</p><p>${(c.modules || []).length} modules · $${esc(c.price)} · lifetime access · certificate of completion</p>`)).join('')}</ul>`;
 
-export function snapshotFor(path, courses) {
+// entries: the merged post list (see mergeBlogIndex); baked: whether the article pages exist on this site
+const blogIndexMain = (blog) => {
+  const entries = (blog && blog.entries) || [];
+  const baked = !!(blog && blog.baked);
+  const list = entries.length
+    ? `<ul>${entries.map((e) => li(`<h2>${a(baked ? blogPath(e.slug) : `https://blog.aicoursehubpro.com/${e.slug}`, e.title)}</h2><p>${esc(e.excerpt)}</p><p>${esc(e.category)} · ${esc(e.date)}${e.readTime ? ' · ' + esc(e.readTime) : ''}</p>`)).join('')}</ul>`
+    : `<p>${a('https://blog.aicoursehubpro.com', 'Read the latest articles')}</p>`;
+  return `<h1>Blog: AI Insights and Career Tips</h1>
+<p>Practical AI tips, career insights, and industry guides for professionals in HR, business, and beyond.</p>
+${list}`;
+};
+
+// One article. post = { title, html, author, publishedAt, ... }; entry = a merged-index entry.
+export function postSnapshot(entry, post, courses) {
+  const list = Array.isArray(courses) ? courses : [];
+  const slug = relatedCourseSlug({ ...entry, tags: post.tags });
+  const course = slug ? list.find((c) => c.slug === slug) : null;
+  const related = slug
+    ? `<aside><h2>Related course</h2><p>${a(`/courses/${slug}`, course ? course.title : COURSE_LABELS[slug])}: ${esc(course ? course.description : 'a practical, prompt-based course with a certificate of completion.')}</p></aside>`
+    : `<aside><h2>Go deeper</h2><p>${a('/courses', 'Browse all six AI courses')}</p></aside>`;
+  return frame(`<nav aria-label="Breadcrumb">${a('/', 'Home')} › ${a('/blog', 'Blog')} › ${esc(entry.title)}</nav>
+<article>
+<h1>${esc(entry.title)}</h1>
+<p>${post.author ? 'By ' + esc(post.author) + ' · ' : ''}<time datetime="${esc(post.publishedAt || entry.iso || '')}">${esc(entry.date)}</time>${entry.readTime ? ' · ' + esc(entry.readTime) : ''}</p>
+${cleanPostHtml(post.html)}
+</article>
+${related}
+<p>${a('/blog', 'All articles')} · ${a('/courses', 'All courses')} · ${a('/pricing', 'Pricing')}</p>`, list);
+}
+
+export function snapshotFor(path, courses, blog) {
   const list = Array.isArray(courses) ? courses : [];
   let main = '';
   switch (path) {
@@ -53,9 +84,7 @@ ${courseList(list)}`;
 <p>${a('/courses', 'See the courses')} · ${a('/refund-policy', 'Refund Policy')}</p>`;
       break;
     case '/blog':
-      main = `<h1>Blog: AI Insights and Career Tips</h1>
-<p>Practical AI tips, career insights, and industry guides for professionals in HR, business, and beyond.</p>
-<p>${a('https://blog.aicoursehubpro.com', 'Read the latest articles')}</p>`;
+      main = blogIndexMain(blog);
       break;
     case '/contact':
       main = `<h1>Get in touch</h1>

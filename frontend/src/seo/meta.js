@@ -217,7 +217,7 @@ export const buildHead = (meta) => {
     add('og-url', 'meta', 'meta[property="og:url"]', { property: 'og:url', content: url });
   }
   if (!meta.noindex && meta.description) {
-    add('og-type', 'meta', 'meta[property="og:type"]', { property: 'og:type', content: 'website' });
+    add('og-type', 'meta', 'meta[property="og:type"]', { property: 'og:type', content: meta.ogType || 'website' });
     add('og-site', 'meta', 'meta[property="og:site_name"]', { property: 'og:site_name', content: SITE_NAME });
     add('og-title', 'meta', 'meta[property="og:title"]', { property: 'og:title', content: meta.title });
     add('og-desc', 'meta', 'meta[property="og:description"]', { property: 'og:description', content: meta.description });
