@@ -324,7 +324,7 @@ def add_cors_headers(response):
 # 2. HELPER FUNCTIONS
 # ==========================================
 
-def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com", headers=None):
+def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", sender_email="info@aicoursehubpro.com", headers=None, reply_to=None):
     try:
         params = {
             "from": f"{sender_name} <{sender_email}>", 
@@ -334,6 +334,8 @@ def send_email(to_email, subject, html_content, sender_name="AICourseHubPro", se
         }
         if headers:
             params["headers"] = headers  # e.g. List-Unsubscribe for newsletters
+        if reply_to:
+            params["reply_to"] = reply_to  # where "Reply" goes (e.g. the person who wrote on the contact form)
         r = resend.Emails.send(params)
         print(f"--- EMAIL SUCCESS: Sent to {to_email} ---", flush=True)
         return True
@@ -508,12 +510,23 @@ def contact_form():
     db.session.add(new_msg)
     db.session.commit()
 
-    admin_html = f"<h3>From: {name} ({user_email})</h3><p>{message}</p>"
+    # Escape what the visitor typed so it cannot inject markup into our inbox.
+    safe_name = html_lib.escape(str(name or 'User'))
+    safe_email = html_lib.escape(str(user_email or ''))
+    safe_subject = html_lib.escape(str(subject or ''))
+    safe_message = html_lib.escape(str(message or '')).replace('\n', '<br>')
+    admin_html = f"<h3>From: {safe_name} ({safe_email})</h3><p><strong>Subject:</strong> {safe_subject}</p><p>{safe_message}</p>"
+    # Reply-To = the visitor, so pressing Reply in the inbox answers them (only when the address looks valid).
+    visitor = user_email.strip() if isinstance(user_email, str) and re.fullmatch(r"[^@\s<>,;]+@[^@\s<>,;]+\.[^@\s<>,;]+", user_email.strip()) else None
+    reply_to = None
+    if visitor:
+        label = re.sub(r'[<>,"\r\n]+', ' ', str(name or '')).strip()[:60] or 'Visitor'
+        reply_to = label + ' <' + visitor + '>'
     # FIXED: Send directly to the real inbox to bypass Dynadot forwarder spam blocks
-    send_email("support@shirotechnologies.com", f"New Inquiry: {subject}", admin_html, "Contact Form", "no-reply@aicoursehubpro.com")
-    
-    user_html = f"<p>Hi {name}, we received your message regarding '{subject}'. We will get back to you shortly.</p>"
-    send_email(user_email, "We received your message", get_email_template("Message Received", user_html))
+    send_email("support@shirotechnologies.com", "New Inquiry: " + re.sub(r'[\r\n]+', ' ', str(subject or ''))[:150], admin_html, "Contact Form", "no-reply@aicoursehubpro.com", reply_to=reply_to)
+
+    user_html = f"<p>Hi {safe_name}, we received your message regarding '{safe_subject}'. We will get back to you shortly.</p>"
+    send_email(user_email, "We received your message", get_email_template("Message Received", user_html), reply_to="support@shirotechnologies.com")
 
     return jsonify({"msg": "Message sent"}), 200
 
