@@ -28,9 +28,13 @@ async function ask(endpoint, query, variables) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }), signal: ctrl.signal });
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'AICourseHubPro-site-build/1.0 (+https://www.aicoursehubpro.com)' }, body: JSON.stringify({ query, variables }), signal: ctrl.signal });
     if (!res.ok && res.status !== 400) throw new Error(`Hashnode answered HTTP ${res.status}`);
-    return await res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); } catch (e) { throw new Error(`Hashnode did not answer with data (HTTP ${res.status}): ${text.slice(0, 120).replace(/\s+/g, ' ')}`); }
+  } catch (e) {
+    const c = e && e.cause && (e.cause.code || e.cause.message);
+    throw new Error(e && e.name === 'AbortError' ? 'Hashnode did not answer within 20 seconds' : `${e.message}${c ? ' (' + c + ')' : ''}`);
   } finally { clearTimeout(timer); }
 }
 

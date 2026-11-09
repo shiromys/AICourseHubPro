@@ -127,7 +127,8 @@ async function run(outDir, apiUrl) {
   // the blog: article text comes from Hashnode while the site is built
   let posts = [];
   let blogSource = 'Hashnode';
-  try { posts = await fetchHashnodePosts(); if (!posts.length) throw new Error('Hashnode returned no posts'); } catch (e) { posts = []; blogSource = 'none'; console.warn(`[prerender] BLOG NOT SAVED: ${e.message}. /blog keeps linking to the old blog address until a build can read Hashnode.`); }
+  let blogReason = '';
+  try { posts = await fetchHashnodePosts(); if (!posts.length) throw new Error('Hashnode returned no posts'); } catch (e) { posts = []; blogSource = 'none'; blogReason = String(e && e.message ? e.message : e).slice(0, 300); console.warn(`[prerender] BLOG NOT SAVED: ${e.message}. /blog keeps linking to the old blog address until a build can read Hashnode.`); }
   posts = posts.filter((p) => /^[a-z0-9][a-z0-9-]*$/i.test(p.slug)).map((p) => ({ ...p, html: cleanPostHtml(p.html) }));
   const baked = posts.length > 0;
   const blogEntries = mergeBlogIndex(baked ? posts : null);
@@ -154,7 +155,7 @@ async function run(outDir, apiUrl) {
 
   // blog articles: a saved page and a small data file each, plus the list
   fs.mkdirSync(path.join(outDir, 'blog-data'), { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'blog-data', 'index.json'), JSON.stringify({ baked, entries: blogEntries }));
+  fs.writeFileSync(path.join(outDir, 'blog-data', 'index.json'), JSON.stringify({ baked, ...(baked ? {} : { reason: blogReason || 'unknown' }), entries: blogEntries }));
   if (baked) {
     for (const post of posts) {
       const entry = blogEntries.find((e) => e.slug === post.slug);
