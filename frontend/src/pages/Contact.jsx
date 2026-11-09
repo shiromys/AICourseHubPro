@@ -7,7 +7,6 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 
 const Contact = () => {
-  document.title = 'Contact Us | AICourseHubPro';
   const [formData, setFormData] = useState({ firstName: '', email: '', subject: 'General Inquiry', message: '' });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);

@@ -1,11 +1,17 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import prerender from './vite-plugins/prerender.js'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  // Same address the app itself calls (VITE_API_URL on staging, production otherwise).
+  const apiUrl = process.env.VITE_API_URL || loadEnv(mode, process.cwd(), 'VITE_').VITE_API_URL || 'https://api.aicoursehubpro.com';
+  return {
   plugins: [
     react(),
+    // Saves a text version of each public page (and sitemap.xml) at build time. Must come before VitePWA.
+    prerender({ apiUrl }),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'logo.png', 'robots.txt'],
@@ -120,6 +126,7 @@ export default defineConfig({
         assetFileNames: 'assets/[name]-[hash][extname]'
       }
     }
+  }
   }
 })
 

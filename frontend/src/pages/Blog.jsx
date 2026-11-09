@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Helmet } from 'react-helmet-async';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { ArrowUpRight, Clock, Tag, Search, Rss } from 'lucide-react';
@@ -308,12 +307,6 @@ const Blog = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
-      <Helmet>
-        <title>Blog — AI Insights & Career Tips | AICourseHubPro</title>
-        <meta name="description" content="Practical AI tips, career insights, and industry guides for professionals in HR, business, and beyond. Updated every Tuesday and Thursday." />
-        <link rel="canonical" href="https://www.aicoursehubpro.com/blog" />
-      </Helmet>
-
       <Navbar />
 
       <div className="relative bg-gradient-to-b from-gray-800 to-black text-white pt-36 pb-20 overflow-hidden">

@@ -1,32 +1,33 @@
 # robots.txt — AICourseHubPro
 # https://www.aicoursehubpro.com
+#
+# Everyone (search engines and AI crawlers included) may read the public pages. Only private areas
+# are closed. Course pages live at /courses/<name> (open); the learner area is /course/ (closed).
 
 User-agent: *
 
-# Allow all public pages
+# Public pages
 Allow: /
 Allow: /courses
+Allow: /courses/
 Allow: /pricing
 Allow: /blog
 Allow: /contact
-Allow: /signup
-Allow: /login
-Allow: /forgot-password
 Allow: /privacy
 Allow: /terms
 Allow: /refund-policy
 
-# Block private/authenticated pages
+# Private or sign-in areas
 Disallow: /dashboard
 Disallow: /admin
 Disallow: /profile
 Disallow: /course/
-Disallow: /reset-password
 Disallow: /certificate/
+Disallow: /verify/
+Disallow: /resume
+Disallow: /account-setup
+Disallow: /reset-password
 Disallow: /payment-success
-
-# Block API endpoints
 Disallow: /api/
 
-# Sitemap location
 Sitemap: https://www.aicoursehubpro.com/sitemap.xml

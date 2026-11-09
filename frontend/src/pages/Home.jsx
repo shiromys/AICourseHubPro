@@ -1,12 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import NewsletterSignup from '../components/NewsletterSignup';
-import { Helmet } from 'react-helmet-async';
 
 const Home = () => {
-  document.title = 'AICourseHubPro | Master AI for Your Career';
   const navigate = useNavigate();
 
   // --- 1. NEW: AUTO-REDIRECT LOGIC ---
@@ -93,7 +91,6 @@ const Home = () => {
 
   return (
     <div className="min-h-screen bg-white font-sans text-gray-900 overflow-x-hidden">
-      <Helmet><link rel="canonical" href="https://www.aicoursehubpro.com/" /></Helmet>
       <Navbar />
 
       {/* ================= 1. HERO SECTION (GREY TO BLACK GRADIENT) ================= */}
@@ -112,7 +109,7 @@ const Home = () => {
             </span>
           </div>
 
-          <h1 className="text-5xl md:text-7xl font-black tracking-tight leading-tight mb-8 h-32 md:h-auto text-white">
+          <h1 aria-label="Master AI in Human Resources, Public Services, Automation, Education and Business" className="text-5xl md:text-7xl font-black tracking-tight leading-tight mb-8 h-32 md:h-auto text-white">
             Master AI In <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-red-500 to-white">
               {typingWords[textIndex].substring(0, charIndex)}
@@ -125,12 +122,12 @@ const Home = () => {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-6">
-            <button onClick={() => navigate('/courses')} className="px-10 py-4 bg-red-600 text-white font-bold rounded-full shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-700 hover:scale-105 transition-all duration-300 border border-red-500">
+            <Link to="/courses" className="px-10 py-4 bg-red-600 text-white font-bold rounded-full shadow-[0_0_20px_rgba(220,38,38,0.4)] hover:bg-red-700 hover:scale-105 transition-all duration-300 border border-red-500">
               Explore Catalog
-            </button>
-            <button onClick={() => navigate('/pricing')} className="px-10 py-4 bg-transparent text-white font-bold rounded-full border border-gray-500 hover:bg-white hover:text-black transition-all duration-300">
+            </Link>
+            <Link to="/pricing" className="px-10 py-4 bg-transparent text-white font-bold rounded-full border border-gray-500 hover:bg-white hover:text-black transition-all duration-300">
               View Pricing
-            </button>
+            </Link>
           </div>
         </div>
       </div>
@@ -180,10 +177,10 @@ const Home = () => {
               { title: "Non-Profits & Social Impact", desc: "Apply AI to grant writing, donor outreach, volunteer coordination, and impact reporting — helping mission-driven organisations do more with less.", image: "https://i.postimg.cc/MHbzJTQV/niche-nonprofit.jpg", tag: "Social Impact" },
               { title: "Business & Analytics", desc: "Turn raw data into actionable insight using AI-powered analytics and reporting. Build dashboards, summaries, and decision-ready reports with prompts.", image: "https://i.postimg.cc/mkNTWDHY/niche-business.jpg", tag: "Business Intelligence" },
             ].map((niche, i) => (
-              <div
+              <Link
                 key={i}
-                onClick={() => navigate(getCourseLink(niche.title))}
-                className="group cursor-pointer bg-black/30 border border-red-900/40 rounded-2xl overflow-hidden hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/30 transition-all duration-300"
+                to={getCourseLink(niche.title)}
+                className="group block cursor-pointer bg-black/30 border border-red-900/40 rounded-2xl overflow-hidden hover:border-red-500 hover:shadow-2xl hover:shadow-red-900/30 transition-all duration-300"
               >
                 {/* Image */}
                 <div className="relative h-52 overflow-hidden">
@@ -206,17 +203,17 @@ const Home = () => {
                     View Course <span>&rarr;</span>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
 
           <div className="text-center mt-12">
-            <button
-              onClick={() => navigate('/courses')}
-              className="px-8 py-4 bg-white text-black font-bold rounded-full hover:bg-red-600 hover:text-white transition-all shadow-lg"
+            <Link
+              to="/courses"
+              className="inline-block px-8 py-4 bg-white text-black font-bold rounded-full hover:bg-red-600 hover:text-white transition-all shadow-lg"
             >
               Browse All Courses &rarr;
-            </button>
+            </Link>
           </div>
         </div>
       </section>

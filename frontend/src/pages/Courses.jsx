@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { Search, BookOpen, Clock, ChevronRight, Loader2, AlertCircle, ShoppingCart } from 'lucide-react';
 import Navbar from '../components/Navbar';
@@ -7,7 +7,6 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 
 const Courses = () => {
-  document.title = 'Courses | AICourseHubPro';
   const [courses, setCourses] = useState([]);
   const [enrolledCourseIds, setEnrolledCourseIds] = useState([]); // NEW: Store what the user owns
   const [loading, setLoading] = useState(true);
@@ -65,12 +64,6 @@ const Courses = () => {
   // Public address of a course's page: /courses/<readable-name> (falls back to the number).
   const courseUrl = (course) => `/courses/${course.slug || course.id}`;
 
-  const handleCourseAction = (courseId) => {
-    // Owners and admins go straight into the course; everyone else sees the course page first
-    // (what is inside, the certificate, the price) and enrols from there.
-    const course = courses.find(c => c.id === courseId);
-    navigate(course ? courseUrl(course) : `/courses/${courseId}`);
-  };
 
   // Filter Logic
   const filteredCourses = courses.filter(course => {
@@ -165,11 +158,8 @@ const Courses = () => {
                       <span className="text-green-600 font-bold text-lg">${course.price}</span>
                     </div>
                     
-                    <h3 
-                      className="text-2xl font-bold text-black mb-3 group-hover:text-red-600 transition-colors line-clamp-2 cursor-pointer"
-                      onClick={() => navigate(courseUrl(course))}
-                    >
-                      {course.title}
+                    <h3 className="text-2xl font-bold text-black mb-3 group-hover:text-red-600 transition-colors line-clamp-2">
+                      <Link to={courseUrl(course)}>{course.title}</Link>
                     </h3>
                     
                     <p 
@@ -192,8 +182,8 @@ const Courses = () => {
                   </div>
 
                   <div className="p-4 bg-gray-50 border-t border-gray-100">
-                     <button 
-                       onClick={() => handleCourseAction(course.id)}
+                     <Link
+                       to={courseUrl(course)}
                        className={`flex items-center justify-center gap-2 w-full font-bold py-3 rounded-xl transition-all shadow-md ${
                          canAccess 
                            ? "bg-green-600 hover:bg-green-700 text-white" 
@@ -205,7 +195,7 @@ const Courses = () => {
                        ) : (
                          <> View Course <ChevronRight size={16} /> </>
                        )}
-                     </button>
+                     </Link>
                   </div>
                 </div>
               );

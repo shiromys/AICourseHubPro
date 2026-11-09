@@ -34,7 +34,8 @@ import PWAInstallPrompt from './components/PWAInstallPrompt';
 // --- IMPORT COMPONENTS ---
 import ChatWidget from './components/ChatWidget';
 import ScrollToTop from './components/ScrollToTop';
-import RouteTracker from './components/RouteTracker';  
+import RouteTracker from './components/RouteTracker';
+import RouteSeo from './components/Seo';  
 
 // --- 1. Protection Wrapper ---
 const ProtectedRoute = ({ children }) => {
@@ -96,6 +97,7 @@ function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
+      <RouteSeo />
       <RouteTracker />
 
       {/* --- New-courses announcement strip --- */}

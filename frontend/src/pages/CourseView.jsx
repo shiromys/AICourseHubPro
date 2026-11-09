@@ -6,12 +6,12 @@ import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
 import { CheckCircle, Clock, BarChart, Shield, BookOpen, Lock, ChevronDown } from 'lucide-react';
 import TextCoursePlayer from '../components/TextCoursePlayer';
-import { Helmet } from 'react-helmet-async';
+import { CourseSeo } from '../components/Seo';
+import { courseFaq } from '../seo/meta.js';
 import useCheckout from '../hooks/useCheckout';
 import { track, courseItem } from '../utils/analytics';
 import { marketingFor } from '../content/courseMarketing';
 
-const SITE = 'https://www.aicoursehubpro.com';
 const isNumeric = (p) => /^\d+$/.test(p || '');
 const matches = (c, p) => (isNumeric(p) ? c.id === parseInt(p, 10) : c.slug === p);
 
@@ -104,9 +104,7 @@ const CourseView = () => {
   if (isEnrolled) {
     return (
       <>
-        <Helmet>
-          <title>{course.title} | Learning | AICourseHubPro</title>
-        </Helmet>
+        <CourseSeo course={null} />
         <TextCoursePlayer courseId={String(course.id)} courseData={course} />
       </>
     );
@@ -117,19 +115,10 @@ const CourseView = () => {
   const modules = course.modules || [];
   const lessonCount = modules.reduce((n, m) => n + (m.lessons ? m.lessons.length : 0), 0);
   const others = courses.filter((c) => c.id !== course.id && !c.legacy);
-  const pageUrl = `${SITE}/courses/${course.slug || course.id}`;
-  const desc = (course.description || '').substring(0, 160);
   const price = course.price;
   const ex = mk.workedExample && (mk.workedExample.task || mk.workedExample.result) ? mk.workedExample : null;
 
-  const generalFaq = [
-    { q: 'Is this a subscription?', a: `No. You pay $${price} once and keep access to the course for life.` },
-    { q: 'Do I need an account before I buy?', a: 'No. Enter your email at checkout and we create your account for you. If you already have an account, log in first and the course is added to it.' },
-    { q: 'How do I get the certificate?', a: 'Pass the final assessment with a score of at least 70%. Your certificate carries a unique ID that anyone can check on our verification page. It is a certificate of completion for this course.' },
-    { q: 'Can I get a refund?', a: 'All sales are final, except for technical or billing errors such as being charged twice for the same course. The full wording is in our Refund Policy.' },
-    { q: 'Can I buy all the courses together?', a: 'Yes. The Pro Bundle ($159) gives you every course, and its price goes down by $29 for each course you already own.' },
-  ];
-  const faq = [...(mk.faq || []).filter((f) => f && f.q && f.a), ...generalFaq];
+  const faq = courseFaq(course);
 
   const EnrollButton = ({ where }) => (
     <button
@@ -144,16 +133,7 @@ const CourseView = () => {
 
   return (
     <div className="min-h-screen bg-black font-sans text-gray-100 pb-24 md:pb-0">
-      <Helmet>
-        <title>{course.title} | AICourseHubPro</title>
-        <meta name="description" content={desc} />
-        <link rel="canonical" href={pageUrl} />
-        <meta property="og:url" content={pageUrl} />
-        <meta property="og:title" content={`${course.title} | AICourseHubPro`} />
-        <meta property="og:description" content={desc} />
-        <meta property="twitter:title" content={`${course.title} | AICourseHubPro`} />
-        <meta property="twitter:description" content={desc} />
-      </Helmet>
+      <CourseSeo course={course} />
 
       <Navbar />
 

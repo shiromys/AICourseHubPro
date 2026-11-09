@@ -8,7 +8,6 @@ import API_BASE_URL from '../config';
 import { track, getUtm, rememberCheckoutItem } from '../utils/analytics';
 
 const Pricing = () => {
-  document.title = 'Pricing | AICourseHubPro';
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [ownedCount, setOwnedCount] = useState(0);
