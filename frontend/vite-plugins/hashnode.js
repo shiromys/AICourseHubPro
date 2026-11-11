@@ -21,6 +21,7 @@ const listQuery = (extra) => `query BlogPosts($host: String!, $first: Int!, $aft
     }
   }
 }`;
+const BROWSER_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 AICourseHubPro-build';
 const QUERY_FULL = listQuery('updatedAt seo { title description }');
 const QUERY_BASIC = listQuery('');
 
@@ -28,17 +29,20 @@ async function ask(endpoint, query, variables) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'AICourseHubPro-site-build/1.0 (+https://www.aicoursehubpro.com)' }, body: JSON.stringify({ query, variables }), signal: ctrl.signal });
+    const res = await fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': BROWSER_UA }, body: JSON.stringify({ query, variables }), signal: ctrl.signal });
     if (!res.ok && res.status !== 400) throw new Error(`Hashnode answered HTTP ${res.status}`);
     const text = await res.text();
-    try { return JSON.parse(text); } catch (e) { throw new Error(`Hashnode did not answer with data (HTTP ${res.status}): ${text.slice(0, 120).replace(/\s+/g, ' ')}`); }
+    try { return JSON.parse(text); } catch (e) {
+      const title = /<title[^>]*>([^<]*)<\/title>/i.exec(text);
+      throw new Error(`Hashnode did not answer with data (HTTP ${res.status}, ${res.redirected ? 'redirected to ' : 'from '}${res.url}, type ${res.headers.get('content-type') || '?'}, page title "${title ? title[1].trim().slice(0, 80) : text.slice(0, 60).replace(/\s+/g, ' ')}")`);
+    }
   } catch (e) {
     const c = e && e.cause && (e.cause.code || e.cause.message);
     throw new Error(e && e.name === 'AbortError' ? 'Hashnode did not answer within 20 seconds' : `${e.message}${c ? ' (' + c + ')' : ''}`);
   } finally { clearTimeout(timer); }
 }
 
-export async function fetchHashnodePosts({ host, apiUrl } = {}) {
+async function fetchViaApi({ host, apiUrl } = {}) {
   const endpoint = apiUrl || process.env.HASHNODE_API_URL || 'https://gql.hashnode.com';
   const hostName = String(host || process.env.HASHNODE_HOST || 'blog.aicoursehubpro.com').replace(/^https?:\/\//, '').replace(/\/+$/, '');
   const posts = [];
@@ -89,4 +93,62 @@ export async function fetchHashnodePosts({ host, apiUrl } = {}) {
   const empty = posts.filter((p) => !p.html).map((p) => p.slug);
   if (empty.length) console.warn(`[hashnode] ${empty.length} post(s) came back without text and are left out: ${empty.join(', ')}`);
   return posts.filter((p) => p.html);
+}
+
+// ---- second route: the blog's public feed (rss.xml), used when the API cannot be read -----------------
+const decode = (t) => String(t).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&amp;/g, '&');
+const tag = (block, name) => { const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i').exec(block); return m ? m[1].trim() : ''; };
+
+export function parseFeed(xml, hostName) {
+  const posts = [];
+  for (const m of String(xml).matchAll(/<item\b[\s\S]*?<\/item>/gi)) {
+    const item = m[0];
+    const link = decode(tag(item, 'link'));
+    const slug = (/^https?:\/\/[^/]+\/([^/?#]+)/.exec(link) || [])[1];
+    const html = decode(tag(item, 'content:encoded'));
+    const title = decode(tag(item, 'title'));
+    if (!slug || !title || !html) continue;
+    const pub = new Date(decode(tag(item, 'pubDate')));
+    const cover = /<enclosure[^>]*\burl="([^"]+)"/i.exec(item);
+    posts.push({
+      slug, title, subtitle: '', brief: decode(tag(item, 'description')), description: decode(tag(item, 'description')), seoTitle: '',
+      publishedAt: isNaN(pub) ? null : pub.toISOString(), updatedAt: null, readTime: '',
+      image: cover ? decode(cover[1]) : '', author: decode(tag(item, 'dc:creator')),
+      tags: Array.from(item.matchAll(/<category>([\s\S]*?)<\/category>/gi)).map((c) => decode(c[1]).trim()).filter(Boolean), html,
+    });
+  }
+  return posts;
+}
+
+async function fetchViaFeed({ host, feedUrl } = {}) {
+  const hostName = String(host || process.env.HASHNODE_HOST || 'blog.aicoursehubpro.com').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  const url = feedUrl || process.env.HASHNODE_FEED_URL || `https://${hostName}/rss.xml`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': BROWSER_UA, Accept: 'application/rss+xml, application/xml, text/xml' }, signal: ctrl.signal });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+    const posts = parseFeed(text, hostName);
+    if (!posts.length) throw new Error(`no articles with text found in ${url} (type ${res.headers.get('content-type') || '?'})`);
+    return posts;
+  } catch (e) {
+    const c = e && e.cause && (e.cause.code || e.cause.message);
+    throw new Error(e && e.name === 'AbortError' ? 'feed did not answer within 20 seconds' : `${e.message}${c ? ' (' + c + ')' : ''}`);
+  } finally { clearTimeout(timer); }
+}
+
+// The API first; if it cannot be read, the public feed.
+export async function fetchHashnodePosts(opts = {}) {
+  try {
+    return await fetchViaApi(opts);
+  } catch (apiError) {
+    try {
+      const posts = await fetchViaFeed(opts);
+      console.warn(`[hashnode] the API could not be read (${apiError.message}); used the public feed instead (${posts.length} posts; update dates and reading times are not available from the feed).`);
+      return posts;
+    } catch (feedError) {
+      throw new Error(`API: ${apiError.message} | feed: ${feedError.message}`);
+    }
+  }
 }
