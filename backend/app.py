@@ -10,7 +10,7 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, verify_jwt_in_request
 from dotenv import load_dotenv
 from flask_migrate import Migrate
-from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting, FlaggedPayment, UserActivity, NewsletterSubscriber, NewsletterIssue, LessonAttempt, RoleplaySession
+from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting, FlaggedPayment, UserActivity, NewsletterSubscriber, NewsletterIssue, LessonAttempt, RoleplaySession, ResourceDownload
 from database import db
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -2670,13 +2670,20 @@ def newsletter_subscribe():
     if throttled('nl_ip', client_ip(), 6, 3600) or throttled('nl_email', email, 3, 3600):
         return generic
 
+    _newsletter_signup(email, str(data.get('source') or 'home')[:30])
+    return generic
+
+
+def _newsletter_signup(email, source):
+    """Creates/refreshes a *pending* subscriber and emails the confirmation link (double opt-in).
+    Does nothing for someone who is already subscribed. Never raises; shared by the signup form and library downloads."""
     sub = NewsletterSubscriber.query.filter_by(email=email).first()
     if sub and sub.status == 'active':
-        return generic                           # already subscribed - nothing to send
+        return                                   # already subscribed - nothing to send
     if not sub:
         u = User.query.filter_by(email=email).first()
         sub = NewsletterSubscriber(email=email, user_id=u.id if u else None, status='pending',
-                                   unsubscribe_token=uuid.uuid4().hex, source=str(data.get('source') or 'home')[:30])
+                                   unsubscribe_token=uuid.uuid4().hex, source=source)
         db.session.add(sub)
     else:
         sub.status = 'pending'                   # pending resend, or re-subscribing after an unsubscribe
@@ -2686,9 +2693,65 @@ def newsletter_subscribe():
         db.session.commit()
     except IntegrityError:
         db.session.rollback()
-        return generic
+        return
     _send_newsletter_confirmation(sub)
-    return generic
+
+
+# ==========================================
+# FREE RESOURCE LIBRARY: template downloads
+# ==========================================
+RESOURCE_FILES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resource_files')
+RESOURCE_FILE_RE = re.compile(r'^[a-z0-9][a-z0-9._-]{0,90}\.(docx|xlsx|pptx|pdf|csv|md|txt)$')
+RESOURCE_SLUG_RE = re.compile(r'^[a-z0-9][a-z0-9-]{0,100}$')
+RESOURCE_LINK_SECONDS = 900  # a download link works for 15 minutes
+
+
+def _resource_signer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(app.config['JWT_SECRET_KEY'], salt='resource-file')
+
+
+@app.route('/api/resources/download', methods=['POST'])
+def resource_download():
+    """Public. An email address unlocks one template. If the visitor ticked the box, they also get the usual
+    double opt-in confirmation for the weekly digest; if not, the email is kept only with the download record."""
+    data = request.json or {}
+    email = (data.get('email') or '').strip().lower()
+    slug = str(data.get('slug') or '').strip()
+    file_name = str(data.get('file') or '').strip()
+    opt_in = data.get('newsletter') is True
+    if (data.get('website') or '').strip():      # honeypot
+        return jsonify({"msg": "Please try again."}), 400
+    if not email or not EMAIL_RE.match(email) or len(email) > 120:
+        return jsonify({"msg": "Please enter a valid email address."}), 400
+    if not RESOURCE_SLUG_RE.match(slug) or not RESOURCE_FILE_RE.match(file_name):
+        return jsonify({"msg": "That template could not be found."}), 404
+    if throttled('res_ip', client_ip(), 20, 3600) or throttled('res_email', email, 10, 3600):
+        return jsonify({"msg": "Too many downloads in a short time. Please try again in a little while."}), 429
+    if not os.path.isfile(os.path.join(RESOURCE_FILES_DIR, file_name)):
+        return jsonify({"msg": "That template is not available right now. Please try again later."}), 404
+    try:
+        db.session.add(ResourceDownload(email=email, slug=slug, file_name=file_name, newsletter_opt_in=opt_in))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()                    # a log problem must never block the download
+    if opt_in:
+        _newsletter_signup(email, 'resource')
+    token = _resource_signer().dumps({'f': file_name})
+    return jsonify({"url": f"/api/resources/file/{token}", "newsletter_pending": bool(opt_in)}), 200
+
+
+@app.route('/api/resources/file/<token>', methods=['GET'])
+def resource_file(token):
+    from itsdangerous import BadSignature, SignatureExpired
+    try:
+        payload = _resource_signer().loads(token, max_age=RESOURCE_LINK_SECONDS)
+        file_name = str(payload.get('f') or '')
+    except (BadSignature, SignatureExpired):
+        return jsonify({"msg": "This download link has expired. Go back to the page and request the template again."}), 410
+    if not RESOURCE_FILE_RE.match(file_name) or not os.path.isfile(os.path.join(RESOURCE_FILES_DIR, file_name)):
+        return jsonify({"msg": "That template is not available right now."}), 404
+    return send_from_directory(RESOURCE_FILES_DIR, file_name, as_attachment=True)
 
 
 @app.route('/api/newsletter/confirm', methods=['POST'])

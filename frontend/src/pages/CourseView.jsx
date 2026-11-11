@@ -11,6 +11,7 @@ import { courseFaq } from '../seo/meta.js';
 import useCheckout from '../hooks/useCheckout';
 import { track, courseItem } from '../utils/analytics';
 import { marketingFor } from '../content/courseMarketing';
+import { resourcesForCourse, resourceUrl } from '../content/resources.js';
 
 const isNumeric = (p) => /^\d+$/.test(p || '');
 const matches = (c, p) => (isNumeric(p) ? c.id === parseInt(p, 10) : c.slug === p);
@@ -279,6 +280,14 @@ const CourseView = () => {
           </div>
         </section>
 
+        {resourcesForCourse(course.slug).length > 0 && (
+          <section data-testid="course-resources">
+            <h2 className="text-2xl font-bold text-white mb-4">Free guides and templates</h2>
+            <ul className="space-y-2">
+              {resourcesForCourse(course.slug).map((r) => <li key={r.slug}><Link to={resourceUrl(r.slug)} className="text-red-400 hover:underline font-medium">{r.content.title}</Link></li>)}
+            </ul>
+          </section>
+        )}
         {others.length > 0 && (
           <section data-testid="related">
             <h2 className="text-2xl font-bold text-white mb-4">Other courses</h2>

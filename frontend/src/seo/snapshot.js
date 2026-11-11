@@ -6,15 +6,17 @@
 import { marketingFor } from '../content/courseMarketing.js';
 import { ORGANIZATION, SITE_URL, courseFaq, courseUrl, PAGES } from './meta.js';
 import { blogPath, relatedCourseSlug, COURSE_LABELS, cleanPostHtml } from './blog.js';
+import { AUDIENCES, publishedResources, hasPublishedResources, relatedResources, resourceUrl } from '../content/resources.js';
+import { RESOURCE_HUB_META, longDate } from './resources.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const a = (href, text) => `<a href="${esc(href)}">${esc(text)}</a>`;
 const li = (inner) => `<li>${inner}</li>`;
 
-const NAV = [['Home', '/'], ['Courses', '/courses'], ['Pricing', '/pricing'], ['Blog', '/blog'], ['Contact', '/contact']];
+const navItems = () => [['Home', '/'], ['Courses', '/courses'], ['Pricing', '/pricing'], ...(hasPublishedResources() ? [['Resources', '/resources']] : []), ['Blog', '/blog'], ['Contact', '/contact']];
 
 const frame = (main, courses) => `<div class="seo-snapshot" data-prerender="1">
-<header><nav aria-label="Main"><ul>${NAV.map(([t, h]) => li(a(h, t))).join('')}</ul></nav></header>
+<header><nav aria-label="Main"><ul>${navItems().map(([t, h]) => li(a(h, t))).join('')}</ul></nav></header>
 <main>
 ${main}
 </main>
@@ -145,3 +147,39 @@ ${faq.map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`).join('\n')}
 
 export const SNAPSHOT_PATHS = Object.keys(PAGES);
 export { SITE_URL };
+
+// ---- the free resource library ----
+export function resourceHubSnapshot(courses) {
+  const pub = publishedResources();
+  const groups = AUDIENCES.map((aud) => ({ aud, pages: pub.filter((p) => p.audience === aud.id) })).filter((g) => g.pages.length);
+  return frame(`<h1>Free AI Templates and Guides for Work</h1>
+<p>${esc(RESOURCE_HUB_META.description)}</p>
+${groups.map((g) => `<h2>${esc(g.aud.label)}</h2><ul>${g.pages.map((p) => li(`<h3>${a(resourceUrl(p.slug), p.content.title)}</h3><p>${esc(p.content.shortAnswer)}</p>`)).join('')}</ul>`).join('\n')}
+<p>${a('/courses', 'Browse all courses')}</p>`, Array.isArray(courses) ? courses : []);
+}
+
+export function resourceSnapshot(page, courses) {
+  const c = page.content;
+  const list = Array.isArray(courses) ? courses : [];
+  const course = list.find((x) => x.slug === page.course);
+  const rel = relatedResources(page, 3);
+  const ul = (items) => `<ul>${items.map((x) => li(esc(x))).join('')}</ul>`;
+  return frame(`<nav aria-label="Breadcrumb">${a('/', 'Home')} › ${a('/resources', 'Resources')} › ${esc(c.title)}</nav>
+<article>
+<h1>${esc(c.title)}</h1>
+<p>${esc(c.shortAnswer)}</p>
+<p>Reviewed by ${esc(c.reviewer.name)}, ${esc(c.reviewer.role)} · Last updated <time datetime="${esc(c.lastUpdated)}">${esc(longDate(c.lastUpdated))}</time></p>
+<h2>Who this is for</h2>${ul(c.whoFor)}
+<h2>What you need before you start</h2>${ul(c.beforeYouStart)}
+<h2>Worked example: ${esc(c.example.task)}</h2>
+<h3>The input</h3><pre>${esc(c.example.input)}</pre>
+<h3>The output</h3><pre>${esc(c.example.output)}</pre>
+<h3>What to check or change by hand</h3>${ul(c.example.check)}
+<h2>Free template</h2><p>${esc(c.template.label)} (${esc(c.template.format)}), free with your email address.</p>
+<h2>Cautions</h2>${ul(c.cautions)}
+<h2>Frequently asked questions</h2>${c.faq.map((f) => `<h3>${esc(f.q)}</h3><p>${esc(f.a)}</p>`).join('')}
+</article>
+<aside><h2>Learn the full method</h2><p>${a(`/courses/${page.course}`, course ? course.title : COURSE_LABELS[page.course])}</p></aside>
+${rel.length ? `<aside><h2>Related guides</h2><ul>${rel.map((r) => li(a(resourceUrl(r.slug), r.content.title))).join('')}</ul></aside>` : ''}
+<p>${a('/resources', 'All guides')} · ${a('/courses', 'All courses')}</p>`, list);
+}

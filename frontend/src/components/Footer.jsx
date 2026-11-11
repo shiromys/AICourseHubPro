@@ -1,3 +1,4 @@
+import { hasPublishedResources } from '../content/resources.js';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { Linkedin, Mail, MapPin, Phone } from 'lucide-react';
@@ -70,6 +71,7 @@ const Footer = () => {
               <li><Link to="/" className="hover:text-red-500 transition">Home</Link></li>
               <li><Link to="/courses" className="hover:text-red-500 transition">All Courses</Link></li>
               <li><Link to="/pricing" className="hover:text-red-500 transition">Pricing</Link></li>
+              {hasPublishedResources() && <li><Link to="/resources" className="hover:text-red-500 transition">Free Resources</Link></li>}
               <li><Link to="/blog" className="hover:text-red-500 transition">Blog</Link></li>
               <li><Link to="/contact" className="hover:text-red-500 transition">Contact Support</Link></li>
             </ul>

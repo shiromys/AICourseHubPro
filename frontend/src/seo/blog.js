@@ -91,7 +91,7 @@ export const mergeBlogIndex = (posts) => {
 };
 
 // ---- head details for one post -------------------------------------------------------------------
-const postTitle = (title, seoTitle) => {
+export const postTitle = (title, seoTitle) => {
   const t = String(seoTitle || title || '').replace(/\s+/g, ' ').trim();
   const full = `${t} | ${SITE_NAME}`;
   if (full.length <= 60) return full;

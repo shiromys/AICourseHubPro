@@ -111,7 +111,10 @@ async function run(outDir, apiUrl) {
   const metaMod = await import(pathToFileURL(path.resolve('src/seo/meta.js')).href);
   const snapMod = await import(pathToFileURL(path.resolve('src/seo/snapshot.js')).href);
   const { PAGES, NOINDEX_PAGES, COURSE_SEO_TITLES, COURSE_PAGES_LASTMOD, SITE_URL, metaForStaticPath, metaForCourse, buildHead } = metaMod;
-  const { snapshotFor, courseSnapshot, postSnapshot } = snapMod;
+  const { snapshotFor, courseSnapshot, postSnapshot, resourceHubSnapshot, resourceSnapshot } = snapMod;
+  const resMod = await import(pathToFileURL(path.resolve('src/content/resources.js')).href);
+  const resSeo = await import(pathToFileURL(path.resolve('src/seo/resources.js')).href);
+  const { publishedResources, libraryReport, resourceUrl } = resMod;
   const blogMod = await import(pathToFileURL(path.resolve('src/seo/blog.js')).href);
   const { mergeBlogIndex, metaForPost, cleanPostHtml } = blogMod;
 
@@ -153,6 +156,16 @@ async function run(outDir, apiUrl) {
     write(`/courses/${c.slug}`, render(template, metaForCourse(c), courseSnapshot(c, withSlug), `/courses/${c.slug}`, buildHead));
   }
 
+  // free resource library: only complete pages exist; nothing is written when there are none
+  const resPages = publishedResources();
+  const report = libraryReport();
+  for (const r of report.incomplete) console.warn(`[prerender] resource page "${r.slug}" is NOT published, still missing: ${r.missing.join('; ')}`);
+  for (const sl of report.stale) console.warn(`[prerender] resource page "${sl}" was last updated more than 6 months ago: review it`);
+  if (resPages.length) {
+    write('/resources', render(template, resSeo.metaForResourceHub(), resourceHubSnapshot(withSlug), '/resources', buildHead));
+    for (const pg of resPages) write(resourceUrl(pg.slug), render(template, resSeo.metaForResource(pg), resourceSnapshot(pg, withSlug), resourceUrl(pg.slug), buildHead));
+  }
+
   // blog articles: a saved page and a small data file each, plus the list
   fs.mkdirSync(path.join(outDir, 'blog-data'), { recursive: true });
   fs.writeFileSync(path.join(outDir, 'blog-data', 'index.json'), JSON.stringify({ baked, ...(baked ? {} : { reason: blogReason || 'unknown' }), entries: blogEntries }));
@@ -169,6 +182,10 @@ async function run(outDir, apiUrl) {
   const urls = Object.entries(PAGES).map(([p, v]) => ({ loc: SITE_URL + (p === '/' ? '/' : p), lastmod: v.lastmod, changefreq: v.changefreq, priority: v.priority }));
   const slugs = withSlug.length ? withSlug.map((c) => c.slug) : Object.keys(COURSE_SEO_TITLES);
   for (const s of slugs) urls.push({ loc: `${SITE_URL}/courses/${s}`, lastmod: COURSE_PAGES_LASTMOD, changefreq: 'monthly', priority: '0.8' });
+  if (resPages.length) {
+    urls.push({ loc: `${SITE_URL}/resources`, lastmod: resPages.map((x) => x.content.lastUpdated).sort().pop(), changefreq: 'weekly', priority: '0.7' });
+    for (const pg of resPages) urls.push({ loc: `${SITE_URL}${resourceUrl(pg.slug)}`, lastmod: pg.content.lastUpdated, changefreq: 'monthly', priority: '0.7' });
+  }
   if (baked) {
     for (const post of posts) {
       const e = blogEntries.find((x) => x.slug === post.slug);
@@ -182,5 +199,5 @@ async function run(outDir, apiUrl) {
     `\n</urlset>\n`;
   fs.writeFileSync(path.join(outDir, 'sitemap.xml'), xml);
 
-  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses; blog: ${baked ? posts.length + ' articles saved (source: ' + blogSource + ')' : 'not saved'}`);
+  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses; resources: ${resPages.length} published of 12; blog: ${baked ? posts.length + ' articles saved (source: ' + blogSource + ')' : 'not saved'}`);
 }

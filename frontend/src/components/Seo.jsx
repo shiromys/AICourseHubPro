@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { metaForStaticPath, metaForCourse } from '../seo/meta.js';
 import { metaForPost } from '../seo/blog.js';
+import { metaForResourceHub, metaForResource } from '../seo/resources.js';
+import { hasPublishedResources } from '../content/resources.js';
 import { applyHead, applyPrivateHead } from '../seo/applyHead.js';
 
 // Keeps the page's <head> (title, description, canonical, social cards, no-index, structured data)
@@ -13,6 +15,7 @@ export default function RouteSeo() {
     const p = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
     if (/^\/courses\/[^/]+$/.test(p)) return; // the course page sets its own
     if (/^\/blog\/[^/]+$/.test(p)) return; // so does each blog article
+    if (p === '/resources' || /^\/resources\/[^/]+$/.test(p)) return; // and the resource library pages
     const meta = metaForStaticPath(p);
     if (meta) applyHead(meta);
     else applyPrivateHead(); // dashboard, certificates, admin, ...: out of search
@@ -37,5 +40,14 @@ export function BlogSeo({ entry, post, missing }) {
   useEffect(() => {
     if (missing) applyPrivateHead();
   }, [missing]);
+  return null;
+}
+
+// The resource library: the hub, or one guide.
+export function ResourceSeo({ hub, page }) {
+  useEffect(() => {
+    if (hub) applyHead(metaForResourceHub());
+    else if (page) applyHead(metaForResource(page));
+  }, [hub, page && page.slug]);
   return null;
 }

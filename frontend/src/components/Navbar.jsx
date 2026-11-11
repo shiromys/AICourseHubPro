@@ -1,3 +1,4 @@
+import { hasPublishedResources } from '../content/resources.js';
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { LogOut, User, Menu, X, LayoutDashboard, ChevronRight } from 'lucide-react';
@@ -61,6 +62,7 @@ const Navbar = () => {
           )}
 
           <Link to="/pricing" className="text-sm font-medium text-gray-600 hover:text-red-600 transition">Pricing</Link>
+          {hasPublishedResources() && <Link to="/resources" className="text-sm font-medium text-gray-600 hover:text-red-600 transition">Resources</Link>}
           <Link to="/blog" className="text-sm font-medium text-gray-600 hover:text-red-600 transition">Blog</Link>
           <Link to="/contact" className="text-sm font-medium text-gray-600 hover:text-red-600 transition">Contact</Link>
           
@@ -111,6 +113,7 @@ const Navbar = () => {
             )}
             
             <Link to="/pricing" onClick={closeMenu} className="text-lg font-medium text-gray-800 py-2 border-b border-gray-50 flex justify-between">Pricing <ChevronRight size={16} className="text-gray-300"/></Link>
+            {hasPublishedResources() && <Link to="/resources" onClick={closeMenu} className="text-lg font-medium text-gray-800 py-2 border-b border-gray-50 flex justify-between">Resources <ChevronRight size={16} className="text-gray-300"/></Link>}
             <Link to="/blog" onClick={closeMenu} className="text-lg font-medium text-gray-800 py-2 border-b border-gray-50 flex justify-between">Blog <ChevronRight size={16} className="text-gray-300"/></Link>
             <Link to="/contact" onClick={closeMenu} className="text-lg font-medium text-gray-800 py-2 border-b border-gray-50 flex justify-between">Contact <ChevronRight size={16} className="text-gray-300"/></Link>
           </div>

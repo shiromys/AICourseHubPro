@@ -12,6 +12,7 @@ Allow: /courses
 Allow: /courses/
 Allow: /pricing
 Allow: /blog
+Allow: /resources
 Allow: /contact
 Allow: /privacy
 Allow: /terms

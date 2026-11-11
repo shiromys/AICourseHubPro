@@ -204,6 +204,16 @@ class NewsletterSubscriber(db.Model):
     unsubscribed_at = db.Column(db.DateTime, nullable=True)
     last_sent_at = db.Column(db.DateTime, nullable=True)
 
+# 9b. RESOURCE DOWNLOAD (one row each time a free template is downloaded from the resource library)
+class ResourceDownload(db.Model):
+    __tablename__ = 'resource_downloads'
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), nullable=False, index=True)
+    slug = db.Column(db.String(120), nullable=False, index=True)     # the library page
+    file_name = db.Column(db.String(120), nullable=False)
+    newsletter_opt_in = db.Column(db.Boolean, default=False, nullable=False)  # ticked the weekly-digest box
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 # 10. NEWSLETTER ISSUE MODEL (one weekly digest)
 class NewsletterIssue(db.Model):
     __tablename__ = 'newsletter_issues'
