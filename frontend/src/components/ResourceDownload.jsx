@@ -38,7 +38,7 @@ const ResourceDownload = ({ page }) => {
         <div role="status" data-testid="download-done">
           <p className="flex items-center gap-2 font-bold text-green-700 mb-2"><CheckCircle size={18} /> Your download is starting.</p>
           <p className="text-sm text-gray-600">If nothing happens, <a href={done.url} className="text-red-600 underline">click here</a> (the link works for 15 minutes).</p>
-          {done.pending && <p className="text-sm text-gray-600 mt-2">Check your inbox and confirm to start receiving the weekly digest.</p>}
+          {done.pending && <p className="text-sm text-gray-600 mt-2">If this address is not already subscribed, a confirmation email is on its way. Click the link in it to start receiving the weekly digest.</p>}
         </div>
       ) : (
         <form onSubmit={submit} className="space-y-4" noValidate>
