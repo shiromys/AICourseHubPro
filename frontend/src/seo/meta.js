@@ -60,6 +60,11 @@ export const PAGES = {
     description: 'Questions about a course, your account or a payment? Email info@aicoursehubpro.com or send us a message and we will get back to you.',
     lastmod: '2026-11-09', changefreq: 'yearly', priority: '0.5',
   },
+  '/sample-certificate': {
+    title: 'Sample Certificate of Completion | AICourseHubPro',
+    description: 'See a sample AICourseHubPro certificate of completion, how you earn a real one (pass mark 70%) and how anyone can verify it with its unique ID.',
+    lastmod: '2026-11-12', changefreq: 'yearly', priority: '0.6',
+  },
   '/privacy': {
     title: 'Privacy Policy | AICourseHubPro',
     description: 'How AICourseHubPro collects, uses and protects your information, including analytics and marketing cookies, and the choices you have.',

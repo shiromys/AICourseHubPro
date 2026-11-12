@@ -85,7 +85,7 @@ export default defineConfig(({ mode }) => {
         // Cache the app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         // the saved article pages are for search engines and first visits; do not make every visitor download them all
-        globIgnores: ['blog/*/index.html', 'resources/*/index.html'],
+        globIgnores: ['blog/*/index.html', 'resources/*/index.html', 'courses/*/sample/index.html'],
         // typing these addresses in the browser must show the real file, not the app's home page
         navigateFallbackDenylist: [/^\/blog-data\//, /^\/sitemap\.xml$/, /^\/api\//],
         // Network-first for API calls — never serve stale data

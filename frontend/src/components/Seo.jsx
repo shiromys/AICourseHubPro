@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { metaForStaticPath, metaForCourse } from '../seo/meta.js';
 import { metaForPost } from '../seo/blog.js';
 import { metaForResourceHub, metaForResource } from '../seo/resources.js';
+import { metaForSample } from '../seo/samples.js';
 import { hasPublishedResources } from '../content/resources.js';
 import { applyHead, applyPrivateHead } from '../seo/applyHead.js';
 
@@ -14,6 +15,7 @@ export default function RouteSeo() {
   useEffect(() => {
     const p = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
     if (/^\/courses\/[^/]+$/.test(p)) return; // the course page sets its own
+    if (/^\/courses\/[^/]+\/sample$/.test(p)) return; // so does each free sample lesson
     if (/^\/blog\/[^/]+$/.test(p)) return; // so does each blog article
     if (p === '/resources' || /^\/resources\/[^/]+$/.test(p)) return; // and the resource library pages
     const meta = metaForStaticPath(p);
@@ -49,5 +51,13 @@ export function ResourceSeo({ hub, page }) {
     if (hub) applyHead(metaForResourceHub());
     else if (page) applyHead(metaForResource(page));
   }, [hub, page && page.slug]);
+  return null;
+}
+
+// A free sample lesson: its own title, description, canonical address and structured data.
+export function SampleSeo({ slug, content }) {
+  useEffect(() => {
+    if (content) applyHead(metaForSample(slug, content));
+  }, [slug]); // eslint-disable-line
   return null;
 }

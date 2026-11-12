@@ -12,6 +12,7 @@ import useCheckout from '../hooks/useCheckout';
 import { track, courseItem } from '../utils/analytics';
 import { marketingFor } from '../content/courseMarketing';
 import { resourcesForCourse, resourceUrl } from '../content/resources.js';
+import { sampleFor, sampleUrl, SAMPLE_CERTIFICATE_URL } from '../content/samples.js';
 
 const isNumeric = (p) => /^\d+$/.test(p || '');
 const matches = (c, p) => (isNumeric(p) ? c.id === parseInt(p, 10) : c.slug === p);
@@ -160,6 +161,11 @@ const CourseView = () => {
                 <EnrollButton where="top" />
                 <span className="text-sm text-gray-500">One-time payment · Lifetime access</span>
               </div>
+              {sampleFor(course.slug) && (
+                <p className="mt-4">
+                  <Link to={sampleUrl(course.slug)} onClick={() => track('sample_link_click', { item_id: course.slug })} data-testid="sample-link" className="inline-flex items-center gap-2 text-red-400 font-bold hover:underline">Try a free lesson first (no payment or email needed) →</Link>
+                </p>
+              )}
             </div>
             <div className="relative">
               <div className="bg-gray-900 border border-gray-800 rounded-3xl p-8 shadow-2xl relative z-10">
@@ -253,6 +259,7 @@ const CourseView = () => {
           <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6 text-gray-300 space-y-3">
             <p>Finish the lessons, then pass the final assessment with a score of <strong className="text-white">at least 70%</strong> to earn your certificate of completion.</p>
             <p>Every certificate has a unique ID. Anyone you share it with can check that it is real on our verification page.</p>
+            <p><Link to={SAMPLE_CERTIFICATE_URL} data-testid="sample-cert-link" className="text-red-400 font-bold hover:underline">See a sample certificate →</Link></p>
           </div>
         </section>
 

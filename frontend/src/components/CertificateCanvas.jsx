@@ -7,8 +7,10 @@ import jsPDF from 'jspdf';
 // The certificate artwork (1123x794, A4 landscape ratio). Shared by the learner's
 // Certificate page and the admin Certificates registry so both always render
 // the exact same document. The ref points at the element html2canvas captures.
-const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score, certId }, ref) => {
-  const verificationUrl = `${window.location.origin}/verify/${certId}`;
+// sample = true draws the public SAMPLE version (no real name, SAMPLE across the page, the QR code
+// opens the explanation page instead of a verification result). It can never pass for a real one.
+const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score, certId, sample = false }, ref) => {
+  const verificationUrl = sample ? `${window.location.origin}/sample-certificate` : `${window.location.origin}/verify/${certId}`;
   return (
       <div 
           ref={ref}
@@ -28,6 +30,15 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
   
           {/* MAIN CONTENT */}
           <div className="flex-1 p-16 flex flex-col justify-between relative">
+
+              {sample && (
+                <>
+                  <div className="absolute top-0 left-0 right-0 bg-red-600 text-white text-center text-xs font-black tracking-[0.3em] py-1.5 z-20" data-testid="sample-banner">SAMPLE · NOT A REAL CERTIFICATE</div>
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 overflow-hidden" aria-hidden="true">
+                    <span className="font-black text-red-600 uppercase select-none" style={{ fontSize: '230px', opacity: 0.13, transform: 'rotate(-22deg)', letterSpacing: '0.05em' }}>Sample</span>
+                  </div>
+                </>
+              )}
               
               {/* BACKGROUND WATERMARK (USING REAL LOGO) */}
               <div className="absolute top-0 right-0 p-10 opacity-[0.05] pointer-events-none">
@@ -41,9 +52,9 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
                       <img src="/logo.png" alt="Logo" className="w-20 h-auto object-contain" />
                       
                       <div>
-                          <h2 className="text-2xl font-black text-gray-900 tracking-tighter leading-none">
+                          <div className="text-2xl font-black text-gray-900 tracking-tighter leading-none">
                               AICourseHub <span className="text-red-600">Pro</span>
-                          </h2>
+                          </div>
                           <p className="text-xs font-bold text-gray-400 tracking-widest uppercase mt-1">Professional Certification</p>
                       </div>
                   </div>
@@ -55,31 +66,31 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
   
               {/* Body */}
               <div className="flex-1 flex flex-col justify-center z-10 mt-8">
-                  <h1 className="text-6xl font-black text-gray-200 uppercase tracking-tight absolute top-[25%] left-16 select-none -z-10 opacity-20 scale-150 origin-top-left">
+                  <div className="text-6xl font-black text-gray-200 uppercase tracking-tight absolute top-[25%] left-16 select-none -z-10 opacity-20 scale-150 origin-top-left">
                       Achievement
-                  </h1>
+                  </div>
   
                   <p className="text-red-600 font-bold text-sm uppercase tracking-[0.3em] mb-4">Certificate of Completion</p>
                   <p className="text-gray-500 text-xl font-medium mb-6">This is to certify that</p>
                   
-                  <h2 className="text-6xl font-black text-gray-900 tracking-tight mb-8">
+                  <div className="text-6xl font-black text-gray-900 tracking-tight mb-8">
                       {name}
-                  </h2>
+                  </div>
                   
                   <p className="text-gray-500 text-xl font-medium mb-4 max-w-2xl">
                       Has successfully completed the comprehensive course curriculum for
                   </p>
                   
                   <div className="border-l-4 border-red-600 pl-6 py-2 mb-8">
-                      <h3 className="text-4xl font-bold text-gray-800 leading-tight">
+                      <div className="text-4xl font-bold text-gray-800 leading-tight">
                           {courseTitle}
-                      </h3>
+                      </div>
                   </div>
   
                   <div className="flex items-center gap-4">
                       <div className="bg-gray-100 px-4 py-2 rounded-md flex items-center gap-2">
                           <CheckCircle size={16} className="text-green-600"/>
-                          <span className="text-gray-700 font-bold text-sm">Score: {score}%</span>
+                          <span className="text-gray-700 font-bold text-sm">{sample ? 'Pass mark: 70%' : `Score: ${score}%`}</span>
                       </div>
                       {completionDate ? (
                         <div className="bg-gray-100 px-4 py-2 rounded-md">
@@ -101,7 +112,7 @@ const CertificateCanvas = forwardRef(({ name, courseTitle, completionDate, score
                   <div className="flex items-center gap-4">
                       <div className="text-right">
                           <p className="text-[10px] text-gray-400 font-mono leading-tight">
-                              Scan to verify<br/>authenticity
+                              {sample ? <>Scan to see how<br/>verification works</> : <>Scan to verify<br/>authenticity</>}
                           </p>
                       </div>
                       <div className="bg-white p-1 border border-gray-200 rounded-lg">

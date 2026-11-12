@@ -111,10 +111,13 @@ async function run(outDir, apiUrl) {
   const metaMod = await import(pathToFileURL(path.resolve('src/seo/meta.js')).href);
   const snapMod = await import(pathToFileURL(path.resolve('src/seo/snapshot.js')).href);
   const { PAGES, NOINDEX_PAGES, COURSE_SEO_TITLES, COURSE_PAGES_LASTMOD, SITE_URL, metaForStaticPath, metaForCourse, buildHead } = metaMod;
-  const { snapshotFor, courseSnapshot, postSnapshot, resourceHubSnapshot, resourceSnapshot } = snapMod;
+  const { snapshotFor, courseSnapshot, postSnapshot, resourceHubSnapshot, resourceSnapshot, sampleSnapshot } = snapMod;
   const resMod = await import(pathToFileURL(path.resolve('src/content/resources.js')).href);
   const resSeo = await import(pathToFileURL(path.resolve('src/seo/resources.js')).href);
   const { publishedResources, libraryReport, resourceUrl } = resMod;
+  const smpMod = await import(pathToFileURL(path.resolve('src/content/samples.js')).href);
+  const smpSeo = await import(pathToFileURL(path.resolve('src/seo/samples.js')).href);
+  const { publishedSamples, samplesReport, sampleUrl } = smpMod;
   const blogMod = await import(pathToFileURL(path.resolve('src/seo/blog.js')).href);
   const { mergeBlogIndex, metaForPost, cleanPostHtml } = blogMod;
 
@@ -166,6 +169,13 @@ async function run(outDir, apiUrl) {
     for (const pg of resPages) write(resourceUrl(pg.slug), render(template, resSeo.metaForResource(pg), resourceSnapshot(pg, withSlug), resourceUrl(pg.slug), buildHead));
   }
 
+  // free sample lessons: only complete ones exist; the sample certificate page is one of the ordinary public pages above
+  const samples = publishedSamples();
+  const smpReport = samplesReport();
+  for (const r of smpReport.incomplete) console.warn(`[prerender] sample lesson "${r.slug}" is NOT published, still missing: ${r.missing.join('; ')}`);
+  for (const sl of smpReport.stale) console.warn(`[prerender] sample lesson "${sl}" was last updated more than 6 months ago: review it`);
+  for (const sm of samples) write(sampleUrl(sm.slug), render(template, smpSeo.metaForSample(sm.slug, sm.content), sampleSnapshot(sm.slug, withSlug), sampleUrl(sm.slug), buildHead));
+
   // blog articles: a saved page and a small data file each, plus the list
   fs.mkdirSync(path.join(outDir, 'blog-data'), { recursive: true });
   fs.writeFileSync(path.join(outDir, 'blog-data', 'index.json'), JSON.stringify({ baked, ...(baked ? {} : { reason: blogReason || 'unknown' }), entries: blogEntries }));
@@ -186,6 +196,7 @@ async function run(outDir, apiUrl) {
     urls.push({ loc: `${SITE_URL}/resources`, lastmod: resPages.map((x) => x.content.lastUpdated).sort().pop(), changefreq: 'weekly', priority: '0.7' });
     for (const pg of resPages) urls.push({ loc: `${SITE_URL}${resourceUrl(pg.slug)}`, lastmod: pg.content.lastUpdated, changefreq: 'monthly', priority: '0.7' });
   }
+  for (const sm of samples) urls.push({ loc: `${SITE_URL}${sampleUrl(sm.slug)}`, lastmod: sm.content.lastUpdated, changefreq: 'monthly', priority: '0.6' });
   if (baked) {
     for (const post of posts) {
       const e = blogEntries.find((x) => x.slug === post.slug);
@@ -199,5 +210,5 @@ async function run(outDir, apiUrl) {
     `\n</urlset>\n`;
   fs.writeFileSync(path.join(outDir, 'sitemap.xml'), xml);
 
-  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses; resources: ${resPages.length} published of 12; blog: ${baked ? posts.length + ' articles saved (source: ' + blogSource + ')' : 'not saved'}`);
+  console.log(`[prerender] saved ${Object.keys(PAGES).length} pages, ${Object.keys(NOINDEX_PAGES).length} no-index pages and ${withSlug.length} course pages (source: ${courseSource}); sitemap lists ${urls.length} addresses; resources: ${resPages.length} published of 12; sample lessons: ${samples.length} published of 6; blog: ${baked ? posts.length + ' articles saved (source: ' + blogSource + ')' : 'not saved'}`);
 }

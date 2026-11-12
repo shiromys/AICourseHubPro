@@ -8,6 +8,8 @@ import { ORGANIZATION, SITE_URL, courseFaq, courseUrl, PAGES } from './meta.js';
 import { blogPath, relatedCourseSlug, COURSE_LABELS, cleanPostHtml } from './blog.js';
 import { AUDIENCES, publishedResources, hasPublishedResources, relatedResources, resourceUrl } from '../content/resources.js';
 import { RESOURCE_HUB_META, longDate } from './resources.js';
+import { SAMPLE_CERT_TEXT } from './samples.js';
+import { sampleFor, sampleUrl, SAMPLE_CERTIFICATE_URL } from '../content/samples.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const a = (href, text) => `<a href="${esc(href)}">${esc(text)}</a>`;
@@ -93,6 +95,9 @@ ${courseList(list)}`;
 <p>Questions about a course, your account or a payment? We will get back to you.</p>
 <p>Email: ${a('mailto:' + ORGANIZATION.email, ORGANIZATION.email)}<br>Phone: ${a('tel:+18009718013', ORGANIZATION.telephone)}<br>${esc(ORGANIZATION.address.streetAddress)}, ${esc(ORGANIZATION.address.addressLocality)}, ${esc(ORGANIZATION.address.addressRegion)} ${esc(ORGANIZATION.address.postalCode)}</p>`;
       break;
+    case '/sample-certificate':
+      main = sampleCertificateMain();
+      break;
     case '/privacy':
       main = `<h1>Privacy Policy</h1><p>How ${esc(ORGANIZATION.name)} collects, uses and protects your information.</p>`;
       break;
@@ -131,9 +136,10 @@ ${ex ? `<h2>A worked example</h2>${ex.task ? `<h3>The task</h3><p>${esc(ex.task)
     const lessons = m.lessons || [];
     return li(`<h3>${esc(m.title)}</h3>${info.summary ? `<p>${esc(info.summary)}</p>` : ''}<p>${lessons.length} lesson${lessons.length === 1 ? '' : 's'}${info.minutes ? ` · about ${esc(info.minutes)} min` : ''}</p><ul>${lessons.map((l) => li(esc(l.title))).join('')}</ul>`);
   }).join('')}</ol>
+${sampleFor(course.slug) ? `<h2>Try a free lesson</h2><p>${a(sampleUrl(course.slug), 'Free sample lesson: ' + sampleFor(course.slug).content.title)} (about ${esc(sampleFor(course.slug).content.minutes)} minutes, no payment or email needed).</p>` : ''}
 <h2>Your certificate</h2>
 <p>Finish the lessons, then pass the final assessment with a score of at least 70% to earn your certificate of completion.</p>
-<p>Every certificate has a unique ID. Anyone you share it with can check that it is real on our verification page.</p>
+<p>Every certificate has a unique ID. Anyone you share it with can check that it is real on our verification page. ${a(SAMPLE_CERTIFICATE_URL, 'See a sample certificate')}.</p>
 <h2>Price and terms</h2>
 <p>$${esc(course.price)}, paid once, with lifetime access. No subscription.</p>
 <p>Want more than one course? The ${a('/pricing', 'Pro Bundle')} ($159) includes every course, and its price drops by $29 for each course you already own.</p>
@@ -182,4 +188,34 @@ export function resourceSnapshot(page, courses) {
 <aside><h2>Learn the full method</h2><p>${a(`/courses/${page.course}`, course ? course.title : COURSE_LABELS[page.course])}</p></aside>
 ${rel.length ? `<aside><h2>Related guides</h2><ul>${rel.map((r) => li(a(resourceUrl(r.slug), r.content.title))).join('')}</ul></aside>` : ''}
 <p>${a('/resources', 'All guides')} · ${a('/courses', 'All courses')}</p>`, list);
+}
+
+// ---- free sample lessons and the sample certificate ----
+function sampleCertificateMain() {
+  const t = SAMPLE_CERT_TEXT;
+  const ul = (items) => `<ul>${items.map((x) => li(esc(x))).join('')}</ul>`;
+  return `<h1>${esc(t.h1)}</h1>
+<p><strong>SAMPLE · NOT A REAL CERTIFICATE</strong></p>
+<p>${esc(t.lead)}</p>
+<h2>${esc(t.whatTitle)}</h2><p>${esc(t.what)}</p>
+<h2>${esc(t.earnTitle)}</h2>${ul(t.earn)}
+<h2>${esc(t.verifyTitle)}</h2>${ul(t.verify)}
+<p>${a('/courses', 'See the courses')} · ${a('/pricing', 'Pricing')}</p>`;
+}
+
+export function sampleSnapshot(slug, courses) {
+  const smp = sampleFor(slug);
+  const list = Array.isArray(courses) ? courses : [];
+  const course = list.find((x) => x.slug === slug);
+  const c = smp.content;
+  const label = course ? course.title : COURSE_LABELS[slug];
+  return frame(`<nav aria-label="Breadcrumb">${a('/', 'Home')} › ${a('/courses', 'Courses')} › ${a('/courses/' + slug, label)} › Free sample lesson</nav>
+<article>
+<h1>${esc(c.title)}</h1>
+<p>Free sample lesson from ${esc(label)} · about ${esc(c.minutes)} minutes · no payment or email needed</p>
+<p>${esc(c.intro)}</p>
+${c.sections.map((z) => `<h2>${esc(z.heading)}</h2>${z.body.map((t) => `<p>${esc(t)}</p>`).join('')}${z.bullets && z.bullets.length ? `<ul>${z.bullets.map((b) => li(esc(b))).join('')}</ul>` : ''}`).join('\n')}
+<h2>Try it yourself</h2><p>${esc(c.tryIt.instruction)}</p><pre>${esc(c.tryIt.prompt)}</pre>
+</article>
+<aside><h2>Want the whole course?</h2><p>${a('/courses/' + slug, label)} · ${a(SAMPLE_CERTIFICATE_URL, 'See a sample certificate')}</p></aside>`, list);
 }

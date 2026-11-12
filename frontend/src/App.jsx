@@ -18,6 +18,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Certificate from './pages/Certificate';
 import Verify from './pages/Verify';
+import SampleLesson from './pages/SampleLesson';
+import SampleCertificate from './pages/SampleCertificate';
 import PrivacyPolicy from './pages/PrivacyPolicy';
 import TermsOfUse from './pages/TermsOfUse';     
 import RefundPolicy from './pages/RefundPolicy';
@@ -144,6 +146,8 @@ function App() {
         
         {/* --- Course View (Public/Private logic handled inside) --- */}
         <Route path="/courses/:id" element={<CourseView />} />
+        <Route path="/courses/:id/sample" element={<SampleLesson />} />
+        <Route path="/sample-certificate" element={<SampleCertificate />} />
         <Route path="/course/:id" element={<CourseIdRedirect />} />
 
         {/* --- Protected Routes --- */}

@@ -13,6 +13,7 @@ Allow: /courses/
 Allow: /pricing
 Allow: /blog
 Allow: /resources
+Allow: /sample-certificate
 Allow: /contact
 Allow: /privacy
 Allow: /terms
