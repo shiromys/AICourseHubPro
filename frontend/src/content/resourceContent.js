@@ -50,6 +50,7 @@ export const RESOURCE_CONTENT = {
       { q: 'Can I trust the output as it is?', a: 'No, always check every figure and claim before sending anything.' },
       { q: 'How long does a first draft take?', a: 'About fifteen minutes, plus your own review time.' },
     ],
+    reviewer: { name: 'Test Reviewer', role: 'Test role' },
     lastUpdated: '2026-11-11',
   },
 };
