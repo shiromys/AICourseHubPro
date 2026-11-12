@@ -56,7 +56,7 @@ export const problemsFor = (content) => {
   const faq = Array.isArray(c.faq) ? c.faq : [];
   if (faq.length < 3 || faq.length > 5 || !faq.every((f) => f && str(f.q, 8) && str(f.a, 20))) p.push('faq (3 to 5 items, each with q and a)');
   const r = c.reviewer || {};
-  if (!str(r.name, 3) || !str(r.role, 3)) p.push('reviewer (name and role)');
+  if (!str(r.name, 3)) p.push('reviewer (name)');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(c.lastUpdated || '')) || isNaN(new Date(c.lastUpdated))) p.push('lastUpdated (YYYY-MM-DD)');
   if (c.metaDescription !== undefined && !str(c.metaDescription, 40, 155)) p.push('metaDescription (optional; 40-155 characters)');
   return p;

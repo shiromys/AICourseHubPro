@@ -174,7 +174,7 @@ export function resourceSnapshot(page, courses) {
 <article>
 <h1>${esc(c.title)}</h1>
 <p>${esc(c.shortAnswer)}</p>
-<p>Reviewed by ${esc(c.reviewer.name)}, ${esc(c.reviewer.role)} · Last updated <time datetime="${esc(c.lastUpdated)}">${esc(longDate(c.lastUpdated))}</time></p>
+<p>Reviewed by ${esc(c.reviewer.name)}${c.reviewer.role ? ', ' + esc(c.reviewer.role) : ''} · Last updated <time datetime="${esc(c.lastUpdated)}">${esc(longDate(c.lastUpdated))}</time></p>
 <h2>Who this is for</h2>${ul(c.whoFor)}
 <h2>What you need before you start</h2>${ul(c.beforeYouStart)}
 <h2>Worked example: ${esc(c.example.task)}</h2>

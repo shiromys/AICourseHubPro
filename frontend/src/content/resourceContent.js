@@ -81,8 +81,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -136,8 +135,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -191,8 +189,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -246,8 +243,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -300,8 +296,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -355,8 +350,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -410,8 +404,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -464,8 +457,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -519,8 +511,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -574,8 +565,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -629,8 +619,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   },
@@ -683,8 +672,7 @@ export const RESOURCE_CONTENT = {
       }
     ],
     "reviewer": {
-      "name": "Shiro",
-      "role": "Founder, AICourseHubPro"
+      "name": "AICourseHubPro"
     },
     "lastUpdated": "2026-11-12"
   }

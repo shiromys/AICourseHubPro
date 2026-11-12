@@ -47,7 +47,7 @@ const ResourcePage = () => {
           <article>
             <h1 className="text-3xl md:text-5xl font-black leading-tight mb-5">{c.title}</h1>
             <p className="text-xl text-gray-700 leading-relaxed mb-4" data-testid="short-answer">{c.shortAnswer}</p>
-            <p className="text-sm text-gray-500 mb-8" data-testid="reviewer">Reviewed by {c.reviewer.name}, {c.reviewer.role} · Last updated <time dateTime={c.lastUpdated}>{longDate(c.lastUpdated)}</time></p>
+            <p className="text-sm text-gray-500 mb-8" data-testid="reviewer">Reviewed by {c.reviewer.name}{c.reviewer.role ? `, ${c.reviewer.role}` : ''} · Last updated <time dateTime={c.lastUpdated}>{longDate(c.lastUpdated)}</time></p>
 
             <H2>Who this is for</H2><Bullets items={c.whoFor} />
             <H2>What you need before you start</H2><Bullets items={c.beforeYouStart} />

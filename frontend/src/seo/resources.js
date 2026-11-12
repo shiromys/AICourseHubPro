@@ -38,7 +38,9 @@ export const metaForResource = (page) => {
         image: [DEFAULT_IMAGE],
         datePublished: c.published || c.lastUpdated,
         dateModified: c.lastUpdated,
-        author: { '@type': 'Person', name: c.reviewer.name, jobTitle: c.reviewer.role },
+        author: c.reviewer.role
+          ? { '@type': 'Person', name: c.reviewer.name, jobTitle: c.reviewer.role }
+          : { '@type': 'Organization', name: c.reviewer.name, url: SITE_URL },
         publisher: { '@id': `${SITE_URL}/#organization` },
         mainEntityOfPage: { '@type': 'WebPage', '@id': SITE_URL + path },
         url: SITE_URL + path,
