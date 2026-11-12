@@ -38,7 +38,7 @@ export const SAMPLE_CERT_TEXT = {
   h1: 'Sample certificate of completion',
   lead: "This is a sample. It shows what an AICourseHubPro certificate looks like. It has no real person's name, and it cannot be verified because nobody earned it.",
   whatTitle: 'What the certificate is',
-  what: 'A real AICourseHubPro certificate is a verifiable certificate of completion. It shows that the named person finished a course and passed its final assessment. It is not a degree, a licence or an accredited qualification.',
+  what: 'A real AICourseHubPro certificate is a verifiable certificate of completion issued by AICourseHubPro. It shows that the named person finished a course and passed its final assessment. We confirm it is genuine on our verification page; how an employer or organization regards it is up to them.',
   earnTitle: 'How you earn a real certificate',
   earn: [
     'Buy a course and work through its lessons.',

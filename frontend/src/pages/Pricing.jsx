@@ -218,7 +218,7 @@ const Pricing = () => {
               { q: "Is this a monthly subscription?", a: "No! We hate subscriptions too. You pay once and own the content forever." },
               { q: "Can I upgrade later?", a: "Yes. you can buy a single course first and then upgrade to the bundle later. We automatically discount the bundle based on what you already own!" },
               { q: "Do you offer refunds?", a: "No, we do not offer any refunds excluding special cases such as double payments." },
-              { q: "Are the certificates accredited?", a: "No. It is a verifiable certificate of completion, not a degree or an accredited qualification. Every certificate has a unique ID that anyone can check on our verification page, and you can add it to your LinkedIn profile." },
+              { q: "Are the certificates accredited?", a: "No. It is a certificate of completion issued by AICourseHubPro. Every certificate has a unique ID that anyone can check on our verification page, and you can add it to your LinkedIn profile. How an employer or organization regards it is up to them." },
             ].map((faq, i) => (
               <div key={i} className="border-b border-gray-100 pb-6">
                 <h4 className="font-bold text-lg text-gray-900 mb-2">{faq.q}</h4>

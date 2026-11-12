@@ -280,7 +280,7 @@ const Home = () => {
           <div className="space-y-4">
             {[
               { q: "Do I need coding experience?", a: "Not at all. Our HR, Business, and Marketing tracks are 100% code-free. We focus on 'Prompt Engineering' using English." },
-              { q: "Is the certificate recognized?", a: "It is a certificate of completion with a unique ID that anyone can check on our verification page. Learners add it to LinkedIn and resumes to show what they have completed. It is not an accredited qualification." },
+              { q: "Is the certificate recognized?", a: "It is a certificate of completion that we issue, with a unique ID that anyone can check on our verification page. You can add it to LinkedIn and your resume to show what you have completed. How an employer or organization regards it is up to them." },
               { q: "How long are the courses?", a: "Most courses are designed to be completed in 2-4 hours. They are self-paced, so you can learn whenever you have time." },
               { q: "Can I get a refund?", a: "We do not offer any refunds. However, special cases if proven genuine can be considered for a refund. Please contact info@aicoursehubpro.com for more information." },
             ].map((item, i) => (
