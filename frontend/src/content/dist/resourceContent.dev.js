@@ -64,10 +64,6 @@ var RESOURCE_CONTENT = {
       q: 'How long does a first draft take?',
       a: 'About fifteen minutes, plus your own review time.'
     }],
-    reviewer: {
-      name: 'Test Reviewer',
-      role: 'Test role'
-    },
     lastUpdated: '2026-11-11'
   }
 };
