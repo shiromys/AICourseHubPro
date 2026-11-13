@@ -23,6 +23,7 @@ import RevenuePanel from '../components/admin/RevenuePanel';
 import ResourcesPanel from '../components/admin/ResourcesPanel';
 import ContentPanel from '../components/admin/ContentPanel';
 import AdminSearch, { useDebounced } from '../components/admin/AdminSearch';
+import MaintenanceModal, { tzName } from '../components/admin/MaintenanceModal';
 
 // --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
@@ -72,7 +73,10 @@ const AdminDashboard = () => {
   const listReq = useRef(0);
   const USER_LIMIT = 100;
   const [logs, setLogs] = useState([]);
-  const [settings, setSettings] = useState({ maintenance: false, registrations: true });
+  const [settings, setSettings] = useState({ maintenance: false, maintenance_until: null, registrations: true });
+  const [maintModal, setMaintModal] = useState(null);   // null | 'on' | 'edit'
+  const [maintBusy, setMaintBusy] = useState(false);
+  const [maintError, setMaintError] = useState('');
   const [analytics, setAnalytics] = useState(null);
   const [resetDate, setResetDate] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
@@ -244,6 +248,33 @@ const AdminDashboard = () => {
         alert("Failed to update setting. Check if Backend is running properly."); 
     }
   };
+
+  // Maintenance mode: turning it ON always asks first (and when it should end); turning it OFF is immediate.
+  const saveMaintenance = async (payload) => {
+    setMaintBusy(true); setMaintError('');
+    try {
+      const token = localStorage.getItem('token');
+      const r = await axios.post(`${API_BASE_URL}/api/settings`, payload, { headers: { Authorization: `Bearer ${token}` } });
+      setSettings(prev => ({ ...prev, maintenance: !!r.data.maintenance, maintenance_until: r.data.maintenance_until || null }));
+      setMaintModal(null);
+    } catch (e) { setMaintError(e.response?.data?.msg || 'Could not save. Please try again.'); }
+    setMaintBusy(false);
+  };
+  const onMaintenanceToggle = () => {
+    if (settings.maintenance) { saveMaintenance({ maintenance: false }); return; }
+    setMaintError(''); setMaintModal('on');
+  };
+  const confirmMaintenance = (untilIso) => saveMaintenance(maintModal === 'edit'
+    ? (untilIso ? { maintenance_until: untilIso } : { maintenance: true })
+    : { maintenance: true, ...(untilIso ? { maintenance_until: untilIso } : {}) });
+  // If an end time passes while this page is open, refresh the switch so it shows the truth.
+  useEffect(() => {
+    if (!settings.maintenance || !settings.maintenance_until) return undefined;
+    const ms = new Date(settings.maintenance_until).getTime() - Date.now() + 2500;
+    if (ms <= 0 || ms > 2147483000) return undefined;
+    const t = setTimeout(() => { axios.get(`${API_BASE_URL}/api/settings`).then(r => setSettings(prev => ({ ...prev, ...r.data }))).catch(() => {}); }, ms);
+    return () => clearTimeout(t);
+  }, [settings.maintenance, settings.maintenance_until]);
 
   const handleToggleAdmin = async (user) => {
     if (!window.confirm(`${user.role === 'Admin' ? 'Demote' : 'Promote'} ${user.name}?`)) return;
@@ -817,14 +848,25 @@ const AdminDashboard = () => {
             </div>
         )}
 
+        <MaintenanceModal open={!!maintModal} editing={maintModal === 'edit'} busy={maintBusy} error={maintError} onConfirm={confirmMaintenance} onCancel={() => setMaintModal(null)} />
+
         {/* SETTINGS TAB */}
         {activeTab === 'settings' && (
             <div className="bg-white rounded-xl border border-gray-200 p-6 md:p-8 max-w-3xl shadow-sm">
                 <h3 className="font-bold mb-8 text-2xl text-gray-900 flex items-center gap-3"><Settings className="text-gray-400"/> Global Configurations</h3>
                 <div className="space-y-6">
                     <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
-                        <div><h4 className="font-bold text-gray-900 text-lg">Maintenance Mode</h4><p className="text-sm text-gray-500 mt-1">If enabled, non-admin users will see a "Under Maintenance" page.</p></div>
-                        <button onClick={() => toggleSetting('maintenance')} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
+                        <div><h4 className="font-bold text-gray-900 text-lg">Maintenance Mode</h4><p className="text-sm text-gray-500 mt-1">If enabled, non-admin users will see a "Under Maintenance" page.</p>
+                          {settings.maintenance && (
+                            <p className="text-sm font-semibold text-red-700 mt-2" data-testid="maintenance-status">
+                              {settings.maintenance_until
+                                ? <>ON until {new Date(settings.maintenance_until).toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} ({tzName()}). </>
+                                : <>ON with no end time. </>}
+                              <button type="button" onClick={() => { setMaintError(''); setMaintModal('edit'); }} className="underline font-bold" data-testid="maintenance-change">{settings.maintenance_until ? 'Change end time' : 'Set an end time'}</button>
+                            </p>
+                          )}
+                        </div>
+                        <button data-testid="maintenance-toggle" aria-pressed={!!settings.maintenance} aria-label="Maintenance mode" onClick={onMaintenanceToggle} className={`w-14 h-8 rounded-full p-1 transition-colors duration-300 ${settings.maintenance ? 'bg-red-600' : 'bg-gray-300'}`}><div className={`w-6 h-6 bg-white rounded-full transform transition-transform duration-300 shadow-md ${settings.maintenance ? 'translate-x-6' : 'translate-x-0'}`} /></button>
                     </div>
                     <div className="flex items-center justify-between p-6 bg-gray-50 rounded-xl border border-gray-200">
                         <div><h4 className="font-bold text-gray-900 text-lg">Allow New Registrations</h4><p className="text-sm text-gray-500 mt-1">Toggle to pause new user signups temporarily.</p></div>

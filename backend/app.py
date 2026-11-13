@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from flask_migrate import Migrate
 from models import User, Course, Enrollment, ContactMessage, AuditLog, SystemSetting, FlaggedPayment, UserActivity, NewsletterSubscriber, NewsletterIssue, LessonAttempt, RoleplaySession, ResourceDownload
 from database import db
-from sqlalchemy import func
+from sqlalchemy import func, case
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_mail import Mail, Message
@@ -3708,6 +3708,13 @@ def _res_query(args, with_slug=True):
     term = (args.get('q') or '').strip()
     if with_slug and term:
         q = q.filter(func.lower(ResourceDownload.email).like(_like(term), escape='\\'))
+    nl = (args.get('nl') or '').strip()
+    if with_slug and nl in ('active', 'pending', 'unsubscribed', 'none'):
+        subs = db.session.query(func.lower(NewsletterSubscriber.email))
+        if nl == 'none':
+            q = q.filter(~func.lower(ResourceDownload.email).in_(subs))
+        else:
+            q = q.filter(func.lower(ResourceDownload.email).in_(subs.filter(NewsletterSubscriber.status == nl)))
     return q
 
 
@@ -3717,6 +3724,74 @@ def _newsletter_status_map(emails):
         return {}
     rows = NewsletterSubscriber.query.filter(func.lower(NewsletterSubscriber.email).in_(low)).all()
     return {r.email.strip().lower(): r.status for r in rows}
+
+
+def _account_emails(emails):
+    """Which of these addresses already belong to a registered user (lower-case set)."""
+    low = list({(e or '').strip().lower() for e in emails if e})
+    if not low:
+        return set()
+    return {(u.email or '').strip().lower() for u in User.query.filter(func.lower(User.email).in_(low), User.is_deleted == False).all()}
+
+
+def _people_query(args):
+    """One row per email address that downloaded: how many times, first and last time, whether the digest box was ever ticked."""
+    low = func.lower(ResourceDownload.email)
+    return (_res_query(args).with_entities(low.label('email'), func.count(ResourceDownload.id).label('downloads'),
+                                           func.min(ResourceDownload.created_at).label('first_at'), func.max(ResourceDownload.created_at).label('last_at'),
+                                           func.max(case((ResourceDownload.newsletter_opt_in == True, 1), else_=0)).label('opt')).group_by(low))
+
+
+@app.route('/api/admin/resources/people', methods=['GET'])
+@jwt_required()
+def admin_resource_people():
+    admin, err = _require_admin()
+    if err: return err
+    try:
+        page = max(1, int(request.args.get('page', 1))); per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        page, per_page = 1, 50
+    grouped = _people_query(request.args)
+    total = grouped.count()
+    rows = grouped.order_by(func.max(ResourceDownload.created_at).desc()).offset((page - 1) * per_page).limit(per_page).all()
+    emails = [r.email for r in rows]
+    guides = {}
+    if emails:
+        low = func.lower(ResourceDownload.email)
+        for e, slug in _res_query(request.args).filter(low.in_(emails)).with_entities(low, ResourceDownload.slug).distinct().all():
+            guides.setdefault(e, []).append(slug)
+    status = _newsletter_status_map(emails)
+    accounts = _account_emails(emails)
+    items = [{"email": r.email, "downloads": r.downloads, "guides": sorted(guides.get(r.email, [])),
+              "first_at": r.first_at.isoformat() if r.first_at else None, "last_at": r.last_at.isoformat() if r.last_at else None,
+              "opt_in": bool(r.opt), "newsletter_status": status.get(r.email) or 'none', "has_account": r.email in accounts} for r in rows]
+    return jsonify({"items": items, "total": total, "page": page, "per_page": per_page})
+
+
+@app.route('/api/admin/resources/people.csv', methods=['GET'])
+@jwt_required()
+def admin_resource_people_csv():
+    admin, err = _require_admin()
+    if err: return err
+    import csv, io
+    from flask import Response
+    def safe(v):
+        v = '' if v is None else str(v)
+        return "'" + v if v[:1] in ('=', '+', '-', '@') else v
+    rows = _people_query(request.args).order_by(func.max(ResourceDownload.created_at).desc()).limit(50000).all()
+    emails = [r.email for r in rows]
+    guides = {}
+    low = func.lower(ResourceDownload.email)
+    for i in range(0, len(emails), 1000):
+        for e, slug in _res_query(request.args).filter(low.in_(emails[i:i + 1000])).with_entities(low, ResourceDownload.slug).distinct().all():
+            guides.setdefault(e, []).append(slug)
+    status = _newsletter_status_map(emails); accounts = _account_emails(emails)
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Email", "Downloads", "Guides", "First download (UTC)", "Last download (UTC)", "Ticked weekly digest", "Newsletter status now", "Has an account"])
+    for r in rows:
+        w.writerow([safe(r.email), r.downloads, "; ".join(sorted(guides.get(r.email, []))), r.first_at.strftime('%Y-%m-%d %H:%M') if r.first_at else '',
+                    r.last_at.strftime('%Y-%m-%d %H:%M') if r.last_at else '', "yes" if r.opt else "no", status.get(r.email) or 'none', "yes" if r.email in accounts else "no"])
+    return Response(buf.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment; filename=resource-people.csv"})
 
 
 @app.route('/api/admin/resources/downloads', methods=['GET'])
@@ -3732,7 +3807,9 @@ def admin_resource_downloads():
     total = q.count()
     rows = q.order_by(ResourceDownload.created_at.desc(), ResourceDownload.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
     status = _newsletter_status_map([r.email for r in rows])
+    accounts = _account_emails([r.email for r in rows])
     items = [{"id": r.id, "email": r.email, "slug": r.slug, "file_name": r.file_name, "opt_in": bool(r.newsletter_opt_in),
+              "has_account": (r.email or '').strip().lower() in accounts,
               "newsletter_status": status.get((r.email or '').strip().lower()) or 'none',
               "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
 
@@ -3934,14 +4011,49 @@ def chat_support():
         print(f"[Nova] Chatbot Error: {e}\n{traceback.format_exc()}")
         return jsonify({"reply": "I'm having trouble connecting right now."}), 500
 
+MAINTENANCE_UNTIL_KEY = 'maintenance_until'
+MAINTENANCE_MAX_DAYS = 14
+
+
+def _parse_utc(raw):
+    """'2026-11-13T12:00:00Z' (or with milliseconds / +00:00) -> naive UTC datetime, or None."""
+    try:
+        txt = str(raw or '').strip().replace('Z', '').replace('+00:00', '')
+        return datetime.strptime(txt[:19], '%Y-%m-%dT%H:%M:%S')
+    except ValueError:
+        return None
+
+
+def _maintenance_state():
+    """Returns (is_on, scheduled_end_or_None). A scheduled end that has passed switches maintenance off by itself,
+    the next time anything asks, so no timer or cron job is needed."""
+    m = SystemSetting.query.filter_by(key='maintenance_mode').first()
+    u = SystemSetting.query.filter_by(key=MAINTENANCE_UNTIL_KEY).first()
+    on = bool(m and m.value == 'true')
+    until = _parse_utc(u.value) if (u and u.value) else None
+    if on and until and datetime.utcnow() >= until:
+        try:
+            flipped = SystemSetting.query.filter_by(key='maintenance_mode', value='true').update({'value': 'false'}, synchronize_session=False)
+            if u: u.value = ''
+            if flipped:  # only the request that really flipped it writes the log line
+                db.session.add(AuditLog(admin_email='system', action='Maintenance Mode Ended Automatically',
+                                        details=f"Scheduled end {until.isoformat()} UTC reached", timestamp=datetime.utcnow()))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return False, None
+    return on, (until if on else None)
+
+
 @app.route('/api/settings', methods=['GET', 'POST'])
 @jwt_required(optional=True) 
 def settings():
     if request.method == 'GET':
-        m = SystemSetting.query.filter_by(key='maintenance_mode').first()
+        on, until = _maintenance_state()
         r = SystemSetting.query.filter_by(key='allow_registrations').first()
         return jsonify({
-            "maintenance": m.value == 'true' if m else False,
+            "maintenance": on,
+            "maintenance_until": (until.isoformat() + "Z") if until else None,
             "registrations": r.value == 'true' if r else True
         })
     
@@ -3949,17 +4061,56 @@ def settings():
     user = db.session.get(User, get_jwt_identity()) # FIXED
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
     
-    data = request.json
-    for key, val in [('maintenance_mode', data.get('maintenance')), ('allow_registrations', data.get('registrations'))]:
-        if val is not None:
-            setting = SystemSetting.query.filter_by(key=key).first()
-            if not setting: 
-                setting = SystemSetting(key=key, value=str(val).lower())
-                db.session.add(setting)
-            else: 
-                setting.value = str(val).lower()
+    data = request.get_json(silent=True) or {}
+    now_on, now_until = _maintenance_state()
+
+    # ---- validate everything first, so a bad request changes nothing ----
+    maint = data.get('maintenance')
+    if maint is not None and not isinstance(maint, bool):
+        return jsonify({"msg": "maintenance must be true or false"}), 400
+    new_until = None
+    wants_until = data.get('maintenance_until') not in (None, '')
+    if wants_until:
+        new_until = _parse_utc(data.get('maintenance_until'))
+        if not new_until:
+            return jsonify({"msg": "End time is not a valid date and time."}), 400
+        if new_until < datetime.utcnow() + timedelta(minutes=1):
+            return jsonify({"msg": "The end time must be in the future."}), 400
+        if new_until > datetime.utcnow() + timedelta(days=MAINTENANCE_MAX_DAYS):
+            return jsonify({"msg": f"The end time can be at most {MAINTENANCE_MAX_DAYS} days away. Turn it on without an end time if it must last longer."}), 400
+        if maint is False:
+            return jsonify({"msg": "An end time only makes sense when turning maintenance on."}), 400
+        if maint is None and not now_on:
+            return jsonify({"msg": "Maintenance mode is off, so there is no end time to change."}), 400
+
+    def put(key, value):
+        row = SystemSetting.query.filter_by(key=key).first()
+        if row: row.value = value
+        else: db.session.add(SystemSetting(key=key, value=value))
+
+    def log(action, details):
+        db.session.add(AuditLog(admin_email=user.email, action=action, details=details, timestamp=datetime.utcnow()))
+
+    if maint is True:
+        put('maintenance_mode', 'true'); put(MAINTENANCE_UNTIL_KEY, new_until.isoformat() if new_until else '')
+        log('Maintenance Mode Turned On' if not now_on else 'Maintenance Mode Updated',
+            f"Ends automatically at {new_until.isoformat()} UTC" if new_until else "No automatic end - switch it off by hand")
+    elif maint is False:
+        put('maintenance_mode', 'false'); put(MAINTENANCE_UNTIL_KEY, '')
+        if now_on: log('Maintenance Mode Turned Off', 'Switched off by an admin')
+    elif new_until:  # only the end time changed
+        put(MAINTENANCE_UNTIL_KEY, new_until.isoformat())
+        log('Maintenance End Time Changed', f"Now ends automatically at {new_until.isoformat()} UTC")
+
+    reg = data.get('registrations')
+    if reg is not None:
+        before = SystemSetting.query.filter_by(key='allow_registrations').first()
+        was = (before.value == 'true') if before else True
+        put('allow_registrations', str(bool(reg)).lower())
+        if was != bool(reg): log('New Registrations Opened' if reg else 'New Registrations Paused', 'Changed in Global Settings')
     db.session.commit()
-    return jsonify({"msg": "Settings updated"})
+    on, until = _maintenance_state()
+    return jsonify({"msg": "Settings updated", "maintenance": on, "maintenance_until": (until.isoformat() + "Z") if until else None})
 
 @app.route('/api/verify-certificate/<cert_id>', methods=['GET'])
 def verify_cert(cert_id):

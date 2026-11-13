@@ -74,6 +74,7 @@ function App() {
   // 1. MAINTENANCE MODE LOGIC
   // =====================================================
   const [isMaintenance, setIsMaintenance] = useState(false);
+  const [maintenanceUntil, setMaintenanceUntil] = useState(null);
   const [checkingMaintenance, setCheckingMaintenance] = useState(true);
   const userRole = localStorage.getItem('user_role'); 
 
@@ -81,6 +82,7 @@ function App() {
     axios.get(`${API_BASE_URL}/api/settings`)
       .then(res => {
         setIsMaintenance(res.data.maintenance);
+        setMaintenanceUntil(res.data.maintenance_until || null);
         setCheckingMaintenance(false);
       })
       .catch((e) => {
@@ -95,7 +97,7 @@ function App() {
   // 3. BLOCK ACCESS IF MAINTENANCE IS ON (And user is not Admin)
   // We allow access to '/login' so Admins can get in to turn it off.
   if (isMaintenance && userRole !== 'admin' && !window.location.pathname.includes('/login')) {
-     return <Maintenance />;
+     return <Maintenance until={maintenanceUntil} />;
   }
   // =====================================================
 
