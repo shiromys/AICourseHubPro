@@ -5,6 +5,7 @@ import Navbar from '../components/Navbar';
 import Footer from '../components/Footer'; 
 import API_BASE_URL from '../config';
 import useCheckout from '../hooks/useCheckout';
+import { courseImage } from '../content/courseImages';
 import { 
   BookOpen, Award, Clock, PlayCircle, Trophy, 
   LayoutDashboard, Search, X, Loader2, ShoppingCart, CheckCircle, Sparkles, ArrowRight
@@ -130,6 +131,20 @@ const Dashboard = () => {
   const handleStartLearning = (courseId) => {
     navigate(`/courses/${courseId}`);
   };
+
+  // Clicking anywhere on a course card (picture, title, text) opens it: a course you own opens the course itself,
+  // one you do not own opens its public page, where the details and the buy button are. Buttons keep their own action.
+  const openCard = (course) => {
+    if (isAdmin || myLearningIds.has(course.id)) {
+      const info = enrollments.find(e => e.id === course.id && e.legacy);
+      if (info && info.closed && info.replaced_by_id && !hasCertificate(course.id)) { navigate(`/courses/${info.replaced_by_id}`); return; }
+      navigate(`/courses/${course.slug || course.id}`);
+      return;
+    }
+    navigate(`/courses/${course.slug || course.id}`);
+  };
+  const cardKey = (course) => (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCard(course); } };
+  const stop = (e) => e.stopPropagation();
 
   const handleViewCertificate = (courseId) => {
     navigate(`/certificate/${courseId}`);
@@ -317,8 +332,9 @@ const Dashboard = () => {
                     {courses.filter(c => !c.legacy).slice(0, 6).map((course) => {
                       const isBuying = buying === course.id;
                       return (
-                        <div key={course.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group">
-                          <div className="h-2 bg-gray-200 w-full"></div>
+                        <div key={course.id} role="link" tabIndex={0} aria-label={`Open ${course.title}`} data-testid="course-card" onClick={() => openCard(course)} onKeyDown={cardKey(course)}
+                          className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group cursor-pointer">
+                          {courseImage(course) ? <img src={courseImage(course)} alt="" loading="lazy" className="h-40 w-full object-cover" /> : <div className="h-2 bg-gray-200 w-full"></div>}
                           <div className="p-6 flex-1 flex flex-col">
                             <div className="flex justify-between items-start mb-4">
                               <span className="bg-red-50 text-red-600 text-xs font-bold uppercase px-3 py-1 rounded-full">{course.category || 'General'}</span>
@@ -327,7 +343,7 @@ const Dashboard = () => {
                             <h3 className="text-xl font-bold text-gray-900 mb-2 leading-tight group-hover:text-red-600 transition-colors">{course.title}</h3>
                             <p className="text-gray-500 text-sm mb-6 flex-1 line-clamp-3 leading-relaxed">{course.description || "Master this topic with interactive lessons."}</p>
                             <button
-                              onClick={() => handleCourseAction(course.id)}
+                              onClick={(e) => { stop(e); handleCourseAction(course.id); }}
                               disabled={isBuying}
                               className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 ${
                                 isAdmin
@@ -360,8 +376,9 @@ const Dashboard = () => {
                   const isBuying = buying === course.id;
                   
                   return (
-                    <div key={course.id} className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group">
-                      
+                    <div key={course.id} role="link" tabIndex={0} aria-label={`Open ${course.title}`} data-testid="course-card" onClick={() => openCard(course)} onKeyDown={cardKey(course)}
+                      className="bg-white rounded-xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 overflow-hidden flex flex-col h-full group cursor-pointer">
+                      {courseImage(course) && <img src={courseImage(course)} alt="" loading="lazy" className="h-40 w-full object-cover" />}
                       <div className="h-2 bg-gray-100 w-full relative">
                         {isEnrolled ? (
                             <div className={`h-full transition-all duration-700 ${certified ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${percent}%` }}></div>
@@ -392,14 +409,15 @@ const Dashboard = () => {
                           </p>
                         )}
                         {legacyInfo(course.id)?.replaced_by_id && (legacyInfo(course.id).closed || certified) && (
-                          <button onClick={() => navigate(`/courses/${legacyInfo(course.id).replaced_by_id}`)}
+                          <button onClick={(e) => { stop(e); navigate(`/courses/${legacyInfo(course.id).replaced_by_id}`); }}
                             className="w-full mb-2 py-3 font-bold rounded-lg flex items-center justify-center gap-2 bg-red-600 text-white hover:bg-red-700">
                             Open the new version <Sparkles size={16} />
                           </button>
                         )}
                         {isEnrolled && !(legacyInfo(course.id)?.closed && !certified) ? (
                             <button 
-                              onClick={() => {
+                              onClick={(e) => {
+                                stop(e);
                                 if (certified) handleViewCertificate(course.id);
                                 else handleStartLearning(course.id);
                               }}
@@ -412,7 +430,7 @@ const Dashboard = () => {
                             </button>
                         ) : legacyInfo(course.id) ? null : (
                             <button 
-                              onClick={() => handleCourseAction(course.id)}
+                              onClick={(e) => { stop(e); handleCourseAction(course.id); }}
                               disabled={isBuying}
                               className={`w-full py-3 font-bold rounded-lg flex items-center justify-center gap-2 transition-colors shadow-lg disabled:opacity-50 relative z-10 ${
                                 isAdmin 

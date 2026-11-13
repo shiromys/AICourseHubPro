@@ -33,7 +33,6 @@ import Resources from './pages/Resources';
 import ResourcePage from './pages/ResourcePage';
 import Newsletter from './pages/Newsletter';
 import CookieConsent from './components/CookieConsent';
-import AnnouncementBanner from './components/AnnouncementBanner';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 
 // --- IMPORT COMPONENTS ---
@@ -106,9 +105,6 @@ function App() {
       <ScrollToTop />
       <RouteSeo />
       <RouteTracker />
-
-      {/* --- New-courses announcement strip --- */}
-      <AnnouncementBanner />
 
       {/* --- GDPR Cookie Consent Banner --- */}
       {/* Note: GA4 and Meta Pixel now load unconditionally from index.html,

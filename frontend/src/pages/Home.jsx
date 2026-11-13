@@ -247,32 +247,6 @@ const Home = () => {
         </div>
       </section>
 
-      {/* ================= 6. TESTIMONIALS ================= */}
-      <section className="py-24 bg-gray-900 text-white">
-        <div className="container mx-auto px-6">
-          <h2 className="text-3xl font-black text-center mb-12">What Learners Say</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { name: "Sarah J.", role: "HR Manager", text: "I used to spend 4 hours writing JDs. Now I do it in 5 minutes. This course paid for itself in a week." },
-              { name: "Mike T.", role: "Senior Dev", text: "The 'Prompting for Automation' course is legit. It helped me set up Copilot properly and double my coding speed." },
-              { name: "Anita R.", role: "Non-Profit Lead", text: "Finally, AI explained simply. I'm now using ChatGPT to write grant proposals and it's working!" },
-            ].map((t, i) => (
-              <div key={i} className="bg-gray-800 p-8 rounded-xl border border-gray-700 hover:border-red-500 transition-all">
-                <div className="flex text-red-500 mb-4">★★★★★</div>
-                <p className="text-gray-300 italic mb-6">"{t.text}"</p>
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gray-700 rounded-full flex items-center justify-center font-bold text-white">{t.name[0]}</div>
-                  <div>
-                    <h4 className="font-bold">{t.name}</h4>
-                    <p className="text-xs text-gray-400 uppercase">{t.role}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ================= 7. FAQ ================= */}
       <section className="py-24 bg-gray-50">
         <div className="container mx-auto px-6 max-w-2xl">

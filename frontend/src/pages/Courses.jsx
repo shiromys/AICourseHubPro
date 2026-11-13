@@ -5,6 +5,7 @@ import { Search, BookOpen, Clock, ChevronRight, Loader2, AlertCircle, ShoppingCa
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import API_BASE_URL from '../config';
+import { courseImage } from '../content/courseImages';
 
 const Courses = () => {
   const [courses, setCourses] = useState([]);
@@ -150,6 +151,11 @@ const Courses = () => {
               return (
                 // --- LIGHT THEME CARD: White background, Light Border ---
                 <div key={course.id} className="group bg-white border border-gray-200 rounded-2xl overflow-hidden hover:border-red-200 hover:shadow-xl hover:shadow-red-50 transition-all duration-300 flex flex-col">
+                  {courseImage(course) && (
+                    <Link to={courseUrl(course)} tabIndex={-1} aria-hidden="true" className="block relative h-48 overflow-hidden bg-gray-100">
+                      <img src={courseImage(course)} alt="" loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                    </Link>
+                  )}
                   <div className="p-8 flex-1">
                     <div className="flex justify-between items-start mb-4">
                       <span className="bg-gray-100 text-gray-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
