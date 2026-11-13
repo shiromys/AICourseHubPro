@@ -209,6 +209,8 @@ def _config_checks():
          "detail": "CRON_SECRET is set" if os.getenv('CRON_SECRET') else "CRON_SECRET is not set - queued digests will not be released automatically", "level": "warn"},
         {"id": "postal", "label": "Newsletter postal address", "ok": bool(os.getenv('NEWSLETTER_POSTAL_ADDRESS')),
          "detail": "Set" if os.getenv('NEWSLETTER_POSTAL_ADDRESS') else "NEWSLETTER_POSTAL_ADDRESS is not set - US law (CAN-SPAM) requires a postal address in marketing emails", "level": "warn"},
+        {"id": "nl_sender", "label": "Newsletter sender", "ok": True,
+         "detail": f"Digest and confirmation emails come from {_newsletter_sender()[0]}; replies go to {_newsletter_sender()[1]}", "level": "warn"},
         {"id": "resource_files", "label": "Resource template files", "ok": _resource_file_count() > 0,
          "detail": f"{_resource_file_count()} file(s) on the server" if _resource_file_count() > 0 else "No template files found - guide downloads will fail", "level": "warn"},
         {"id": "openai", "label": "Nova chat assistant (OpenAI)", "ok": bool(os.getenv('OPENAI_API_KEY')),
@@ -2663,6 +2665,22 @@ def _api_base():
     return base
 
 
+# Who newsletter emails come from. NEWSLETTER_FROM_EMAIL (for example updates@aicoursehubpro.com) must be on a domain
+# verified in Resend; replies go to NEWSLETTER_REPLY_TO (default info@aicoursehubpro.com). Unset or invalid -> info@.
+_NL_ADDR_RE = re.compile(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
+
+
+def _newsletter_sender():
+    """Returns (from_address, reply_to_address) for digest, test and confirmation emails."""
+    frm = (os.getenv('NEWSLETTER_FROM_EMAIL') or '').strip()
+    if not _NL_ADDR_RE.match(frm):
+        frm = 'info@aicoursehubpro.com'
+    rep = (os.getenv('NEWSLETTER_REPLY_TO') or '').strip()
+    if not _NL_ADDR_RE.match(rep):
+        rep = 'info@aicoursehubpro.com'
+    return frm, rep
+
+
 def _send_newsletter_confirmation(sub):
     link = f"{DOMAIN}/newsletter?confirm={sub.confirm_token}"
     html = get_email_template(
@@ -2671,7 +2689,9 @@ def _send_newsletter_confirmation(sub):
         "AI prompt, a practical tip and what's new on the platform. Please confirm your email address to start receiving it. "
         "If you didn't sign up, just ignore this message and nothing will happen.",
         "Confirm my subscription", link)
-    threading.Thread(target=send_email, args=(sub.email, "Confirm your AICourseHubPro weekly digest", html), daemon=True).start()
+    frm, rep = _newsletter_sender()
+    threading.Thread(target=send_email, args=(sub.email, "Confirm your AICourseHubPro weekly digest", html, "AICourseHubPro Weekly", frm),
+                     kwargs={"reply_to": rep}, daemon=True).start()
 
 
 @app.route('/api/newsletter/subscribe', methods=['POST'])
@@ -2862,7 +2882,8 @@ def _send_issues_worker(issue_ids, api_base):
                     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
                 }
                 html_out = render_newsletter_html(issue, sub, next_step_html=_next_step_html(owned, live, week))
-                if send_email(sub.email, issue.subject, html_out, "AICourseHubPro Weekly", "info@aicoursehubpro.com", headers=headers):
+                nl_from, nl_reply = _newsletter_sender()
+                if send_email(sub.email, issue.subject, html_out, "AICourseHubPro Weekly", nl_from, headers=headers, reply_to=nl_reply):
                     sub.last_sent_at = datetime.utcnow()
                     sent += 1
                     db.session.commit()
@@ -3398,7 +3419,8 @@ def admin_newsletter_send_test():
     if not EMAIL_RE.match(to):
         return jsonify({"msg": "Enter a valid email address."}), 400
     fake = NewsletterIssue(subject=data.get('subject') or '(no subject)', preheader=data.get('preheader'), body_html=data.get('body_html') or '')
-    ok = send_email(to, f"[TEST] {fake.subject}", render_newsletter_html(fake), "AICourseHubPro Weekly", "info@aicoursehubpro.com")
+    nl_from, nl_reply = _newsletter_sender()
+    ok = send_email(to, f"[TEST] {fake.subject}", render_newsletter_html(fake), "AICourseHubPro Weekly", nl_from, reply_to=nl_reply)
     return (jsonify({"msg": f"Test sent to {to}"}), 200) if ok else (jsonify({"msg": "Sending failed - check the Resend configuration."}), 502)
 
 
