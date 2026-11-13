@@ -180,6 +180,14 @@ def _db_revision_status():
     return current, head
 
 
+def _resource_file_count():
+    try:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resource_files')
+        return len([n for n in os.listdir(d) if os.path.isfile(os.path.join(d, n))])
+    except OSError:
+        return 0
+
+
 def _config_checks():
     """Real configuration checks shown in Admin > System Health. ok=False items are
     problems; level 'warn' = works but needs attention."""
@@ -201,6 +209,8 @@ def _config_checks():
          "detail": "CRON_SECRET is set" if os.getenv('CRON_SECRET') else "CRON_SECRET is not set - queued digests will not be released automatically", "level": "warn"},
         {"id": "postal", "label": "Newsletter postal address", "ok": bool(os.getenv('NEWSLETTER_POSTAL_ADDRESS')),
          "detail": "Set" if os.getenv('NEWSLETTER_POSTAL_ADDRESS') else "NEWSLETTER_POSTAL_ADDRESS is not set - US law (CAN-SPAM) requires a postal address in marketing emails", "level": "warn"},
+        {"id": "resource_files", "label": "Resource template files", "ok": _resource_file_count() > 0,
+         "detail": f"{_resource_file_count()} file(s) on the server" if _resource_file_count() > 0 else "No template files found - guide downloads will fail", "level": "warn"},
         {"id": "openai", "label": "Nova chat assistant (OpenAI)", "ok": bool(os.getenv('OPENAI_API_KEY')),
          "detail": "Set" if os.getenv('OPENAI_API_KEY') else "OPENAI_API_KEY is not set - the chat widget will answer 'Chat unavailable'", "level": "warn"},
     ]
@@ -251,6 +261,15 @@ def get_system_health():
             }
             last = NewsletterIssue.query.filter_by(status='sent').order_by(NewsletterIssue.sent_at.desc()).first()
             ops["last_digest_sent_at"] = last.sent_at.isoformat() if last and last.sent_at else None
+            auto = NewsletterIssue.query.filter_by(auto_generated=True).order_by(NewsletterIssue.created_at.desc()).first()
+            ops["last_auto_draft_at"] = auto.created_at.isoformat() if auto and auto.created_at else None
+            cutoff = _legacy_cutoff()
+            legacy_q = Course.query.filter(Course.is_legacy == True, (Course.is_deleted == False) | (Course.is_deleted == None))
+            ops["legacy_cutoff_utc"] = _iso(cutoff)
+            ops["legacy_closed"] = datetime.utcnow() >= cutoff
+            ops["legacy_courses"] = legacy_q.count()
+            ops["legacy_not_upgraded"] = legacy_q.filter(Course.replaced_by_id.is_(None)).count()
+            ops["resource_downloads_7d"] = ResourceDownload.query.filter(ResourceDownload.created_at >= datetime.utcnow() - timedelta(days=7)).count()
         except Exception:
             db.session.rollback()
 
@@ -3613,6 +3632,110 @@ def transactions_csv():
         w.writerow([d["id"], d["date"], safe(d["user"]), safe(d["email"]), safe(d["course"]), d["source_label"],
                     "" if d["amount"] is None else f"{d['amount']:.2f}", d["currency"] or "", "yes" if d["estimated"] else "", d["stripe_session_id"] or ""])
     return Response(buf.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment; filename=transactions.csv"})
+
+
+# ---- Admin: free resource library (downloads) and template files ----
+def _res_days(args):
+    try:
+        return max(0, min(3650, int(args.get('days') or 0)))
+    except ValueError:
+        return 0
+
+
+def _res_query(args, with_slug=True):
+    q = ResourceDownload.query
+    slug = (args.get('slug') or '').strip()
+    if with_slug and slug:
+        q = q.filter(ResourceDownload.slug == slug)
+    days = _res_days(args)
+    if days:
+        q = q.filter(ResourceDownload.created_at >= datetime.utcnow() - timedelta(days=days))
+    if with_slug and args.get('optin') == '1':
+        q = q.filter(ResourceDownload.newsletter_opt_in == True)
+    return q
+
+
+def _newsletter_status_map(emails):
+    low = list({(e or '').strip().lower() for e in emails if e})
+    if not low:
+        return {}
+    rows = NewsletterSubscriber.query.filter(func.lower(NewsletterSubscriber.email).in_(low)).all()
+    return {r.email.strip().lower(): r.status for r in rows}
+
+
+@app.route('/api/admin/resources/downloads', methods=['GET'])
+@jwt_required()
+def admin_resource_downloads():
+    admin, err = _require_admin()
+    if err: return err
+    try:
+        page = max(1, int(request.args.get('page', 1))); per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except ValueError:
+        page, per_page = 1, 50
+    q = _res_query(request.args)
+    total = q.count()
+    rows = q.order_by(ResourceDownload.created_at.desc(), ResourceDownload.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    status = _newsletter_status_map([r.email for r in rows])
+    items = [{"id": r.id, "email": r.email, "slug": r.slug, "file_name": r.file_name, "opt_in": bool(r.newsletter_opt_in),
+              "newsletter_status": status.get((r.email or '').strip().lower()) or 'none',
+              "created_at": r.created_at.isoformat() if r.created_at else None} for r in rows]
+
+    base = _res_query(request.args, with_slug=False)
+    low_email = func.lower(ResourceDownload.email)
+    by_slug = {}
+    for slug, n, uniq in base.with_entities(ResourceDownload.slug, func.count(ResourceDownload.id), func.count(func.distinct(low_email))).group_by(ResourceDownload.slug).all():
+        by_slug[slug] = {"slug": slug, "downloads": n, "unique_emails": uniq, "opt_ins": 0}
+    for slug, n in base.filter(ResourceDownload.newsletter_opt_in == True).with_entities(ResourceDownload.slug, func.count(ResourceDownload.id)).group_by(ResourceDownload.slug).all():
+        if slug in by_slug: by_slug[slug]["opt_ins"] = n
+    all_total = base.count()
+    unique = base.with_entities(func.count(func.distinct(low_email))).scalar() or 0
+    optins = base.filter(ResourceDownload.newsletter_opt_in == True).count()
+    active = (base.filter(ResourceDownload.newsletter_opt_in == True)
+              .join(NewsletterSubscriber, func.lower(NewsletterSubscriber.email) == low_email)
+              .filter(NewsletterSubscriber.status == 'active')
+              .with_entities(func.count(func.distinct(low_email))).scalar() or 0)
+    summary = {"downloads": all_total, "unique_emails": unique, "opt_ins": optins,
+               "opt_in_rate": round(100.0 * optins / all_total, 1) if all_total else 0.0,
+               "opt_ins_now_active": active}
+    return jsonify({"items": items, "total": total, "page": page, "per_page": per_page,
+                    "summary": summary, "by_slug": sorted(by_slug.values(), key=lambda r: -r["downloads"])})
+
+
+@app.route('/api/admin/resources/downloads.csv', methods=['GET'])
+@jwt_required()
+def admin_resource_downloads_csv():
+    admin, err = _require_admin()
+    if err: return err
+    import csv, io
+    from flask import Response
+    def safe(v):  # block spreadsheet formula injection from user-controlled text
+        v = '' if v is None else str(v)
+        return "'" + v if v[:1] in ('=', '+', '-', '@') else v
+    rows = _res_query(request.args).order_by(ResourceDownload.created_at.desc()).limit(50000).all()
+    status = _newsletter_status_map([r.email for r in rows])
+    buf = io.StringIO(); w = csv.writer(buf)
+    w.writerow(["Date (UTC)", "Email", "Guide", "File", "Ticked weekly digest", "Newsletter status now"])
+    for r in rows:
+        w.writerow([r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '', safe(r.email), r.slug, r.file_name,
+                    "yes" if r.newsletter_opt_in else "no", status.get((r.email or '').strip().lower()) or 'none'])
+    return Response(buf.getvalue(), mimetype='text/csv', headers={"Content-Disposition": "attachment; filename=resource-downloads.csv"})
+
+
+@app.route('/api/admin/resources/files', methods=['GET'])
+@jwt_required()
+def admin_resource_files():
+    """The template files that really exist on the server, so the Content tab can compare them with what each guide promises."""
+    admin, err = _require_admin()
+    if err: return err
+    out = []
+    try:
+        for name in sorted(os.listdir(RESOURCE_FILES_DIR)):
+            path = os.path.join(RESOURCE_FILES_DIR, name)
+            if os.path.isfile(path):
+                out.append({"name": name, "bytes": os.path.getsize(path)})
+    except OSError:
+        pass
+    return jsonify({"files": out})
 
 
 @app.route('/api/admin/revenue/summary', methods=['GET'])

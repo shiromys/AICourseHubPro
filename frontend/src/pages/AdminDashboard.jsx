@@ -11,7 +11,7 @@ import {
   Edit, Search, Settings, FileText, LogOut, Eye, X, Save, Archive, Upload,
   Trash2, RefreshCcw, ShieldAlert, AlertTriangle, Shield, ShieldCheck, CheckCircle,
   CheckSquare, HelpCircle, Bell, ChevronDown, User as UserIcon, Ban, Menu, FileJson,
-  TrendingUp, TrendingDown, AlertCircle, KeyRound, Unlock, Award, Fingerprint
+  TrendingUp, TrendingDown, AlertCircle, KeyRound, Unlock, Award, Fingerprint, Download as DownloadIcon, ClipboardCheck
 } from 'lucide-react';
 import FootprintModal from '../components/admin/FootprintModal';
 import CertificatesPanel from '../components/admin/CertificatesPanel';
@@ -20,6 +20,8 @@ import CourseUpgradePanel from '../components/admin/CourseUpgradePanel';
 import AuditLogsPanel from '../components/admin/AuditLogsPanel';
 import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
 import RevenuePanel from '../components/admin/RevenuePanel';
+import ResourcesPanel from '../components/admin/ResourcesPanel';
+import ContentPanel from '../components/admin/ContentPanel';
 
 // --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
@@ -417,6 +419,8 @@ const AdminDashboard = () => {
           <SidebarItem id="certificates" icon={Award} label="Certificates" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="course_upgrade" icon={BookOpen} label="Course Upgrade" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="newsletter" icon={Mail} label="Newsletter" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="resources" icon={DownloadIcon} label="Resource Downloads" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
+          <SidebarItem id="content" icon={ClipboardCheck} label="Content Status" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <p className="text-xs font-bold text-gray-400 uppercase mt-6 mb-2 px-2">Finance</p>
           <SidebarItem id="revenue" icon={DollarSign} label="Revenue & Sales" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
           <SidebarItem id="analytics" icon={TrendingUp} label="Analytics" activeTab={activeTab} setActiveTab={setActiveTab} closeMobileMenu={() => setIsSidebarOpen(false)} />
@@ -443,7 +447,7 @@ const AdminDashboard = () => {
               <Menu size={24} />
             </button>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox', course_upgrade: 'Course Upgrade' })[activeTab] || activeTab.replace('_', ' ')}</h1>
+              <h1 className="text-xl md:text-2xl font-bold text-gray-900 capitalize">{({ revenue: 'Revenue & Sales', system: 'System Health', flagged: 'Flagged Payments', audit: 'Audit Logs', settings: 'Global Settings', support: 'Support Inbox', course_upgrade: 'Course Upgrade', resources: 'Resource Downloads', content: 'Content Status' })[activeTab] || activeTab.replace('_', ' ')}</h1>
               <p className="hidden md:flex text-gray-500 text-xs mt-1 items-center gap-1"><span className={`w-2 h-2 rounded-full ${headerDb === null ? 'bg-gray-300' : headerDb ? 'bg-green-500' : 'bg-red-500'}`}></span> {headerDb === null ? 'Checking database…' : headerDb ? 'Database connected' : 'Database or API unreachable'}</p>
             </div>
           </div>
@@ -548,6 +552,8 @@ const AdminDashboard = () => {
         {/* NEWSLETTER TAB */}
         {activeTab === 'newsletter' && <NewsletterPanel />}
         {activeTab === 'course_upgrade' && <CourseUpgradePanel />}
+        {activeTab === 'resources' && <ResourcesPanel />}
+        {activeTab === 'content' && <ContentPanel courses={courses} />}
         {activeTab === 'audit' && <AuditLogsPanel />}
 
         {/* SUPPORT TAB */}
@@ -710,6 +716,37 @@ const AdminDashboard = () => {
                                 ))}
                             </div>
                             <p className="text-xs text-gray-400 mt-3">Last weekly digest sent: {systemHealth.ops?.last_digest_sent_at ? new Date(systemHealth.ops.last_digest_sent_at + 'Z').toLocaleString() : 'never'}{systemHealth.ops?.queued_digests ? ` · ${systemHealth.ops.queued_digests} queued` : ''}</p>
+                            {(() => {
+                              const o = systemHealth.ops || {};
+                              const lastDraft = o.last_auto_draft_at ? new Date(o.last_auto_draft_at + 'Z') : null;
+                              const draftLate = !lastDraft || (Date.now() - lastDraft.getTime()) / 86400000 > 8;
+                              const cutoff = o.legacy_cutoff_utc ? new Date(o.legacy_cutoff_utc) : null;
+                              const daysLeft = cutoff ? Math.ceil((cutoff.getTime() - Date.now()) / 86400000) : null;
+                              const pending = o.legacy_not_upgraded || 0;
+                              const upgradeBad = cutoff && !o.legacy_closed && pending > 0 && daysLeft <= 14;
+                              return (
+                                <div className="mt-4 space-y-2 text-sm" data-testid="launch-status">
+                                  <div className={`p-3 rounded-lg border ${draftLate ? 'border-yellow-200 bg-yellow-50' : 'border-gray-200 bg-gray-50'}`}>
+                                    <p className="font-bold text-gray-900">Weekly digest drafts</p>
+                                    <p className="text-xs text-gray-600">Last automatic draft: {lastDraft ? lastDraft.toLocaleString() : 'never'}{draftLate ? ' - the Monday scheduler may not be running (check the Railway cron job and CRON_SECRET).' : ''}</p>
+                                  </div>
+                                  <button onClick={() => setActiveTab('course_upgrade')} className={`w-full text-left p-3 rounded-lg border ${upgradeBad ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'} hover:bg-gray-100`}>
+                                    <p className="font-bold text-gray-900">Course Upgrade</p>
+                                    <p className="text-xs text-gray-600">
+                                      {!o.legacy_courses ? 'No old courses left to retire.'
+                                        : o.legacy_closed ? 'Old courses are closed.'
+                                        : `Old courses close ${cutoff ? cutoff.toLocaleString() : ''}${daysLeft !== null ? ` (${daysLeft} day${daysLeft === 1 ? '' : 's'} left)` : ''}.`}
+                                      {o.legacy_courses && !o.legacy_closed ? ` ${pending} of ${o.legacy_courses} not yet upgraded.` : ''}
+                                      {upgradeBad ? ' Run the upgrade now.' : ''}
+                                    </p>
+                                  </button>
+                                  <button onClick={() => setActiveTab('resources')} className="w-full text-left p-3 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100">
+                                    <p className="font-bold text-gray-900">Resource downloads</p>
+                                    <p className="text-xs text-gray-600">{o.resource_downloads_7d ?? 0} in the last 7 days</p>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                         </div>
                     </div>
                 </div>
