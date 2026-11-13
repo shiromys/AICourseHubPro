@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
+import AdminSearch, { useDebounced } from './AdminSearch';
 import { Loader2, Wand2, Send, Save, Eye, Download, Trash2, Plus, Clock, CheckCircle, Mail, CalendarClock, AlertTriangle } from 'lucide-react';
 
 const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -21,6 +22,8 @@ const NewsletterPanel = () => {
   const [stats, setStats] = useState(null);
   const [subs, setSubs] = useState({ items: [], total: 0 });
   const [subFilter, setSubFilter] = useState('');
+  const [subSearch, setSubSearch] = useState('');
+  const subQ = useDebounced(subSearch.trim());
   const [issues, setIssues] = useState([]);
   const [batch, setBatch] = useState({ batch_key: '', issues: [], subscribers: 0 });
   const [draft, setDraft] = useState(null);          // issue being composed
@@ -35,13 +38,13 @@ const NewsletterPanel = () => {
     try {
       const [s, l, i, b] = await Promise.all([
         axios.get(api('/stats'), { headers: authHeaders() }),
-        axios.get(api('/subscribers'), { headers: authHeaders(), params: { status: subFilter || undefined, per_page: 50 } }),
+        axios.get(api('/subscribers'), { headers: authHeaders(), params: { status: subFilter || undefined, q: subQ || undefined, per_page: 50 } }),
         axios.get(api('/issues'), { headers: authHeaders() }),
         axios.get(api('/batch'), { headers: authHeaders() }),
       ]);
       setStats(s.data); setSubs(l.data); setIssues(i.data); setBatch(b.data);
     } catch { flash('err', 'Could not load newsletter data.'); }
-  }, [subFilter]);
+  }, [subFilter, subQ]);
   useEffect(() => { loadAll(); }, [loadAll]);
 
   const run = async (label, fn) => {
@@ -223,7 +226,8 @@ const NewsletterPanel = () => {
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="p-5 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-bold text-gray-900">Subscribers <span className="text-gray-400 font-normal">({subs.total})</span></h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <AdminSearch value={subSearch} onChange={setSubSearch} placeholder="Search email address" className="w-56" testId="subscribers-search" />
             <select value={subFilter} onChange={e => setSubFilter(e.target.value)} className="text-sm border border-gray-300 rounded-lg px-2 py-2 bg-white text-gray-800">
               <option value="">All</option><option value="active">Confirmed</option><option value="pending">Awaiting confirmation</option><option value="unsubscribed">Unsubscribed</option></select>
             <button onClick={exportCsv} className="flex items-center gap-1.5 text-sm font-bold px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100"><Download size={15} /> Export CSV</button>
@@ -232,7 +236,7 @@ const NewsletterPanel = () => {
         <div className="overflow-x-auto"><table className="w-full text-sm text-left">
           <thead className="bg-gray-50 text-gray-500 uppercase text-xs"><tr><th className="px-5 py-3">Email</th><th className="px-5 py-3">Status</th><th className="px-5 py-3">Source</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3">Last sent</th></tr></thead>
           <tbody className="divide-y divide-gray-100">
-            {subs.items.length === 0 && <tr><td colSpan="5" className="px-5 py-8 text-center text-gray-400">No subscribers yet.</td></tr>}
+            {subs.items.length === 0 && <tr><td colSpan="5" className="px-5 py-8 text-center text-gray-400">{subQ ? `No subscriber matches "${subQ}".` : "No subscribers yet."}</td></tr>}
             {subs.items.map(s => (
               <tr key={s.id} className="hover:bg-gray-50"><td className="px-5 py-3 text-gray-900">{s.email}{s.has_account && <span className="ml-2 text-[10px] font-bold text-blue-600 border border-blue-200 rounded px-1">ACCOUNT</span>}</td>
                 <td className="px-5 py-3"><Pill s={s.status} /></td><td className="px-5 py-3 text-gray-500">{s.source}</td>

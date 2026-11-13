@@ -562,16 +562,29 @@ def get_users():
     user = db.session.get(User, current_user_id) # FIXED: Modern syntax
     if not user or not user.is_admin: return jsonify({"msg": "Admin only"}), 403
 
-    users = User.query.filter_by(is_deleted=(request.args.get('type') == 'deleted')).order_by(User.id.desc()).all()
-    
-    return jsonify([{
+    query = User.query.filter_by(is_deleted=(request.args.get('type') == 'deleted'))
+    term = (request.args.get('q') or '').strip()
+    if term:
+        pat = _like(term)
+        query = query.filter(func.lower(User.name).like(pat, escape='\\') | func.lower(User.email).like(pat, escape='\\'))
+    query = query.order_by(User.id.desc())
+    total = query.count()
+    try:
+        limit = int(request.args.get('limit') or 0)
+    except ValueError:
+        limit = 0
+    users = query.limit(min(limit, 500)).all() if limit > 0 else query.all()
+    items = [{
         "id": u.id, "name": u.name, "email": u.email,
         "role": "Admin" if u.is_admin else "Student",
         "status": "Banned" if u.ban_expiry and u.ban_expiry > datetime.utcnow() else "Active",
         "ban_expiry": str(u.ban_expiry) if u.ban_expiry else None,
         "account_setup_complete": bool(u.account_setup_complete),
         "signup_source": u.signup_source
-    } for u in users])
+    } for u in users]
+    if request.args.get('paged') == '1':
+        return jsonify({"items": items, "total": total})
+    return jsonify(items)
 
 @app.route('/api/users/<int:user_id>/grant-course', methods=['POST'])
 @jwt_required()
@@ -686,8 +699,14 @@ def _flag_to_dict(f, users=None, courses=None):
     }
 
 
-def _flag_query_for(status):
+def _flag_query_for(status, term=''):
     q = FlaggedPayment.query
+    term = (term or '').strip()
+    if term:
+        pat = _like(term)
+        q = (q.outerjoin(User, User.id == FlaggedPayment.user_id).outerjoin(Course, Course.id == FlaggedPayment.course_id)
+              .filter(func.lower(User.name).like(pat, escape='\\') | func.lower(User.email).like(pat, escape='\\')
+                      | func.lower(FlaggedPayment.customer_email).like(pat, escape='\\') | func.lower(Course.title).like(pat, escape='\\')))
     if status == 'pending':
         q = q.filter_by(resolved=False)
     elif status == 'resolved':
@@ -714,7 +733,7 @@ def get_flagged_payments():
     if status not in ('pending', 'resolved', 'all'):
         return jsonify({"msg": "status must be pending, resolved or all"}), 400
 
-    return jsonify([_flag_to_dict(f) for f in _flag_query_for(status).all()]), 200
+    return jsonify([_flag_to_dict(f) for f in _flag_query_for(status, request.args.get('q')).all()]), 200
 
 
 @app.route('/api/flagged-payments/counts', methods=['GET'])
@@ -747,7 +766,7 @@ def flagged_payments_csv():
     w = csv.writer(buf)
     w.writerow(["ID", "Flagged at (UTC)", "Customer", "Email", "Course", "Amount", "Currency", "Status",
                 "Outcome", "Decision note", "Decided by", "Decided at (UTC)", "Stripe payment", "Stripe session"])
-    for f in _flag_query_for(status).all():
+    for f in _flag_query_for(status, request.args.get('q')).all():
         d = _flag_to_dict(f)
         w.writerow([d["id"], d["created_at"], safe(d["user_name"]), safe(d["user_email"]), safe(d["course_title"]),
                     "" if d["amount"] is None else f"{d['amount']:.2f}", d["currency"] or "",
@@ -3531,8 +3550,14 @@ def newsletter_cron_weekly():
 def get_messages():
     user = db.session.get(User, get_jwt_identity()) # FIXED
     if not user.is_admin: return jsonify({"msg": "Admin only"}), 403
-    msgs = ContactMessage.query.order_by(ContactMessage.created_at.desc()).all()
-    return jsonify([{"id": m.id, "name": m.name, "subject": m.subject, "message": m.message, "is_read": m.is_read, "date": m.created_at.strftime('%Y-%m-%d')} for m in msgs])
+    query = ContactMessage.query
+    term = (request.args.get('q') or '').strip()
+    if term:
+        pat = _like(term)
+        query = query.filter(func.lower(ContactMessage.name).like(pat, escape='\\') | func.lower(ContactMessage.email).like(pat, escape='\\')
+                             | func.lower(ContactMessage.subject).like(pat, escape='\\') | func.lower(ContactMessage.message).like(pat, escape='\\'))
+    msgs = query.order_by(ContactMessage.created_at.desc()).all()
+    return jsonify([{"id": m.id, "name": m.name or "", "email": m.email or "", "subject": m.subject, "message": m.message, "is_read": m.is_read, "date": m.created_at.strftime('%Y-%m-%d') if m.created_at else ""} for m in msgs])
 
 @app.route('/api/admin/messages/<int:id>/read', methods=['PUT'])
 @jwt_required()
@@ -3657,6 +3682,12 @@ def transactions_csv():
 
 
 # ---- Admin: free resource library (downloads) and template files ----
+def _like(term):
+    """Case-insensitive 'contains' pattern with % and _ typed by the admin treated as plain characters."""
+    t = (term or '').strip().lower()[:100].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    return f"%{t}%"
+
+
 def _res_days(args):
     try:
         return max(0, min(3650, int(args.get('days') or 0)))
@@ -3674,6 +3705,9 @@ def _res_query(args, with_slug=True):
         q = q.filter(ResourceDownload.created_at >= datetime.utcnow() - timedelta(days=days))
     if with_slug and args.get('optin') == '1':
         q = q.filter(ResourceDownload.newsletter_opt_in == True)
+    term = (args.get('q') or '').strip()
+    if with_slug and term:
+        q = q.filter(func.lower(ResourceDownload.email).like(_like(term), escape='\\'))
     return q
 
 

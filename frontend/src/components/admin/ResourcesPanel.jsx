@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
 import { Loader2, Download, RefreshCcw } from 'lucide-react';
+import AdminSearch, { useDebounced } from './AdminSearch';
 import { RESOURCE_PAGES } from '../../content/resources';
 import { contentFor } from '../../content/resources';
 
@@ -28,12 +29,14 @@ const ResourcesPanel = () => {
   const [days, setDays] = useState('30');
   const [slug, setSlug] = useState('');
   const [optin, setOptin] = useState(false);
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const PER = 25;
 
-  const params = useCallback(() => ({ days: days === 'all' ? 0 : days, slug: slug || undefined, optin: optin ? 1 : undefined }), [days, slug, optin]);
+  const params = useCallback(() => ({ days: days === 'all' ? 0 : days, slug: slug || undefined, optin: optin ? 1 : undefined, q: q || undefined }), [days, slug, optin, q]);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -45,7 +48,7 @@ const ResourcesPanel = () => {
   }, [params, page]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [days, slug, optin]);
+  useEffect(() => { setPage(1); }, [days, slug, optin, q]);
 
   const exportCsv = async () => {
     try {
@@ -61,6 +64,7 @@ const ResourcesPanel = () => {
   return (
     <div className="space-y-6" data-testid="resources-panel">
       <div className="flex flex-wrap items-center gap-3">
+        <AdminSearch value={search} onChange={setSearch} placeholder="Search email address" className="w-full sm:w-64" testId="resources-search" />
         <select value={days} onChange={(e) => setDays(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white" aria-label="Period">
           <option value="7">Last 7 days</option><option value="30">Last 30 days</option><option value="90">Last 90 days</option><option value="all">All time</option>
         </select>

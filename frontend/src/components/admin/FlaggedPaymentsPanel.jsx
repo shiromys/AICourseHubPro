@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import API_BASE_URL from '../../config';
 import { AlertCircle, Download, ExternalLink, Loader2, X } from 'lucide-react';
+import AdminSearch, { useDebounced } from './AdminSearch';
 
 const OUTCOMES = [
   { id: 'refunded', label: 'Refunded', help: 'Management approved a refund and it was issued in the Stripe Dashboard.' },
@@ -21,6 +22,8 @@ const authHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('toke
 // management decides, any refund is made in Stripe by hand, and the decision is recorded.
 const FlaggedPaymentsPanel = () => {
   const [status, setStatus] = useState('pending');
+  const [search, setSearch] = useState('');
+  const q = useDebounced(search.trim());
   const [items, setItems] = useState([]);
   const [counts, setCounts] = useState({ pending: 0, resolved: 0, all: 0 });
   const [loading, setLoading] = useState(true);
@@ -35,13 +38,13 @@ const FlaggedPaymentsPanel = () => {
     setLoading(true); setError('');
     try {
       const [list, c] = await Promise.all([
-        axios.get(`${API_BASE_URL}/api/flagged-payments`, { params: { status }, headers: authHeaders() }),
+        axios.get(`${API_BASE_URL}/api/flagged-payments`, { params: { status, q: q || undefined }, headers: authHeaders() }),
         axios.get(`${API_BASE_URL}/api/flagged-payments/counts`, { headers: authHeaders() }),
       ]);
       setItems(list.data); setCounts(c.data);
     } catch { setError('Could not load flagged payments.'); }
     finally { setLoading(false); }
-  }, [status]);
+  }, [status, q]);
   useEffect(() => { load(); }, [load]);
 
   const openDialog = (f) => { setDialog(f); setOutcome(''); setNote(''); setDialogError(''); };
@@ -59,7 +62,7 @@ const FlaggedPaymentsPanel = () => {
 
   const exportCsv = async () => {
     try {
-      const r = await axios.get(`${API_BASE_URL}/api/flagged-payments.csv`, { params: { status }, headers: authHeaders(), responseType: 'blob' });
+      const r = await axios.get(`${API_BASE_URL}/api/flagged-payments.csv`, { params: { status, q: q || undefined }, headers: authHeaders(), responseType: 'blob' });
       const url = URL.createObjectURL(r.data);
       const a = document.createElement('a'); a.href = url; a.download = 'flagged_payments.csv'; a.click();
       URL.revokeObjectURL(url);
@@ -79,6 +82,7 @@ const FlaggedPaymentsPanel = () => {
             </button>
           ))}
         </div>
+        <AdminSearch value={search} onChange={setSearch} placeholder="Search name, email or course" testId="flagged-search" className="w-full sm:w-64 sm:ml-auto" />
         <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50">
           <Download size={14} /> Export CSV
         </button>
@@ -101,7 +105,7 @@ const FlaggedPaymentsPanel = () => {
             {loading && <tr><td colSpan="6" className="px-6 py-10 text-center text-gray-400"><Loader2 className="inline animate-spin mr-2" size={16} />Loading…</td></tr>}
             {!loading && items.length === 0 && (
               <tr><td colSpan="6" className="px-6 py-10 text-center text-gray-400">
-                {status === 'pending' ? 'No flagged payments — nothing needs review.' : 'Nothing to show here yet.'}
+                {q ? `No flagged payments match "${q}".` : status === 'pending' ? 'No flagged payments — nothing needs review.' : 'Nothing to show here yet.'}
               </td></tr>
             )}
             {!loading && items.map(f => (

@@ -22,6 +22,7 @@ import FlaggedPaymentsPanel from '../components/admin/FlaggedPaymentsPanel';
 import RevenuePanel from '../components/admin/RevenuePanel';
 import ResourcesPanel from '../components/admin/ResourcesPanel';
 import ContentPanel from '../components/admin/ContentPanel';
+import AdminSearch, { useDebounced } from '../components/admin/AdminSearch';
 
 // --- MOCK DATA ---
 const MOCK_REVENUE_DATA = [
@@ -62,6 +63,14 @@ const AdminDashboard = () => {
   const [grantAmount, setGrantAmount] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
   const [messages, setMessages] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userTotal, setUserTotal] = useState(0);
+  const [supportSearch, setSupportSearch] = useState('');
+  const [courseSearch, setCourseSearch] = useState('');
+  const userQ = useDebounced(userSearch.trim());
+  const supportQ = useDebounced(supportSearch.trim());
+  const listReq = useRef(0);
+  const USER_LIMIT = 100;
   const [logs, setLogs] = useState([]);
   const [settings, setSettings] = useState({ maintenance: false, registrations: true });
   const [analytics, setAnalytics] = useState(null);
@@ -89,6 +98,33 @@ const AdminDashboard = () => {
   const [grantAccessCourseId, setGrantAccessCourseId] = useState('');
   const [isCloseTicketModalOpen, setIsCloseTicketModalOpen] = useState(false);
   const [messageToClose, setMessageToClose] = useState(null);
+
+  // Users and support messages are searched on the server, so the list stays fast with many records.
+  const refreshUsers = async (type = 'active') => {
+    const t = localStorage.getItem('token'); if (!t) return;
+    const id = ++listReq.current;
+    try {
+      const r = await axios.get(`${API_BASE_URL}/api/users`, { params: { type, q: userQ || undefined, limit: USER_LIMIT, paged: 1 }, headers: { Authorization: `Bearer ${t}` } });
+      if (id !== listReq.current) return;           // a newer search has already replaced this one
+      setUsers(r.data.items); setUserTotal(r.data.total);
+    } catch (e) { console.error('Fetch Error:', e); }
+  };
+  const loadMessages = async () => {
+    const t = localStorage.getItem('token'); if (!t) return;
+    const id = ++listReq.current;
+    try {
+      const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { params: { q: supportQ || undefined }, headers: { Authorization: `Bearer ${t}` } });
+      if (id !== listReq.current) return;
+      setMessages(r.data);
+    } catch (e) { console.error('Fetch Error:', e); }
+  };
+  useEffect(() => { setUserSearch(''); setSupportSearch(''); }, [activeTab]);
+  useEffect(() => {
+    if (activeTab === 'users') refreshUsers('active');
+    else if (activeTab === 'deleted_users') refreshUsers('deleted');
+    else if (activeTab === 'support') loadMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, userQ, supportQ]);
 
   // --- FETCH DATA ---
   useEffect(() => {
@@ -118,18 +154,6 @@ const AdminDashboard = () => {
             else if (activeTab === 'courses') { 
               const r = await axios.get(`${API_BASE_URL}/api/courses`, { headers: { Authorization: `Bearer ${token}` } });
               setCourses(r.data);
-            }
-            else if (activeTab === 'users') { 
-              const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${token}` } });
-              setUsers(r.data);
-            }
-            else if (activeTab === 'deleted_users') { 
-              const r = await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${token}` } });
-              setUsers(r.data);
-            }
-            else if (activeTab === 'support') { 
-              const r = await axios.get(`${API_BASE_URL}/api/admin/messages`, { headers: { Authorization: `Bearer ${token}` } });
-              setMessages(r.data);
             }
             else if (activeTab === 'settings') { 
               const r = await axios.get(`${API_BASE_URL}/api/settings`); 
@@ -226,8 +250,7 @@ const AdminDashboard = () => {
     try {
       const t = localStorage.getItem('token');
       await axios.put(`${API_BASE_URL}/api/users/${user.id}/role`, { is_admin: user.role !== 'Admin' }, { headers: { Authorization: `Bearer ${t}` } });
-      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
-      setUsers(r.data);
+      await refreshUsers('active');
     } catch (e) { console.error("Role change failed:", e); alert("Failed to update role. Please try again."); }
   };
   const openBanModal = (user) => { setSelectedUser(user); setBanDuration(30); setIsBanModalOpen(true); };
@@ -236,16 +259,14 @@ const AdminDashboard = () => {
       const t = localStorage.getItem('token');
       await axios.post(`${API_BASE_URL}/api/users/${selectedUser.id}/ban`, { days: banDuration }, { headers: { Authorization: `Bearer ${t}` } });
       setIsBanModalOpen(false);
-      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
-      setUsers(r.data);
+      await refreshUsers('active');
     } catch (e) { console.error("Ban failed:", e); alert("Failed to ban user. Please try again."); }
   };
   const handleUnban = async (user) => {
     try {
       const t = localStorage.getItem('token');
       await axios.post(`${API_BASE_URL}/api/users/${user.id}/ban`, { days: 0 }, { headers: { Authorization: `Bearer ${t}` } });
-      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
-      setUsers(r.data);
+      await refreshUsers('active');
     } catch (e) { console.error("Unban failed:", e); alert("Failed to unban user. Please try again."); }
   };
   const handleDeleteUser = async (user) => {
@@ -253,11 +274,10 @@ const AdminDashboard = () => {
     try {
       const t = localStorage.getItem('token');
       await axios.delete(`${API_BASE_URL}/api/users/${user.id}/delete`, { headers: { Authorization: `Bearer ${t}` } });
-      const r = await axios.get(`${API_BASE_URL}/api/users?type=active`, { headers: { Authorization: `Bearer ${t}` } });
-      setUsers(r.data);
+      await refreshUsers('active');
     } catch (e) { console.error("Delete failed:", e); alert("Failed to delete user. Please try again."); }
   };
-  const handleRestoreUser = async (user) => { if(!window.confirm(`Restore ${user.name}? They will regain access to their account.`)) return; try { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); const r=await axios.get(`${API_BASE_URL}/api/users?type=deleted`, { headers: { Authorization: `Bearer ${t}` } }); setUsers(r.data); } catch(e) { console.error("Restore failed:", e); alert("Failed to restore user. Please try again."); } };
+  const handleRestoreUser = async (user) => { if(!window.confirm(`Restore ${user.name}? They will regain access to their account.`)) return; try { const t=localStorage.getItem('token'); await axios.post(`${API_BASE_URL}/api/users/${user.id}/restore`, {}, { headers: { Authorization: `Bearer ${t}` } }); await refreshUsers('deleted'); } catch(e) { console.error("Restore failed:", e); alert("Failed to restore user. Please try again."); } };
   const openGrantAccessModal = (user) => { setSelectedUser(user); setGrantAccessCourseId(''); setIsGrantAccessModalOpen(true); };
   const handleConfirmGrantAccess = async () => {
     if (!grantAccessCourseId) { alert("Please select a course."); return; }
@@ -513,11 +533,14 @@ const AdminDashboard = () => {
                     <div className="w-full flex justify-between items-center md:block">
                         <h3 className="font-bold text-lg text-gray-900 capitalize">{activeTab.replace('_', ' ')}</h3>
                     </div>
+                    {(activeTab === 'users' || activeTab === 'deleted_users') && (
+                        <div className="w-full md:w-80"><AdminSearch value={userSearch} onChange={setUserSearch} placeholder="Search by name or email" testId="users-search" /></div>
+                    )}
                     {activeTab === 'courses' && (
                         <div className="flex flex-col md:flex-row gap-3 w-full md:w-auto">
                             <div className="relative w-full md:w-64">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                                <input type="text" placeholder="Search..." className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-gray-900 focus:outline-none focus:border-red-500 transition" />
+                                <AdminSearch value={courseSearch} onChange={setCourseSearch} placeholder="Search courses" testId="courses-search" className="-ml-10 w-[calc(100%+2.5rem)]" />
                             </div>
                             <button onClick={handleOpenModal} className="flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-bold shadow-lg shadow-red-200 w-full md:w-auto"><Plus size={18} /> Add</button>
                         </div>
@@ -534,12 +557,19 @@ const AdminDashboard = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 text-sm">
-                            {activeTab === 'courses' && courses.map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setUploadedCurriculum(null);setLearnerMode('clamp');setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
+                            {activeTab === 'courses' && courses.filter(c => !courseSearch.trim() || `${c.title} ${c.category || ''}`.toLowerCase().includes(courseSearch.trim().toLowerCase())).map(c => (<tr key={c.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{c.title}</td><td className="px-6 py-4 text-green-600 font-bold">${c.price}</td><td className="px-6 py-4"><span className="bg-gray-100 text-gray-600 px-2 py-1 rounded text-xs border border-gray-200">{c.category}</span></td><td className="px-6 py-4 text-gray-500">{c.modules?.length}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>{setEditingCourse(c);setUploadedCurriculum(null);setLearnerMode('clamp');setIsEditModalOpen(true)}} title="Edit Course" className="text-blue-600 bg-blue-50 p-2 rounded hover:bg-blue-100"><Edit size={18}/></button><button onClick={()=>handleDeleteCourse(c.id)} title="Delete Course" className="text-red-600 bg-red-50 p-2 rounded hover:bg-red-100"><Archive size={18}/></button></td></tr>))}
                             {activeTab === 'users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900 flex items-center gap-2">{u.name}{!u.account_setup_complete && <span className="px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-700 border border-yellow-200">Guest</span>}</div><div className="text-xs text-gray-500">{u.email}</div>{u.signup_source === 'guest_checkout' && <div className="text-xs text-gray-400 mt-0.5">Origin: Guest Checkout</div>}</td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4">{u.status === 'Banned' ? <span className="text-red-600 font-bold">Banned</span> : <span className="text-green-600 font-bold">Active</span>}</td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>openGrantAccessModal(u)} title="Grant Course Access" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><Unlock size={18}/></button><button onClick={()=>handleSendReset(u)} title="Send Password Reset" className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><KeyRound size={18}/></button><button onClick={()=>handleToggleAdmin(u)} title={u.role === 'Admin' ? "Demote" : "Promote"} className="p-2 bg-purple-50 text-purple-600 rounded hover:bg-purple-100"><Shield size={18}/></button><button onClick={()=>u.status==='Banned'?handleUnban(u):openBanModal(u)} title={u.status === 'Banned' ? "Unban" : "Ban"} className="p-2 bg-orange-50 text-orange-600 rounded hover:bg-orange-100"><Ban size={18}/></button><button onClick={()=>handleDeleteUser(u)} title="Delete User" className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Trash2 size={18}/></button></td></tr>))}
                             {activeTab === 'deleted_users' && users.map(u => (<tr key={u.id} className="hover:bg-gray-50 transition"><td className="px-6 py-4"><div className="font-bold text-gray-900">{u.name}</div><div className="text-xs text-gray-500">{u.email}</div></td><td className="px-6 py-4"><span className={`px-2 py-1 rounded text-xs font-bold border ${u.role === 'Admin' ? 'bg-purple-100 border-purple-200 text-purple-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>{u.role}</span></td><td className="px-6 py-4"><span className="text-red-500 font-bold">Deleted</span></td><td className="px-6 py-4 text-right flex justify-end gap-2"><button onClick={()=>setFootprintUserId(u.id)} title="Digital footprint" className="p-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"><Fingerprint size={18}/></button><button onClick={()=>handleRestoreUser(u)} title="Restore User" className="p-2 bg-green-50 text-green-600 rounded hover:bg-green-100"><RefreshCcw size={18}/></button></td></tr>))}
                             {activeTab === 'audit' && logs.map((l,i) => (<tr key={i} className="hover:bg-gray-50 transition"><td className="px-6 py-4 font-bold text-gray-900">{l.action}</td><td className="px-6 py-4 text-gray-500">{l.admin}</td><td className="px-6 py-4 italic text-gray-600">{l.details}</td><td className="px-6 py-4 text-gray-500">{l.date}</td></tr>))}
+                        {(activeTab === 'users' || activeTab === 'deleted_users') && users.length === 0 && (<tr><td colSpan={4} className="px-6 py-12 text-center text-gray-400" data-testid="users-empty">{userQ ? `No users match "${userQ}".` : (activeTab === 'users' ? 'No users yet.' : 'No deleted accounts.')}</td></tr>)}
+                            {activeTab === 'courses' && courseSearch.trim() && !courses.some(c => `${c.title} ${c.category || ''}`.toLowerCase().includes(courseSearch.trim().toLowerCase())) && (<tr><td colSpan={5} className="px-6 py-12 text-center text-gray-400">No courses match "{courseSearch.trim()}".</td></tr>)}
                         </tbody>
                     </table>
+                    {(activeTab === 'users' || activeTab === 'deleted_users') && users.length > 0 && (
+                        <p className="px-6 py-3 text-xs text-gray-500 border-t border-gray-100" data-testid="users-count">
+                            {userTotal > users.length ? `Showing the newest ${users.length} of ${userTotal} ${userQ ? 'matches' : 'users'}. Type a name or email to find someone else.` : `${userTotal} ${userQ ? (userTotal === 1 ? 'match' : 'matches') : (userTotal === 1 ? 'user' : 'users')}`}
+                        </p>
+                    )}
                 </div>
             </div>
         )}
@@ -561,10 +591,13 @@ const AdminDashboard = () => {
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm h-[80vh] flex flex-col">
                 <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                     <h3 className="font-bold text-lg flex items-center gap-2 text-gray-900"><Mail className="text-blue-600"/> Support Inbox</h3>
-                    <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">{messages.length} Messages</span>
+                    <div className="flex items-center gap-3">
+                        <AdminSearch value={supportSearch} onChange={setSupportSearch} placeholder="Search name, email or subject" testId="support-search" className="w-64" />
+                        <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-1 rounded">{messages.length} Messages</span>
+                    </div>
                 </div>
                 <div className="divide-y divide-gray-200 overflow-y-auto flex-1 custom-scrollbar">
-                    {messages.length === 0 ? <div className="p-20 text-center text-gray-500 italic">No support messages received yet.</div> : messages.map(msg => (
+                    {messages.length === 0 ? <div className="p-20 text-center text-gray-500 italic">{supportQ ? `No messages match "${supportQ}".` : 'No support messages received yet.'}</div> : messages.map(msg => (
                         <div key={msg.id} className={`p-6 transition cursor-pointer group ${msg.is_read ? 'opacity-50 hover:opacity-80 bg-gray-50' : 'hover:bg-gray-50'}`}>
                             <div className="flex justify-between mb-2">
                                 <div className="flex items-center gap-3">
